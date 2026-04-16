@@ -28,5 +28,6 @@ Thumbs.db
 
 # ── Custom Ignores ───────────────────────────────────────────────────────────
 .claude
+.roo
 Scratch/
 docs/internal/
