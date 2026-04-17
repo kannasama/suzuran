@@ -55,14 +55,14 @@ See `.impeccable.md` for the full design context. Summary:
 **Branch discipline:**
 - `main` — stable, tagged releases only
 - `0.x` — phase development branch (e.g., `0.1` for Phase 1 work)
-- `phase/N.M-description` — one branch per subphase plan (e.g., `phase/1.1-scaffold`)
+- `0.x.y` — one branch per subphase plan (e.g., `0.1.1`)
 - All implementation work branches from `0.x`, not `main`
 
 Start Phase 1 by creating the `0.1` branch:
 ```bash
 git checkout main && git checkout -b 0.1
 ```
-Then branch each subphase plan from `0.1`: `git checkout -b phase/1.1-scaffold 0.1`
+Then branch each subphase plan from `0.1`: `git checkout -b 0.1.1 0.1`
 
 ## New Machine Setup
 

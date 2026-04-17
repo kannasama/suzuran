@@ -82,11 +82,11 @@ rather than new functionality. It is distinct from a new PATCH release.
 |--------|---------|
 | `main` | Stable. Tagged releases only. Direct commits only for docs and repo config. |
 | `0.x` | Phase development branch (e.g., `0.1`). All subphase plan work merges here. |
-| `phase/N.M-description` | One branch per subphase plan (e.g., `phase/1.1-scaffold`). Merges into `0.x`. |
+| `0.x.y` | One branch per subphase plan (e.g., `0.1.1`). Merges into `0.x`. |
 | `fix/description` | Bug fixes against a release branch or `main`. |
 
 **Workflow per subphase plan:**
-1. Branch from the current `0.x` branch: `git checkout -b phase/1.1-scaffold 0.1`
+1. Branch from the current `0.x` branch: `git checkout -b 0.1.1 0.1`
 2. Implement the plan, committing per the plan's commit steps
 3. Open a PR into `0.x` (or merge directly for solo work)
 4. When all subphase plans for a phase are merged, tag `v0.x.0` on `0.x` and merge `0.x` → `main`

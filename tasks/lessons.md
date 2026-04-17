@@ -252,6 +252,19 @@ understanding of the rule.
 **How to apply:** Any time the user flags a missed memory step, commit, or process failure —
 read `tasks/lessons.md` first, find the relevant rule, then act on its full text.
 
+## 2026-04-17 — Subphase branches must use version numbers, not phase/N.M labels
+
+**Rule:** Subphase implementation branches must be named by version number only: `0.x.y`
+(e.g. `0.1.1`). No description suffix. The branch name matches the `v0.x.y` PATCH tag
+the subphase contributes to.
+
+**Why:** Branch names should be version identifiers, consistent with the `v0.x.y` release
+tagging scheme in `docs/VERSIONING.md`. No description suffix needed.
+
+**How to apply:** When starting any new subphase, branch from `0.x` using the plain
+version: `git checkout -b 0.1.2 0.1`. The old `phase/N.M-description` pattern is
+replaced going forward.
+
 ## 2026-04-17 — All builds via docker buildx only; never run local cargo/npm
 
 **Rule:** All build verification must happen inside Docker using `docker buildx build`. Never run
