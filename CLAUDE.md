@@ -8,7 +8,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Status
 
-No source code yet. Update build/test/lint commands here as the project takes shape.
+Pre-development. All Phase 1 implementation plans written. See `docs/plans/` for the full plan set.
+Update build/test/lint commands here as the project takes shape.
 
 ## Design Context
 
@@ -49,7 +50,19 @@ See `.impeccable.md` for the full design context. Summary:
 
 **Before implementing any non-trivial task:** write and present a plan, wait for explicit approval.
 
-**Branch discipline:** all implementation work on scoped branches (`feature/name`, `0.1.0`), not `main`.
+**Versioning:** `docs/VERSIONING.md` defines the scheme. Pre-1.0 phases map to `v0.x.0` releases.
+
+**Branch discipline:**
+- `main` — stable, tagged releases only
+- `0.x` — phase development branch (e.g., `0.1` for Phase 1 work)
+- `phase/N.M-description` — one branch per subphase plan (e.g., `phase/1.1-scaffold`)
+- All implementation work branches from `0.x`, not `main`
+
+Start Phase 1 by creating the `0.1` branch:
+```bash
+git checkout main && git checkout -b 0.1
+```
+Then branch each subphase plan from `0.1`: `git checkout -b phase/1.1-scaffold 0.1`
 
 ## New Machine Setup
 
