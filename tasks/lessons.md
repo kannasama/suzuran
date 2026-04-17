@@ -252,6 +252,27 @@ understanding of the rule.
 **How to apply:** Any time the user flags a missed memory step, commit, or process failure —
 read `tasks/lessons.md` first, find the relevant rule, then act on its full text.
 
+## 2026-04-17 — All builds via docker buildx only; never run local cargo/npm
+
+**Rule:** All build verification must happen inside Docker using `docker buildx build`. Never run
+`cargo build`, `npm build`, or any other local build tool directly.
+
+**Why:** Docker is the canonical build environment. Local toolchain differences can mask build
+failures that Docker would catch.
+
+**How to apply:** Skip any plan step that calls `cargo build` or similar local commands. Move
+verification to the Dockerfile build step using `docker buildx build --progress=plain -t <tag> .`.
+
+## 2026-04-17 — Pause after each plan task; do not batch tasks
+
+**Rule:** After completing and committing each numbered plan task, report what was done and wait
+for explicit approval before continuing to the next task.
+
+**Why:** User wants a review checkpoint at every task boundary, not after groups of three.
+
+**How to apply:** Execute one task completely (all steps + commit), report, then stop. The
+executing-plans skill's default of "3 tasks per batch" is overridden by this rule.
+
 ## 2026-04-16 — Commit all documentation changes immediately, not just plan docs
 
 **Pattern:** CHANGELOG.md was updated but not committed. The existing rule in memory was scoped
