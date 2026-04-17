@@ -6,10 +6,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **suzuran** — a self-hosted music library manager (beets alternative). Rust/Axum backend + React/Vite/Tailwind SPA, deployed as a Docker image. Core features: multi-format library management, MusicBrainz tagging, rule-based file organization, and audio transcoding. See `docs/plans/2026-04-16-suzuran-design.md` for the full system design.
 
-## Project Status
+## Build & Test Commands
 
-Pre-development. All Phase 1 implementation plans written. See `docs/plans/` for the full plan set.
-Update build/test/lint commands here as the project takes shape.
+```bash
+# Docker (canonical build — use this to verify before committing)
+docker buildx build --progress=plain -t suzuran:dev .
+docker compose up --build -d         # start full stack
+docker compose down                  # stop stack
+docker compose logs -f app           # follow app logs
+```
 
 ## Design Context
 
