@@ -1,5 +1,4 @@
-mod app;
-
+use suzuran_server::build_router;
 use anyhow::Context;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
@@ -19,7 +18,7 @@ async fn main() -> anyhow::Result<()> {
         .context("PORT must be a valid port number")?;
 
     let addr = std::net::SocketAddr::from(([0, 0, 0, 0], port));
-    let router = app::build_router();
+    let router = build_router();
 
     tracing::info!("listening on {addr}");
     let listener = tokio::net::TcpListener::bind(addr).await?;
