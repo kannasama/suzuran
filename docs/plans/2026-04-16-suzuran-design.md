@@ -137,18 +137,34 @@ first; `advanced_args` is appended if set.
 
 ```
 tracks: id, library_id, relative_path, file_hash,
-        title, artist, albumartist, album, tracknumber, discnumber,
-        totaldiscs, totaltracks, date, genre, composer, comment,
-        label, catalognumber, isrc,
-        musicbrainz_trackid, musicbrainz_albumid, musicbrainz_artistid,
-        musicbrainz_albumartistid,
+
+        -- Indexed columns (subset used for display, search, sorting, grouping)
+        title, artist, albumartist, album,
+        tracknumber, discnumber, totaldiscs, totaltracks,
+        date, genre, composer, label, catalognumber,
+
+        -- Full MusicBrainz tag catalog
+        tags (jsonb),  -- complete key/value store for all tag fields
+
+        -- Audio properties
         duration_secs, bitrate, sample_rate, channels,
-        has_embedded_art, fingerprint_id (nullable),
+        has_embedded_art, acoustid_fingerprint (nullable),
+
         last_scanned_at, created_at
 ```
 
-Tag field names follow MusicBrainz/Picard standard field names throughout — in the DB, in
-file tags, and in path template tokens. No translation layer.
+**Tag storage strategy — hybrid:** The indexed columns cover the fields used for display,
+sorting, grouping, and organization rules. The `tags` JSONB column stores the complete
+MusicBrainz/Picard tag catalog as written to and read from the audio file — including replay
+gain, AcoustID IDs, release country, script, language, original date, arranger, lyricist,
+remixer, barcode, ASIN, release status/type, media, and any future MusicBrainz fields.
+
+The indexed columns are kept in sync with `tags` on every write. Reads for display and
+organization templates check `tags` first; indexed columns serve query performance only.
+
+Tag field names follow MusicBrainz/Picard standard field names throughout — in `tags`, in
+file tags written to disk, and in path template tokens. No translation layer. New fields
+returned by the MusicBrainz API are stored in `tags` automatically without schema changes.
 
 ### Track Links
 
