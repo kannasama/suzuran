@@ -9,7 +9,12 @@ type: reference
 
 ## Build Commands
 
-_(Fill in as the stack is established)_
+```bash
+docker buildx build --progress=plain -t suzuran:dev .
+docker compose up --build -d
+docker compose down
+docker compose logs -f app
+```
 
 ## Project Root
 
@@ -19,8 +24,28 @@ _(Fill in as the stack is established)_
 | `CHANGELOG.md` | Release history |
 | `TODO.md` | Informal task list and ideas |
 | `.impeccable.md` | Design context for impeccable skills |
+| `.env.example` | Required env vars with safe defaults |
+| `.dockerignore` | Docker build exclusions |
+| `Cargo.toml` | Rust package manifest — bin + lib targets, all dependencies |
+| `Cargo.lock` | Locked dependency versions |
+| `Dockerfile` | 3-stage build: rust-builder (1.85) → ui-builder placeholder → debian:bookworm-slim |
+| `docker-compose.yml` | App + Postgres (16-alpine) services |
 | `tasks/lessons.md` | Process rules and lessons learned (authoritative, git-tracked) |
 | `tasks/codebase-filemap.md` | This file — lightweight codebase index |
+
+## Source
+
+| File | Owns |
+|------|------|
+| `src/lib.rs` | Crate root — re-exports `build_router()` for use by tests |
+| `src/main.rs` | Entry point — reads `PORT`, initialises tracing, starts `axum::serve` |
+| `src/app.rs` | Axum router — `GET /health` handler |
+
+## Tests
+
+| File | Owns |
+|------|------|
+| `tests/health.rs` | Integration test: spins up server on random port, asserts `GET /health` → 200 "ok" |
 
 ## Directories
 
@@ -31,6 +56,4 @@ _(Fill in as the stack is established)_
 | `resources/` | App assets (logos, icons, etc.) |
 | `scripts/` | Developer tooling scripts |
 | `secrets/` | Local secret files (gitignored except README) |
-| `src/` | Backend / Tauri Rust source _(to be populated)_ |
 | `ui/` | Web frontend source _(to be populated)_ |
-| `tests/` | Integration tests _(to be populated)_ |
