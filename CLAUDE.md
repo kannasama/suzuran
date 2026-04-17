@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-**suzuran** — a music library manager (beets alternative) built with Tauri + web frontend. Core features: library organization, audio tagging, and encoding format management.
+**suzuran** — a self-hosted music library manager (beets alternative). Rust/Axum backend + React/Vite/Tailwind SPA, deployed as a Docker image. Core features: multi-format library management, MusicBrainz tagging, rule-based file organization, and audio transcoding. See `docs/plans/2026-04-16-suzuran-design.md` for the full system design.
 
 ## Project Status
 
@@ -30,11 +30,11 @@ See `.impeccable.md` for the full design context. Summary:
 ## Repository Layout
 
 - `docs/plans/` — Implementation plans (date-prefixed kebab-case: `2026-04-16-feature-name.md`)
-- `migrations/` — SQLite database migrations (numeric-prefix: `0001_initial.sql`)
+- `migrations/postgres/` and `migrations/sqlite/` — DB migrations (numeric-prefix: `0001_initial.sql`)
 - `resources/` — App assets (logos, icons)
 - `scripts/` — Developer tooling (`setup-dev-hooks.sh`)
 - `secrets/` — Local secret files (gitignored except README)
-- `src/` — Tauri/Rust backend _(to be populated)_
+- `src/` — Rust/Axum backend _(to be populated)_
 - `ui/` — Web frontend — Vite + React + Tailwind CSS _(to be populated)_
 - `tests/` — Integration tests _(to be populated)_
 - `tasks/codebase-filemap.md` — Lightweight index of every significant file; check before reading code
