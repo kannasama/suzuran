@@ -1,0 +1,9 @@
+target/
+ui/node_modules/
+secrets/
+.env
+.git/
+*.md
+docs/
+tasks/
+tests/
