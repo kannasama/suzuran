@@ -9,6 +9,7 @@ use suzuran_server::{
     build_router,
     config::Config,
     dal::{postgres::PgStore, sqlite::SqliteStore},
+    scheduler::Scheduler,
     state::AppState,
 };
 
@@ -48,7 +49,16 @@ async fn main() -> anyhow::Result<()> {
         .build()
         .context("Webauthn build failed")?;
 
-    let state = AppState::new(db, config.clone(), webauthn);
+    let state = AppState::new(db.clone(), config.clone(), webauthn);
+
+    // Spawn job scheduler
+    let scheduler = Arc::new(Scheduler::new(db));
+    tokio::spawn({
+        let s = scheduler.clone();
+        async move { s.run().await }
+    });
+    tracing::info!("job scheduler started");
+
     let router = build_router(state);
 
     let addr = std::net::SocketAddr::from(([0, 0, 0, 0], config.port));

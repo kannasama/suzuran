@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod jobs;
 pub mod libraries;
 pub mod middleware;
 pub mod settings;
@@ -17,4 +18,5 @@ pub fn api_router(_state: AppState) -> Router<AppState> {
         .nest("/settings", settings::router())
         .nest("/themes", themes::router())
         .nest("/libraries", libraries::router())
+        .nest("/jobs", jobs::router())
 }
