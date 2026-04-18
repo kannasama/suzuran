@@ -43,26 +43,30 @@ docker compose logs -f app
 | `src/config.rs` | `Config` struct — `from_env()` reads `DATABASE_URL`, `JWT_SECRET`, `PORT`, `LOG_LEVEL`, `RP_ID`, `RP_ORIGIN` |
 | `src/error.rs` | `AppError` enum — `IntoResponse` impl; maps DB/internal errors to JSON |
 | `src/state.rs` | `AppState` — holds `Arc<dyn Store>`, `Arc<Config>`, `Arc<Webauthn>`, shared via Axum `State` extractor |
-| `src/models/mod.rs` | `User`, `Session`, `TotpEntry`, `WebauthnCredential`, `WebauthnChallenge` with `sqlx::FromRow` and `serde` derives |
-| `src/dal/mod.rs` | `Store` trait — health check, user/session CRUD, TOTP CRUD, WebAuthn credential/challenge CRUD |
+| `src/models/mod.rs` | `User`, `Session`, `TotpEntry`, `WebauthnCredential`, `WebauthnChallenge`, `Setting`, `Theme` with `sqlx::FromRow` and `serde` derives |
+| `src/dal/mod.rs` | `Store` trait — health check, user/session CRUD, TOTP CRUD, WebAuthn credential/challenge CRUD, settings/themes CRUD |
 | `src/dal/postgres.rs` | `PgStore` — Postgres impl of `Store`; runs migrations |
 | `src/dal/sqlite.rs` | `SqliteStore` — SQLite impl of `Store`; runs migrations |
 | `src/services/mod.rs` | Re-exports `auth`, `totp`, `webauthn` service modules |
 | `src/services/auth.rs` | `AuthService` — Argon2 hashing, JWT sign/verify, login flow with `LoginResult` enum, `2fa_pending` token issue/decode, `create_full_session` |
 | `src/services/totp.rs` | `TotpService` — TOTP secret generation, otpauth URI, code verification |
 | `src/services/webauthn.rs` | `WebauthnService` — passkey registration/authentication start+finish flows |
-| `src/api/mod.rs` | `api_router()` — mounts `/auth`, `/totp`, `/webauthn` subrouters |
+| `src/api/mod.rs` | `api_router()` — mounts `/auth`, `/totp`, `/webauthn`, `/settings`, `/themes` subrouters |
 | `src/api/auth.rs` | Handlers: `POST /register`, `POST /login` (returns 204 or 200+2fa token), `POST /logout`, `GET /me` |
 | `src/api/totp.rs` | Handlers: `POST /enroll`, `POST /verify`, `POST /complete` (2fa→session), `DELETE /disenroll` |
 | `src/api/webauthn.rs` | Handlers: register/authenticate challenge+complete, `GET /credentials`, `DELETE /credentials/:id` |
-| `src/api/middleware/mod.rs` | Re-exports `auth` middleware module |
+| `src/api/settings.rs` | Handlers: `GET /` (list), `GET /:key`, `PUT /:key` (admin-only write) |
+| `src/api/themes.rs` | Handlers: `GET /`, `POST /` (admin), `GET /:id`, `PUT /:id` (admin), `DELETE /:id` (admin) |
+| `src/api/middleware/mod.rs` | Re-exports `auth` and `admin` middleware modules |
 | `src/api/middleware/auth.rs` | `AuthUser` extractor — verifies session cookie JWT + DB session row; rejects `tfa:true` tokens |
+| `src/api/middleware/admin.rs` | `AdminUser` extractor — wraps `AuthUser`, additionally requires `role = "admin"` |
 
 ## Tests
 
 | File | Owns |
 |------|------|
 | `tests/health.rs` | Integration test: `GET /health` → `{"status":"ok"}` |
+| `tests/settings.rs` | Integration tests: settings auth gate, default seed data, admin update, themes CRUD |
 | `tests/auth.rs` | Integration tests: register→admin, login sets cookie, `/me` requires auth, `/me` returns user |
 | `tests/totp.rs` | Integration tests: TOTP enroll returns otpauth URI, enroll then disenroll |
 
