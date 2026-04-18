@@ -39,6 +39,11 @@ sqlx = { version = "0.7", features = [
 chrono = { version = "0.4", features = ["serde"] }
 time = "0.3"
 sha2 = "0.10"
+hex = "0.4"
+
+# Media
+lofty = "0.21"
+walkdir = "2"
 
 # Auth
 argon2 = "0.5"

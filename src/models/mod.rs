@@ -59,6 +59,51 @@ pub struct WebauthnChallenge {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct Library {
+    pub id: i64,
+    pub name: String,
+    pub root_path: String,
+    pub format: String,
+    pub encoding_profile_id: Option<i64>,
+    pub parent_library_id: Option<i64>,
+    pub scan_enabled: bool,
+    pub scan_interval_secs: i64,
+    pub auto_transcode_on_ingest: bool,
+    pub auto_organize_on_ingest: bool,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct Track {
+    pub id: i64,
+    pub library_id: i64,
+    pub relative_path: String,
+    pub file_hash: String,
+    pub title: Option<String>,
+    pub artist: Option<String>,
+    pub albumartist: Option<String>,
+    pub album: Option<String>,
+    pub tracknumber: Option<String>,
+    pub discnumber: Option<String>,
+    pub totaldiscs: Option<String>,
+    pub totaltracks: Option<String>,
+    pub date: Option<String>,
+    pub genre: Option<String>,
+    pub composer: Option<String>,
+    pub label: Option<String>,
+    pub catalognumber: Option<String>,
+    pub tags: serde_json::Value,
+    pub duration_secs: Option<f64>,
+    pub bitrate: Option<i64>,
+    pub sample_rate: Option<i64>,
+    pub channels: Option<i64>,
+    pub has_embedded_art: bool,
+    pub acoustid_fingerprint: Option<String>,
+    pub last_scanned_at: DateTime<Utc>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct Setting {
     pub key: String,
     pub value: String,

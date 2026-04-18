@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 
-use crate::{dal::Store, error::AppError, models::{Session, Setting, Theme, TotpEntry, User, WebauthnChallenge, WebauthnCredential}};
+use crate::{dal::{Store, UpsertTrack}, error::AppError, models::{Library, Session, Setting, Theme, TotpEntry, Track, User, WebauthnChallenge, WebauthnCredential}};
 use sqlx::PgPool;
 
 pub struct PgStore {
@@ -392,5 +392,100 @@ impl Store for PgStore {
             .await
             .map(|_| ())
             .map_err(AppError::Database)
+    }
+
+    async fn list_libraries(&self) -> Result<Vec<Library>, AppError> {
+        sqlx::query_as::<_, Library>("SELECT * FROM libraries ORDER BY name")
+            .fetch_all(&self.pool).await.map_err(AppError::Database)
+    }
+
+    async fn get_library(&self, id: i64) -> Result<Option<Library>, AppError> {
+        sqlx::query_as::<_, Library>("SELECT * FROM libraries WHERE id = $1")
+            .bind(id).fetch_optional(&self.pool).await.map_err(AppError::Database)
+    }
+
+    async fn create_library(
+        &self, name: &str, root_path: &str, format: &str, parent_library_id: Option<i64>,
+    ) -> Result<Library, AppError> {
+        sqlx::query_as::<_, Library>(
+            "INSERT INTO libraries (name, root_path, format, parent_library_id)
+             VALUES ($1, $2, $3, $4) RETURNING *",
+        )
+        .bind(name).bind(root_path).bind(format).bind(parent_library_id)
+        .fetch_one(&self.pool).await.map_err(AppError::Database)
+    }
+
+    async fn update_library(
+        &self, id: i64, name: &str, scan_enabled: bool, scan_interval_secs: i64,
+        auto_transcode_on_ingest: bool, auto_organize_on_ingest: bool,
+    ) -> Result<Option<Library>, AppError> {
+        sqlx::query_as::<_, Library>(
+            "UPDATE libraries SET name=$1, scan_enabled=$2, scan_interval_secs=$3,
+             auto_transcode_on_ingest=$4, auto_organize_on_ingest=$5
+             WHERE id=$6 RETURNING *",
+        )
+        .bind(name).bind(scan_enabled).bind(scan_interval_secs)
+        .bind(auto_transcode_on_ingest).bind(auto_organize_on_ingest).bind(id)
+        .fetch_optional(&self.pool).await.map_err(AppError::Database)
+    }
+
+    async fn delete_library(&self, id: i64) -> Result<(), AppError> {
+        sqlx::query("DELETE FROM libraries WHERE id = $1")
+            .bind(id).execute(&self.pool).await.map(|_| ()).map_err(AppError::Database)
+    }
+
+    async fn list_tracks_by_library(&self, library_id: i64) -> Result<Vec<Track>, AppError> {
+        sqlx::query_as::<_, Track>(
+            "SELECT * FROM tracks WHERE library_id = $1 ORDER BY albumartist, album, discnumber, tracknumber",
+        )
+        .bind(library_id).fetch_all(&self.pool).await.map_err(AppError::Database)
+    }
+
+    async fn get_track(&self, id: i64) -> Result<Option<Track>, AppError> {
+        sqlx::query_as::<_, Track>("SELECT * FROM tracks WHERE id = $1")
+            .bind(id).fetch_optional(&self.pool).await.map_err(AppError::Database)
+    }
+
+    async fn find_track_by_path(&self, library_id: i64, relative_path: &str) -> Result<Option<Track>, AppError> {
+        sqlx::query_as::<_, Track>(
+            "SELECT * FROM tracks WHERE library_id = $1 AND relative_path = $2",
+        )
+        .bind(library_id).bind(relative_path)
+        .fetch_optional(&self.pool).await.map_err(AppError::Database)
+    }
+
+    async fn upsert_track(&self, t: UpsertTrack) -> Result<Track, AppError> {
+        sqlx::query_as::<_, Track>(
+            "INSERT INTO tracks (library_id, relative_path, file_hash, title, artist, albumartist,
+             album, tracknumber, discnumber, totaldiscs, totaltracks, date, genre, composer,
+             label, catalognumber, tags, duration_secs, bitrate, sample_rate, channels, has_embedded_art,
+             last_scanned_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,NOW())
+             ON CONFLICT (library_id, relative_path) DO UPDATE SET
+               file_hash=$3, title=$4, artist=$5, albumartist=$6, album=$7, tracknumber=$8,
+               discnumber=$9, totaldiscs=$10, totaltracks=$11, date=$12, genre=$13, composer=$14,
+               label=$15, catalognumber=$16, tags=$17, duration_secs=$18, bitrate=$19,
+               sample_rate=$20, channels=$21, has_embedded_art=$22, last_scanned_at=NOW()
+             RETURNING *",
+        )
+        .bind(t.library_id).bind(&t.relative_path).bind(&t.file_hash)
+        .bind(&t.title).bind(&t.artist).bind(&t.albumartist).bind(&t.album)
+        .bind(&t.tracknumber).bind(&t.discnumber).bind(&t.totaldiscs).bind(&t.totaltracks)
+        .bind(&t.date).bind(&t.genre).bind(&t.composer).bind(&t.label).bind(&t.catalognumber)
+        .bind(&t.tags).bind(t.duration_secs).bind(t.bitrate).bind(t.sample_rate)
+        .bind(t.channels).bind(t.has_embedded_art)
+        .fetch_one(&self.pool).await.map_err(AppError::Database)
+    }
+
+    async fn mark_track_removed(&self, id: i64) -> Result<(), AppError> {
+        sqlx::query("DELETE FROM tracks WHERE id = $1")
+            .bind(id).execute(&self.pool).await.map(|_| ()).map_err(AppError::Database)
+    }
+
+    async fn list_track_paths_by_library(&self, library_id: i64) -> Result<Vec<(i64, String, String)>, AppError> {
+        sqlx::query_as::<_, (i64, String, String)>(
+            "SELECT id, relative_path, file_hash FROM tracks WHERE library_id = $1",
+        )
+        .bind(library_id).fetch_all(&self.pool).await.map_err(AppError::Database)
     }
 }
