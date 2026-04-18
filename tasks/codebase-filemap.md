@@ -28,7 +28,7 @@ docker compose logs -f app
 | `.dockerignore` | Docker build exclusions |
 | `Cargo.toml` | Rust package manifest — bin + lib targets, all dependencies |
 | `Cargo.lock` | Locked dependency versions |
-| `Dockerfile` | 3-stage build: rust-builder (1.85) → ui-builder placeholder → debian:bookworm-slim |
+| `Dockerfile` | 3-stage build: rust-builder (1.88) → ui-builder placeholder → debian:bookworm-slim |
 | `docker-compose.yml` | App + Postgres (16-alpine) services |
 | `tasks/lessons.md` | Process rules and lessons learned (authoritative, git-tracked) |
 | `tasks/codebase-filemap.md` | This file — lightweight codebase index |
@@ -37,15 +37,21 @@ docker compose logs -f app
 
 | File | Owns |
 |------|------|
-| `src/lib.rs` | Crate root — re-exports `build_router()` for use by tests |
-| `src/main.rs` | Entry point — reads `PORT`, initialises tracing, starts `axum::serve` |
-| `src/app.rs` | Axum router — `GET /health` handler |
+| `src/lib.rs` | Crate root — exposes `config`, `dal`, `error`, `state` modules; re-exports `build_router()` |
+| `src/main.rs` | Entry point — loads `Config`, connects DB, runs migrations, builds `AppState`, starts `axum::serve` |
+| `src/app.rs` | Axum router — `build_router(AppState)`, `GET /health` with live DB check |
+| `src/config.rs` | `Config` struct — `from_env()` reads `DATABASE_URL`, `JWT_SECRET`, `PORT`, `LOG_LEVEL` |
+| `src/error.rs` | `AppError` enum — `IntoResponse` impl; maps DB/internal errors to JSON error responses |
+| `src/state.rs` | `AppState` — holds `Arc<dyn Store>` and `Arc<Config>`, shared via Axum `State` extractor |
+| `src/dal/mod.rs` | `Store` trait — `async health_check()` |
+| `src/dal/postgres.rs` | `PgStore` — wraps `sqlx::PgPool`, runs Postgres migrations, implements `Store` |
+| `src/dal/sqlite.rs` | `SqliteStore` — wraps `sqlx::SqlitePool`, runs SQLite migrations, implements `Store` |
 
 ## Tests
 
 | File | Owns |
 |------|------|
-| `tests/health.rs` | Integration test: spins up server on random port, asserts `GET /health` → 200 "ok" |
+| `tests/health.rs` | Integration test: builds `AppState` with in-memory SQLite, asserts `GET /health` → `{"status":"ok"}` |
 
 ## Migrations
 
