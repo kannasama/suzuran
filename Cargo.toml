@@ -35,6 +35,9 @@ sqlx = { version = "0.7", features = [
     "json",
 ] }
 
+chrono = { version = "0.4", features = ["serde"] }
+sha2 = "0.10"
+
 # Auth (used in Phase 1.4+; declared here to avoid Cargo churn)
 argon2 = "0.5"
 jsonwebtoken = "9"
