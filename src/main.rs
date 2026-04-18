@@ -2,6 +2,8 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use url::Url;
+use webauthn_rs::WebauthnBuilder;
 
 use suzuran_server::{
     build_router,
@@ -38,7 +40,15 @@ async fn main() -> anyhow::Result<()> {
             Arc::new(store)
         };
 
-    let state = AppState::new(db, config.clone());
+    let rp_origin = Url::parse(&config.rp_origin)
+        .context("RP_ORIGIN must be a valid URL")?;
+    let webauthn = WebauthnBuilder::new(&config.rp_id, &rp_origin)
+        .context("WebauthnBuilder failed")?
+        .rp_name("suzuran")
+        .build()
+        .context("Webauthn build failed")?;
+
+    let state = AppState::new(db, config.clone(), webauthn);
     let router = build_router(state);
 
     let addr = std::net::SocketAddr::from(([0, 0, 0, 0], config.port));

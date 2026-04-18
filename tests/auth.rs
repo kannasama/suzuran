@@ -1,4 +1,7 @@
 use std::sync::Arc;
+use url::Url;
+use webauthn_rs::WebauthnBuilder;
+
 use suzuran_server::{
     build_router,
     config::Config,
@@ -6,7 +9,16 @@ use suzuran_server::{
     state::AppState,
 };
 
-async fn test_app() -> (axum::Router, String) {
+fn test_webauthn() -> webauthn_rs::Webauthn {
+    let origin = Url::parse("http://localhost:3000").unwrap();
+    WebauthnBuilder::new("localhost", &origin)
+        .unwrap()
+        .rp_name("suzuran-test")
+        .build()
+        .unwrap()
+}
+
+async fn spawn_test_server() -> String {
     let store = SqliteStore::new("sqlite::memory:")
         .await
         .expect("SQLite failed");
@@ -17,14 +29,12 @@ async fn test_app() -> (axum::Router, String) {
         jwt_secret: "test-secret-32-chars-minimum-xxxx".into(),
         port: 0,
         log_level: "error".into(),
+        rp_id: "localhost".into(),
+        rp_origin: "http://localhost:3000".into(),
     };
-    let base_url = format!("http://127.0.0.1"); // filled in per-test
-    let state = AppState::new(Arc::new(store), config);
-    (build_router(state), base_url)
-}
+    let state = AppState::new(Arc::new(store), config, test_webauthn());
+    let app = build_router(state);
 
-async fn spawn_test_server() -> String {
-    let (app, _) = test_app().await;
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     tokio::spawn(async move {

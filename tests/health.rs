@@ -1,10 +1,22 @@
 use std::sync::Arc;
+use url::Url;
+use webauthn_rs::WebauthnBuilder;
+
 use suzuran_server::{
     build_router,
     config::Config,
     dal::sqlite::SqliteStore,
     state::AppState,
 };
+
+fn test_webauthn() -> webauthn_rs::Webauthn {
+    let origin = Url::parse("http://localhost:3000").unwrap();
+    WebauthnBuilder::new("localhost", &origin)
+        .unwrap()
+        .rp_name("suzuran-test")
+        .build()
+        .unwrap()
+}
 
 async fn test_app() -> axum::Router {
     let store = SqliteStore::new("sqlite::memory:")
@@ -17,9 +29,11 @@ async fn test_app() -> axum::Router {
         jwt_secret: "test-secret".into(),
         port: 0,
         log_level: "error".into(),
+        rp_id: "localhost".into(),
+        rp_origin: "http://localhost:3000".into(),
     };
 
-    let state = AppState::new(Arc::new(store), config);
+    let state = AppState::new(Arc::new(store), config, test_webauthn());
     build_router(state)
 }
 
