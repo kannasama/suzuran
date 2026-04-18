@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 
-use crate::{dal::Store, error::AppError, models::{Session, TotpEntry, User, WebauthnChallenge, WebauthnCredential}};
+use crate::{dal::Store, error::AppError, models::{Session, Setting, Theme, TotpEntry, User, WebauthnChallenge, WebauthnCredential}};
 use sqlx::PgPool;
 
 pub struct PgStore {
@@ -291,5 +291,106 @@ impl Store for PgStore {
         .await
         .map(|_| ())
         .map_err(AppError::Database)
+    }
+
+    async fn get_setting(&self, key: &str) -> Result<Option<Setting>, AppError> {
+        sqlx::query_as::<_, Setting>("SELECT * FROM settings WHERE key = $1")
+            .bind(key)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(AppError::Database)
+    }
+
+    async fn get_all_settings(&self) -> Result<Vec<Setting>, AppError> {
+        sqlx::query_as::<_, Setting>("SELECT * FROM settings ORDER BY key")
+            .fetch_all(&self.pool)
+            .await
+            .map_err(AppError::Database)
+    }
+
+    async fn set_setting(&self, key: &str, value: &str) -> Result<Setting, AppError> {
+        sqlx::query_as::<_, Setting>(
+            "INSERT INTO settings (key, value, updated_at) VALUES ($1, $2, NOW())
+             ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()
+             RETURNING *",
+        )
+        .bind(key)
+        .bind(value)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(AppError::Database)
+    }
+
+    async fn list_themes(&self) -> Result<Vec<Theme>, AppError> {
+        sqlx::query_as::<_, Theme>("SELECT * FROM themes ORDER BY name")
+            .fetch_all(&self.pool)
+            .await
+            .map_err(AppError::Database)
+    }
+
+    async fn get_theme(&self, id: i64) -> Result<Option<Theme>, AppError> {
+        sqlx::query_as::<_, Theme>("SELECT * FROM themes WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(AppError::Database)
+    }
+
+    async fn create_theme(
+        &self,
+        name: &str,
+        css_vars: serde_json::Value,
+        accent_color: Option<&str>,
+        background_url: Option<&str>,
+    ) -> Result<Theme, AppError> {
+        sqlx::query_as::<_, Theme>(
+            "INSERT INTO themes (name, css_vars, accent_color, background_url)
+             VALUES ($1, $2, $3, $4)
+             RETURNING *",
+        )
+        .bind(name)
+        .bind(css_vars)
+        .bind(accent_color)
+        .bind(background_url)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| match e {
+            sqlx::Error::Database(ref db) if db.constraint() == Some("themes_name_key") => {
+                AppError::BadRequest("theme name already exists".into())
+            }
+            other => AppError::Database(other),
+        })
+    }
+
+    async fn update_theme(
+        &self,
+        id: i64,
+        name: &str,
+        css_vars: serde_json::Value,
+        accent_color: Option<&str>,
+        background_url: Option<&str>,
+    ) -> Result<Option<Theme>, AppError> {
+        sqlx::query_as::<_, Theme>(
+            "UPDATE themes SET name=$1, css_vars=$2, accent_color=$3, background_url=$4
+             WHERE id=$5
+             RETURNING *",
+        )
+        .bind(name)
+        .bind(css_vars)
+        .bind(accent_color)
+        .bind(background_url)
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(AppError::Database)
+    }
+
+    async fn delete_theme(&self, id: i64) -> Result<(), AppError> {
+        sqlx::query("DELETE FROM themes WHERE id = $1")
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map(|_| ())
+            .map_err(AppError::Database)
     }
 }

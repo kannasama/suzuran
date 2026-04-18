@@ -57,3 +57,20 @@ pub struct WebauthnChallenge {
     pub kind: String,       // "registration" or "authentication"
     pub created_at: DateTime<Utc>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct Setting {
+    pub key: String,
+    pub value: String,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct Theme {
+    pub id: i64,
+    pub name: String,
+    pub css_vars: serde_json::Value,
+    pub accent_color: Option<String>,
+    pub background_url: Option<String>,
+    pub created_at: DateTime<Utc>,
+}

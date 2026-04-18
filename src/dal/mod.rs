@@ -3,7 +3,7 @@ pub mod sqlite;
 
 use chrono::{DateTime, Utc};
 
-use crate::{error::AppError, models::{Session, TotpEntry, User, WebauthnChallenge, WebauthnCredential}};
+use crate::{error::AppError, models::{Session, Setting, Theme, TotpEntry, User, WebauthnChallenge, WebauthnCredential}};
 
 #[async_trait::async_trait]
 pub trait Store: Send + Sync {
@@ -86,4 +86,29 @@ pub trait Store: Send + Sync {
         kind: &str,
     ) -> Result<Option<WebauthnChallenge>, AppError>;
     async fn delete_webauthn_challenge(&self, user_id: i64, kind: &str) -> Result<(), AppError>;
+
+    // ── settings ──────────────────────────────────────────────────
+    async fn get_setting(&self, key: &str) -> Result<Option<Setting>, AppError>;
+    async fn get_all_settings(&self) -> Result<Vec<Setting>, AppError>;
+    async fn set_setting(&self, key: &str, value: &str) -> Result<Setting, AppError>;
+
+    // ── themes ────────────────────────────────────────────────────
+    async fn list_themes(&self) -> Result<Vec<Theme>, AppError>;
+    async fn get_theme(&self, id: i64) -> Result<Option<Theme>, AppError>;
+    async fn create_theme(
+        &self,
+        name: &str,
+        css_vars: serde_json::Value,
+        accent_color: Option<&str>,
+        background_url: Option<&str>,
+    ) -> Result<Theme, AppError>;
+    async fn update_theme(
+        &self,
+        id: i64,
+        name: &str,
+        css_vars: serde_json::Value,
+        accent_color: Option<&str>,
+        background_url: Option<&str>,
+    ) -> Result<Option<Theme>, AppError>;
+    async fn delete_theme(&self, id: i64) -> Result<(), AppError>;
 }
