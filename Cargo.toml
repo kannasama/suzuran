@@ -13,6 +13,7 @@ path = "src/lib.rs"
 
 [dependencies]
 axum = "0.7"
+axum-extra = { version = "0.9", features = ["cookie"] }
 tokio = { version = "1", features = ["full"] }
 tower = "0.4"
 tower-http = { version = "0.5", features = ["trace"] }
@@ -36,6 +37,7 @@ sqlx = { version = "0.7", features = [
 ] }
 
 chrono = { version = "0.4", features = ["serde"] }
+time = "0.3"
 sha2 = "0.10"
 
 # Auth (used in Phase 1.4+; declared here to avoid Cargo churn)
