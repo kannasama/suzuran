@@ -37,21 +37,29 @@ docker compose logs -f app
 
 | File | Owns |
 |------|------|
-| `src/lib.rs` | Crate root — exposes `config`, `dal`, `error`, `state` modules; re-exports `build_router()` |
+| `src/lib.rs` | Crate root — exposes all modules; re-exports `build_router()` |
 | `src/main.rs` | Entry point — loads `Config`, connects DB, runs migrations, builds `AppState`, starts `axum::serve` |
-| `src/app.rs` | Axum router — `build_router(AppState)`, `GET /health` with live DB check |
+| `src/app.rs` | Axum router — `GET /health` + mounts `/api/v1` |
 | `src/config.rs` | `Config` struct — `from_env()` reads `DATABASE_URL`, `JWT_SECRET`, `PORT`, `LOG_LEVEL` |
-| `src/error.rs` | `AppError` enum — `IntoResponse` impl; maps DB/internal errors to JSON error responses |
+| `src/error.rs` | `AppError` enum — `IntoResponse` impl; maps DB/internal errors to JSON |
 | `src/state.rs` | `AppState` — holds `Arc<dyn Store>` and `Arc<Config>`, shared via Axum `State` extractor |
-| `src/dal/mod.rs` | `Store` trait — `async health_check()` |
-| `src/dal/postgres.rs` | `PgStore` — wraps `sqlx::PgPool`, runs Postgres migrations, implements `Store` |
-| `src/dal/sqlite.rs` | `SqliteStore` — wraps `sqlx::SqlitePool`, runs SQLite migrations, implements `Store` |
+| `src/models/mod.rs` | `User`, `Session` structs with `sqlx::FromRow` and `serde` derives |
+| `src/dal/mod.rs` | `Store` trait — health check, user CRUD, session CRUD |
+| `src/dal/postgres.rs` | `PgStore` — Postgres impl of `Store`; runs migrations |
+| `src/dal/sqlite.rs` | `SqliteStore` — SQLite impl of `Store`; runs migrations |
+| `src/services/mod.rs` | Re-exports `auth` service module |
+| `src/services/auth.rs` | `AuthService` — Argon2 hashing, JWT sign/verify, SHA-256 token hash, login flow |
+| `src/api/mod.rs` | `api_router()` — mounts `/auth` subrouter |
+| `src/api/auth.rs` | Handlers: `POST /register`, `POST /login`, `POST /logout`, `GET /me` |
+| `src/api/middleware/mod.rs` | Re-exports `auth` middleware module |
+| `src/api/middleware/auth.rs` | `AuthUser` extractor — verifies session cookie JWT + DB session row |
 
 ## Tests
 
 | File | Owns |
 |------|------|
 | `tests/health.rs` | Integration test: builds `AppState` with in-memory SQLite, asserts `GET /health` → `{"status":"ok"}` |
+| `tests/auth.rs` | Integration tests: register→admin, login sets cookie, `/me` requires auth, `/me` returns user |
 
 ## Migrations
 
