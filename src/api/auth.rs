@@ -19,10 +19,23 @@ use crate::{
 
 pub fn router() -> Router<AppState> {
     Router::new()
+        .route("/setup-status", get(setup_status))
         .route("/register", post(register))
         .route("/login", post(login))
         .route("/logout", post(logout))
         .route("/me", get(me))
+}
+
+#[derive(Serialize)]
+struct SetupStatusResponse {
+    needs_setup: bool,
+}
+
+async fn setup_status(
+    State(state): State<AppState>,
+) -> Result<Json<SetupStatusResponse>, AppError> {
+    let needs_setup = state.db.count_users().await? == 0;
+    Ok(Json(SetupStatusResponse { needs_setup }))
 }
 
 #[derive(Deserialize)]
@@ -63,12 +76,11 @@ async fn register(
     State(state): State<AppState>,
     Json(body): Json<RegisterRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    // First user becomes admin; all subsequent users get role "user"
-    let role = if state.db.count_users().await? == 0 {
-        "admin"
-    } else {
-        "user"
-    };
+    // Registration is first-run only; reject once any user exists
+    if state.db.count_users().await? > 0 {
+        return Err(AppError::Forbidden);
+    }
+    let role = "admin";
 
     if body.password.len() < 8 {
         return Err(AppError::BadRequest(

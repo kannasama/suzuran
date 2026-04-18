@@ -1,9 +1,14 @@
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import { register, login, getMe } from '../api/auth'
 import { useAuth } from '../contexts/AuthContext'
 
-export function RegisterPage() {
+interface RegisterPageProps {
+  setupMode?: boolean
+}
+
+export function RegisterPage({ setupMode = false }: RegisterPageProps) {
   const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -11,6 +16,7 @@ export function RegisterPage() {
   const [loading, setLoading] = useState(false)
   const navigate = useNavigate()
   const { setUser } = useAuth()
+  const queryClient = useQueryClient()
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -21,6 +27,8 @@ export function RegisterPage() {
       await login(username, password)
       const me = await getMe()
       setUser(me)
+      // Mark setup as complete so routing guard switches to normal mode
+      queryClient.setQueryData(['setup-status'], { needs_setup: false })
       navigate('/')
     } catch (err: unknown) {
       const e = err as { response?: { data?: { error?: string } } }
@@ -36,7 +44,11 @@ export function RegisterPage() {
         <h1 className="text-text-primary text-xl font-semibold mb-2 tracking-tight">
           suzuran
         </h1>
-        <p className="text-text-muted text-xs mb-6">Create your account</p>
+        <p className="text-text-muted text-xs mb-6">
+          {setupMode
+            ? 'First-time setup — create the admin account'
+            : 'Create your account'}
+        </p>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-text-secondary text-xs uppercase tracking-wider mb-1">
@@ -83,7 +95,9 @@ export function RegisterPage() {
             disabled={loading}
             className="w-full bg-accent text-white text-sm py-2 rounded hover:opacity-90 disabled:opacity-50"
           >
-            {loading ? 'Creating account…' : 'Create account'}
+            {loading
+              ? (setupMode ? 'Setting up…' : 'Creating account…')
+              : (setupMode ? 'Create admin account' : 'Create account')}
           </button>
         </form>
       </div>

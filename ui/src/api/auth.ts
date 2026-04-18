@@ -38,3 +38,12 @@ export async function getMe(): Promise<User> {
   const res = await client.get<User>('/auth/me')
   return res.data
 }
+
+export interface SetupStatus {
+  needs_setup: boolean
+}
+
+export async function getSetupStatus(): Promise<SetupStatus> {
+  const res = await client.get<SetupStatus>('/auth/setup-status')
+  return res.data
+}
