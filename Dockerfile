@@ -20,10 +20,13 @@ COPY migrations ./migrations
 COPY src ./src
 RUN touch src/main.rs src/lib.rs && cargo build --release
 
-# Stage 2: UI build (placeholder — fleshed out in Phase 1.10)
+# Stage 2: UI build
 FROM node:20-slim AS ui-builder
 WORKDIR /ui
-RUN mkdir -p dist
+COPY ui/package.json ui/package-lock.json ./
+RUN npm ci
+COPY ui/ ./
+RUN npm run build
 
 # Stage 3: Final image
 FROM debian:bookworm-slim
