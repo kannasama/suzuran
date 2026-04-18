@@ -15,7 +15,8 @@ RUN mkdir src && \
     cargo build --release && \
     rm -rf src
 
-# Build the real binary
+# Build the real binary (migrations dir required by sqlx::migrate! at compile time)
+COPY migrations ./migrations
 COPY src ./src
 RUN touch src/main.rs src/lib.rs && cargo build --release
 
