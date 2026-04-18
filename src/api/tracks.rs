@@ -13,11 +13,12 @@ use tokio::io::AsyncSeekExt;
 use crate::{api::middleware::auth::AuthUser, error::AppError, state::AppState};
 
 pub fn router() -> Router<AppState> {
+    // Axum automatically handles HEAD requests from GET routes, stripping the body
+    // but preserving all headers (including Content-Length and X-* metadata).
     Router::new()
-        .route("/:id/stream", get(stream).head(stream_head))
+        .route("/:id/stream", get(stream))
 }
 
-/// Resolve a track's absolute path from its library root + relative_path.
 async fn resolve_track_path(
     state: &AppState,
     track_id: i64,
@@ -38,7 +39,6 @@ fn content_type_for(path: &std::path::Path) -> String {
         .to_string()
 }
 
-/// Parse a Range header value like "bytes=0-1023" or "bytes=512-".
 fn parse_range(range_header: &str, file_size: u64) -> Option<(u64, u64)> {
     let s = range_header.strip_prefix("bytes=")?;
     let (start_str, end_str) = s.split_once('-')?;
@@ -55,14 +55,15 @@ fn parse_range(range_header: &str, file_size: u64) -> Option<(u64, u64)> {
 }
 
 /// GET /api/v1/tracks/:id/stream
-/// Supports: full file, byte-range requests (Range header), correct Content-Type.
+/// Supports full file, byte-range requests, correct Content-Type.
+/// HEAD is handled automatically by Axum (body stripped, headers preserved).
 pub async fn stream(
     State(state): State<AppState>,
     _auth: AuthUser,
     Path(track_id): Path<i64>,
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
-    let (abs_path, _track) = resolve_track_path(&state, track_id).await?;
+    let (abs_path, track) = resolve_track_path(&state, track_id).await?;
 
     let metadata = tokio::fs::metadata(&abs_path).await.map_err(|e| {
         AppError::Internal(anyhow::anyhow!("file metadata error for {:?}: {e}", abs_path))
@@ -98,9 +99,11 @@ pub async fn stream(
 
     let mut builder = Response::builder()
         .status(status)
-        .header(header::CONTENT_TYPE, content_type)
+        .header(header::CONTENT_TYPE, &content_type)
         .header(header::CONTENT_LENGTH, length.to_string())
-        .header(header::ACCEPT_RANGES, "bytes");
+        .header(header::ACCEPT_RANGES, "bytes")
+        // X-File-Size carries the full file size regardless of range or HEAD stripping
+        .header("X-File-Size", file_size.to_string());
 
     if status == StatusCode::PARTIAL_CONTENT {
         builder = builder.header(
@@ -109,30 +112,7 @@ pub async fn stream(
         );
     }
 
-    builder.body(body).map_err(|e| AppError::Internal(anyhow::anyhow!("response build error: {e}")))
-}
-
-/// HEAD /api/v1/tracks/:id/stream
-/// Returns headers without body — clients use this to get Content-Length, Content-Type, duration.
-pub async fn stream_head(
-    State(state): State<AppState>,
-    _auth: AuthUser,
-    Path(track_id): Path<i64>,
-) -> Result<Response, AppError> {
-    let (abs_path, track) = resolve_track_path(&state, track_id).await?;
-
-    let metadata = tokio::fs::metadata(&abs_path).await.map_err(|e| {
-        AppError::Internal(anyhow::anyhow!("file metadata error: {e}"))
-    })?;
-
-    let content_type = content_type_for(&abs_path);
-
-    let mut builder = Response::builder()
-        .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE, content_type)
-        .header(header::CONTENT_LENGTH, metadata.len().to_string())
-        .header(header::ACCEPT_RANGES, "bytes");
-
+    // Track metadata headers — available on both GET and HEAD responses.
     if let Some(dur) = track.duration_secs {
         builder = builder.header("X-Duration-Secs", dur.to_string());
     }
@@ -143,7 +123,5 @@ pub async fn stream_head(
         builder = builder.header("X-Sample-Rate", sr.to_string());
     }
 
-    builder
-        .body(Body::empty())
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("response build error: {e}")))
+    builder.body(body).map_err(|e| AppError::Internal(anyhow::anyhow!("response build error: {e}")))
 }
