@@ -5,6 +5,7 @@ pub mod middleware;
 pub mod settings;
 pub mod themes;
 pub mod totp;
+pub mod tracks;
 pub mod webauthn;
 
 use axum::Router;
@@ -19,4 +20,5 @@ pub fn api_router(_state: AppState) -> Router<AppState> {
         .nest("/themes", themes::router())
         .nest("/libraries", libraries::router())
         .nest("/jobs", jobs::router())
+        .nest("/tracks", tracks::router())
 }
