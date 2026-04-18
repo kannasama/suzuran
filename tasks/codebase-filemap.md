@@ -39,7 +39,7 @@ docker compose logs -f app
 |------|------|
 | `src/lib.rs` | Crate root — exposes all modules; re-exports `build_router()` |
 | `src/main.rs` | Entry point — loads `Config`, connects DB, runs migrations, builds `AppState`, starts `axum::serve` |
-| `src/app.rs` | Axum router — `GET /health` + mounts `/api/v1` |
+| `src/app.rs` | Axum router — `GET /health` + mounts `/api/v1` + `ServeDir("ui/dist")` SPA fallback |
 | `src/config.rs` | `Config` struct — `from_env()` reads `DATABASE_URL`, `JWT_SECRET`, `PORT`, `LOG_LEVEL`, `RP_ID`, `RP_ORIGIN` |
 | `src/error.rs` | `AppError` enum — `IntoResponse` impl; maps DB/internal errors to JSON |
 | `src/state.rs` | `AppState` — holds `Arc<dyn Store>`, `Arc<Config>`, `Arc<Webauthn>`, shared via Axum `State` extractor |
@@ -117,4 +117,9 @@ docker compose logs -f app
 | `resources/` | App assets (logos, icons, etc.) |
 | `scripts/` | Developer tooling scripts |
 | `secrets/` | Local secret files (gitignored except README) |
-| `ui/` | Web frontend source _(to be populated)_ |
+| `ui/` | React + Vite + Tailwind SPA — `npm run build` → `ui/dist/` |
+| `ui/src/theme/` | `tokens.ts` (dark/light CSS vars) + `ThemeProvider.tsx` (context + `applyTokens`) |
+| `ui/src/api/` | `client.ts` (Axios), `auth.ts` (login/register/logout/me), `libraries.ts` (list) |
+| `ui/src/contexts/` | `AuthContext.tsx` — current user context, `useAuth` hook |
+| `ui/src/pages/` | `LoginPage.tsx`, `RegisterPage.tsx`, `LibraryPage.tsx` (two-pane layout) |
+| `ui/src/components/` | `TopNav.tsx` (nav bar), `LibraryTree.tsx` (library/artist tree skeleton) |
