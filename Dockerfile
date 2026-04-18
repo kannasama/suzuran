@@ -18,7 +18,8 @@ RUN mkdir src && \
 # Build the real binary (migrations dir required by sqlx::migrate! at compile time)
 COPY migrations ./migrations
 COPY src ./src
-RUN touch src/main.rs src/lib.rs && cargo build --release
+COPY tests ./tests
+RUN touch src/main.rs src/lib.rs && cargo build --release && cargo test --release 2>&1
 
 # Stage 2: UI build
 FROM node:20-slim AS ui-builder

@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 
-use crate::{dal::{Store, UpsertTrack}, error::AppError, models::{Job, Library, Session, Setting, Theme, TotpEntry, Track, User, WebauthnChallenge, WebauthnCredential}};
+use crate::{dal::{Store, UpsertTrack}, error::AppError, models::{Job, Library, OrganizationRule, Session, Setting, Theme, TotpEntry, Track, User, WebauthnChallenge, WebauthnCredential}};
 use sqlx::SqlitePool;
 
 pub struct SqliteStore {
@@ -437,6 +437,94 @@ impl Store for SqliteStore {
     async fn delete_library(&self, id: i64) -> Result<(), AppError> {
         sqlx::query("DELETE FROM libraries WHERE id = ?1")
             .bind(id).execute(&self.pool).await.map(|_| ()).map_err(AppError::Database)
+    }
+
+    async fn list_organization_rules(&self, library_id: Option<i64>) -> Result<Vec<OrganizationRule>, AppError> {
+        let rows = if let Some(lid) = library_id {
+            sqlx::query_as::<_, OrganizationRule>(
+                "SELECT * FROM organization_rules
+                 WHERE library_id IS NULL OR library_id = ?1
+                 ORDER BY priority ASC",
+            )
+            .bind(lid)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(AppError::Database)?
+        } else {
+            sqlx::query_as::<_, OrganizationRule>(
+                "SELECT * FROM organization_rules ORDER BY priority ASC",
+            )
+            .fetch_all(&self.pool)
+            .await
+            .map_err(AppError::Database)?
+        };
+        Ok(rows)
+    }
+
+    async fn get_organization_rule(&self, id: i64) -> Result<Option<OrganizationRule>, AppError> {
+        sqlx::query_as::<_, OrganizationRule>("SELECT * FROM organization_rules WHERE id = ?1")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(AppError::Database)
+    }
+
+    async fn create_organization_rule(
+        &self,
+        name: &str,
+        library_id: Option<i64>,
+        priority: i32,
+        conditions: Option<serde_json::Value>,
+        path_template: &str,
+        enabled: bool,
+    ) -> Result<OrganizationRule, AppError> {
+        sqlx::query_as::<_, OrganizationRule>(
+            "INSERT INTO organization_rules (name, library_id, priority, conditions, path_template, enabled)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6) RETURNING *",
+        )
+        .bind(name)
+        .bind(library_id)
+        .bind(priority)
+        .bind(conditions)
+        .bind(path_template)
+        .bind(enabled)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(AppError::Database)
+    }
+
+    async fn update_organization_rule(
+        &self,
+        id: i64,
+        name: &str,
+        priority: i32,
+        conditions: Option<serde_json::Value>,
+        path_template: &str,
+        enabled: bool,
+    ) -> Result<Option<OrganizationRule>, AppError> {
+        sqlx::query_as::<_, OrganizationRule>(
+            "UPDATE organization_rules
+             SET name=?1, priority=?2, conditions=?3, path_template=?4, enabled=?5
+             WHERE id=?6 RETURNING *",
+        )
+        .bind(name)
+        .bind(priority)
+        .bind(conditions)
+        .bind(path_template)
+        .bind(enabled)
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(AppError::Database)
+    }
+
+    async fn delete_organization_rule(&self, id: i64) -> Result<(), AppError> {
+        sqlx::query("DELETE FROM organization_rules WHERE id = ?1")
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map(|_| ())
+            .map_err(AppError::Database)
     }
 
     async fn list_tracks_by_library(&self, library_id: i64) -> Result<Vec<Track>, AppError> {
