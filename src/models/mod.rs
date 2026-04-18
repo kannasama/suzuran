@@ -104,6 +104,21 @@ pub struct Track {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct Job {
+    pub id: i64,
+    pub job_type: String,
+    pub status: String,
+    pub payload: serde_json::Value,
+    pub result: Option<serde_json::Value>,
+    pub priority: i64,
+    pub attempts: i64,
+    pub error: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub started_at: Option<DateTime<Utc>>,
+    pub completed_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct Setting {
     pub key: String,
     pub value: String,

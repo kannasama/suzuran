@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 
 use serde_json::Value as JsonValue;
 
-use crate::{error::AppError, models::{Library, Session, Setting, Theme, TotpEntry, Track, User, WebauthnChallenge, WebauthnCredential}};
+use crate::{error::AppError, models::{Job, Library, Session, Setting, Theme, TotpEntry, Track, User, WebauthnChallenge, WebauthnCredential}};
 
 pub struct UpsertTrack {
     pub library_id: i64,
@@ -159,6 +159,20 @@ pub trait Store: Send + Sync {
         auto_organize_on_ingest: bool,
     ) -> Result<Option<Library>, AppError>;
     async fn delete_library(&self, id: i64) -> Result<(), AppError>;
+
+    // ── jobs ─────────────────────────────────────────────────────
+    async fn enqueue_job(
+        &self,
+        job_type: &str,
+        payload: serde_json::Value,
+        priority: i64,
+    ) -> Result<Job, AppError>;
+    async fn claim_next_job(&self, job_types: &[&str]) -> Result<Option<Job>, AppError>;
+    async fn complete_job(&self, id: i64, result: serde_json::Value) -> Result<(), AppError>;
+    async fn fail_job(&self, id: i64, error: &str) -> Result<(), AppError>;
+    async fn cancel_job(&self, id: i64) -> Result<(), AppError>;
+    async fn list_jobs(&self, status: Option<&str>, limit: i64) -> Result<Vec<Job>, AppError>;
+    async fn get_job(&self, id: i64) -> Result<Option<Job>, AppError>;
 
     // ── tracks ────────────────────────────────────────────────────
     async fn list_tracks_by_library(&self, library_id: i64) -> Result<Vec<Track>, AppError>;

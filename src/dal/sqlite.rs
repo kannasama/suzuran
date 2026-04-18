@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 
-use crate::{dal::{Store, UpsertTrack}, error::AppError, models::{Library, Session, Setting, Theme, TotpEntry, Track, User, WebauthnChallenge, WebauthnCredential}};
+use crate::{dal::{Store, UpsertTrack}, error::AppError, models::{Job, Library, Session, Setting, Theme, TotpEntry, Track, User, WebauthnChallenge, WebauthnCredential}};
 use sqlx::SqlitePool;
 
 pub struct SqliteStore {
@@ -492,5 +492,94 @@ impl Store for SqliteStore {
             "SELECT id, relative_path, file_hash FROM tracks WHERE library_id = ?1",
         )
         .bind(library_id).fetch_all(&self.pool).await.map_err(AppError::Database)
+    }
+
+    async fn enqueue_job(
+        &self,
+        job_type: &str,
+        payload: serde_json::Value,
+        priority: i64,
+    ) -> Result<Job, AppError> {
+        sqlx::query_as::<_, Job>(
+            "INSERT INTO jobs (job_type, payload, priority) VALUES (?1, ?2, ?3) RETURNING *",
+        )
+        .bind(job_type).bind(payload).bind(priority)
+        .fetch_one(&self.pool).await.map_err(AppError::Database)
+    }
+
+    async fn claim_next_job(&self, job_types: &[&str]) -> Result<Option<Job>, AppError> {
+        if job_types.is_empty() {
+            return Ok(None);
+        }
+        let placeholders: Vec<String> = (1..=job_types.len()).map(|i| format!("?{i}")).collect();
+        let in_clause = placeholders.join(",");
+
+        let sql_select = format!(
+            "SELECT * FROM jobs WHERE status='pending' AND job_type IN ({in_clause})
+             ORDER BY priority DESC, created_at ASC LIMIT 1"
+        );
+        let mut q = sqlx::query_as::<_, Job>(&sql_select);
+        for t in job_types {
+            q = q.bind(*t);
+        }
+        let job = match q.fetch_optional(&self.pool).await.map_err(AppError::Database)? {
+            Some(j) => j,
+            None => return Ok(None),
+        };
+
+        sqlx::query(
+            "UPDATE jobs SET status='running', started_at=datetime('now'), attempts=attempts+1 WHERE id=?1 AND status='pending'",
+        )
+        .bind(job.id)
+        .execute(&self.pool).await.map_err(AppError::Database)?;
+
+        self.get_job(job.id).await
+    }
+
+    async fn complete_job(&self, id: i64, result: serde_json::Value) -> Result<(), AppError> {
+        sqlx::query(
+            "UPDATE jobs SET status='completed', result=?1, completed_at=datetime('now') WHERE id=?2",
+        )
+        .bind(result).bind(id)
+        .execute(&self.pool).await.map(|_| ()).map_err(AppError::Database)
+    }
+
+    async fn fail_job(&self, id: i64, error: &str) -> Result<(), AppError> {
+        sqlx::query(
+            "UPDATE jobs SET
+               status = CASE WHEN attempts >= 3 THEN 'failed' ELSE 'pending' END,
+               error = ?1,
+               started_at = NULL
+             WHERE id = ?2",
+        )
+        .bind(error).bind(id)
+        .execute(&self.pool).await.map(|_| ()).map_err(AppError::Database)
+    }
+
+    async fn cancel_job(&self, id: i64) -> Result<(), AppError> {
+        sqlx::query(
+            "UPDATE jobs SET status='cancelled' WHERE id=?1 AND status IN ('pending','running')",
+        )
+        .bind(id)
+        .execute(&self.pool).await.map(|_| ()).map_err(AppError::Database)
+    }
+
+    async fn list_jobs(&self, status: Option<&str>, limit: i64) -> Result<Vec<Job>, AppError> {
+        if let Some(s) = status {
+            sqlx::query_as::<_, Job>(
+                "SELECT * FROM jobs WHERE status=?1 ORDER BY created_at DESC LIMIT ?2",
+            )
+            .bind(s).bind(limit)
+            .fetch_all(&self.pool).await.map_err(AppError::Database)
+        } else {
+            sqlx::query_as::<_, Job>("SELECT * FROM jobs ORDER BY created_at DESC LIMIT ?1")
+                .bind(limit)
+                .fetch_all(&self.pool).await.map_err(AppError::Database)
+        }
+    }
+
+    async fn get_job(&self, id: i64) -> Result<Option<Job>, AppError> {
+        sqlx::query_as::<_, Job>("SELECT * FROM jobs WHERE id = ?1")
+            .bind(id).fetch_optional(&self.pool).await.map_err(AppError::Database)
     }
 }
