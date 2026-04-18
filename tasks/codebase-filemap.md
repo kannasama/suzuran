@@ -40,26 +40,31 @@ docker compose logs -f app
 | `src/lib.rs` | Crate root — exposes all modules; re-exports `build_router()` |
 | `src/main.rs` | Entry point — loads `Config`, connects DB, runs migrations, builds `AppState`, starts `axum::serve` |
 | `src/app.rs` | Axum router — `GET /health` + mounts `/api/v1` |
-| `src/config.rs` | `Config` struct — `from_env()` reads `DATABASE_URL`, `JWT_SECRET`, `PORT`, `LOG_LEVEL` |
+| `src/config.rs` | `Config` struct — `from_env()` reads `DATABASE_URL`, `JWT_SECRET`, `PORT`, `LOG_LEVEL`, `RP_ID`, `RP_ORIGIN` |
 | `src/error.rs` | `AppError` enum — `IntoResponse` impl; maps DB/internal errors to JSON |
-| `src/state.rs` | `AppState` — holds `Arc<dyn Store>` and `Arc<Config>`, shared via Axum `State` extractor |
-| `src/models/mod.rs` | `User`, `Session` structs with `sqlx::FromRow` and `serde` derives |
-| `src/dal/mod.rs` | `Store` trait — health check, user CRUD, session CRUD |
+| `src/state.rs` | `AppState` — holds `Arc<dyn Store>`, `Arc<Config>`, `Arc<Webauthn>`, shared via Axum `State` extractor |
+| `src/models/mod.rs` | `User`, `Session`, `TotpEntry`, `WebauthnCredential`, `WebauthnChallenge` with `sqlx::FromRow` and `serde` derives |
+| `src/dal/mod.rs` | `Store` trait — health check, user/session CRUD, TOTP CRUD, WebAuthn credential/challenge CRUD |
 | `src/dal/postgres.rs` | `PgStore` — Postgres impl of `Store`; runs migrations |
 | `src/dal/sqlite.rs` | `SqliteStore` — SQLite impl of `Store`; runs migrations |
-| `src/services/mod.rs` | Re-exports `auth` service module |
-| `src/services/auth.rs` | `AuthService` — Argon2 hashing, JWT sign/verify, SHA-256 token hash, login flow |
-| `src/api/mod.rs` | `api_router()` — mounts `/auth` subrouter |
-| `src/api/auth.rs` | Handlers: `POST /register`, `POST /login`, `POST /logout`, `GET /me` |
+| `src/services/mod.rs` | Re-exports `auth`, `totp`, `webauthn` service modules |
+| `src/services/auth.rs` | `AuthService` — Argon2 hashing, JWT sign/verify, login flow with `LoginResult` enum, `2fa_pending` token issue/decode, `create_full_session` |
+| `src/services/totp.rs` | `TotpService` — TOTP secret generation, otpauth URI, code verification |
+| `src/services/webauthn.rs` | `WebauthnService` — passkey registration/authentication start+finish flows |
+| `src/api/mod.rs` | `api_router()` — mounts `/auth`, `/totp`, `/webauthn` subrouters |
+| `src/api/auth.rs` | Handlers: `POST /register`, `POST /login` (returns 204 or 200+2fa token), `POST /logout`, `GET /me` |
+| `src/api/totp.rs` | Handlers: `POST /enroll`, `POST /verify`, `POST /complete` (2fa→session), `DELETE /disenroll` |
+| `src/api/webauthn.rs` | Handlers: register/authenticate challenge+complete, `GET /credentials`, `DELETE /credentials/:id` |
 | `src/api/middleware/mod.rs` | Re-exports `auth` middleware module |
-| `src/api/middleware/auth.rs` | `AuthUser` extractor — verifies session cookie JWT + DB session row |
+| `src/api/middleware/auth.rs` | `AuthUser` extractor — verifies session cookie JWT + DB session row; rejects `tfa:true` tokens |
 
 ## Tests
 
 | File | Owns |
 |------|------|
-| `tests/health.rs` | Integration test: builds `AppState` with in-memory SQLite, asserts `GET /health` → `{"status":"ok"}` |
+| `tests/health.rs` | Integration test: `GET /health` → `{"status":"ok"}` |
 | `tests/auth.rs` | Integration tests: register→admin, login sets cookie, `/me` requires auth, `/me` returns user |
+| `tests/totp.rs` | Integration tests: TOTP enroll returns otpauth URI, enroll then disenroll |
 
 ## Migrations
 
@@ -73,6 +78,7 @@ docker compose logs -f app
 | `0004_libraries.sql` | `libraries` (self-referential via `parent_library_id`) |
 | `0005_tracks.sql` | `tracks` (JSONB `tags`, indexed common fields) |
 | `0006_jobs.sql` | `jobs` (type + status CHECK constraints, priority index) |
+| `0007_webauthn_challenge_uq.sql` | `UNIQUE (user_id, kind)` constraint on `webauthn_challenges` (enables upsert) |
 
 ### `migrations/sqlite/`
 
@@ -84,14 +90,15 @@ docker compose logs -f app
 | `0004_libraries.sql` | Same as Postgres equivalent — SQLite types |
 | `0005_tracks.sql` | Same as Postgres equivalent — `tags` as `TEXT` (not JSONB) |
 | `0006_jobs.sql` | Same as Postgres equivalent — `payload`/`result` as `TEXT` |
+| `0007_webauthn_challenge_uq.sql` | Unique index on `webauthn_challenges(user_id, kind)` (enables upsert) |
 
 ## Directories
 
 | Directory | Owns |
 |-----------|------|
 | `docs/plans/` | Implementation plans — date-prefixed kebab-case filenames |
-| `migrations/postgres/` | Postgres SQL migrations (0001–0006, Phase 1 schema) |
-| `migrations/sqlite/` | SQLite SQL migrations (0001–0006, Phase 1 schema) |
+| `migrations/postgres/` | Postgres SQL migrations (0001–0007, Phase 1 schema) |
+| `migrations/sqlite/` | SQLite SQL migrations (0001–0007, Phase 1 schema) |
 | `resources/` | App assets (logos, icons, etc.) |
 | `scripts/` | Developer tooling scripts |
 | `secrets/` | Local secret files (gitignored except README) |
