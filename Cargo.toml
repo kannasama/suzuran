@@ -22,6 +22,24 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 anyhow = "1"
 dotenvy = "0.15"
+thiserror = "1"
+async-trait = "0.1"
+
+# Database
+sqlx = { version = "0.7", features = [
+    "runtime-tokio-rustls",
+    "postgres",
+    "sqlite",
+    "migrate",
+    "chrono",
+    "json",
+] }
+
+# Auth (used in Phase 1.4+; declared here to avoid Cargo churn)
+argon2 = "0.5"
+jsonwebtoken = "9"
+rand = "0.8"
+base64 = "0.22"
 
 [dev-dependencies]
 reqwest = { version = "0.12", features = ["json"] }
