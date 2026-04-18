@@ -5,7 +5,7 @@ use lofty::{
     config::WriteOptions,
     file::{AudioFile, TaggedFileExt},
     probe::Probe,
-    tag::{Accessor, ItemKey},
+    tag::ItemKey,
 };
 
 /// Audio properties read from the file.
