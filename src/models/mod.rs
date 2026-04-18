@@ -144,5 +144,5 @@ pub struct OrganizationRule {
     pub conditions: Option<serde_json::Value>,
     pub path_template: String,
     pub enabled: bool,
-    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub created_at: DateTime<Utc>,
 }
