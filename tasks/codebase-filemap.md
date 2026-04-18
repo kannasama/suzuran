@@ -47,12 +47,37 @@ docker compose logs -f app
 |------|------|
 | `tests/health.rs` | Integration test: spins up server on random port, asserts `GET /health` → 200 "ok" |
 
+## Migrations
+
+### `migrations/postgres/`
+
+| File | Owns |
+|------|------|
+| `0001_users.sql` | `users`, `sessions`, `api_tokens`, `audit_log` |
+| `0002_two_factor.sql` | `totp_entries`, `webauthn_credentials`, `webauthn_challenges` |
+| `0003_settings_themes.sql` | `settings` (key-value + seed data), `themes` |
+| `0004_libraries.sql` | `libraries` (self-referential via `parent_library_id`) |
+| `0005_tracks.sql` | `tracks` (JSONB `tags`, indexed common fields) |
+| `0006_jobs.sql` | `jobs` (type + status CHECK constraints, priority index) |
+
+### `migrations/sqlite/`
+
+| File | Owns |
+|------|------|
+| `0001_users.sql` | Same as Postgres equivalent — SQLite types (`INTEGER`, `TEXT`) |
+| `0002_two_factor.sql` | Same as Postgres equivalent — SQLite types |
+| `0003_settings_themes.sql` | Same as Postgres equivalent — `css_vars` as `TEXT` (not JSONB) |
+| `0004_libraries.sql` | Same as Postgres equivalent — SQLite types |
+| `0005_tracks.sql` | Same as Postgres equivalent — `tags` as `TEXT` (not JSONB) |
+| `0006_jobs.sql` | Same as Postgres equivalent — `payload`/`result` as `TEXT` |
+
 ## Directories
 
 | Directory | Owns |
 |-----------|------|
 | `docs/plans/` | Implementation plans — date-prefixed kebab-case filenames |
-| `migrations/` | Database migrations (numeric-prefix naming: `0001_name.sql`) |
+| `migrations/postgres/` | Postgres SQL migrations (0001–0006, Phase 1 schema) |
+| `migrations/sqlite/` | SQLite SQL migrations (0001–0006, Phase 1 schema) |
 | `resources/` | App assets (logos, icons, etc.) |
 | `scripts/` | Developer tooling scripts |
 | `secrets/` | Local secret files (gitignored except README) |
