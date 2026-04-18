@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod libraries;
 pub mod middleware;
 pub mod settings;
 pub mod themes;
@@ -15,4 +16,5 @@ pub fn api_router(_state: AppState) -> Router<AppState> {
         .nest("/webauthn", webauthn::router())
         .nest("/settings", settings::router())
         .nest("/themes", themes::router())
+        .nest("/libraries", libraries::router())
 }
