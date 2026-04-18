@@ -34,4 +34,9 @@ pub trait Store: Send + Sync {
         token_hash: &str,
     ) -> Result<Option<Session>, AppError>;
     async fn delete_session(&self, id: i64) -> Result<(), AppError>;
+    async fn update_session_token_hash(
+        &self,
+        session_id: i64,
+        token_hash: &str,
+    ) -> Result<(), AppError>;
 }

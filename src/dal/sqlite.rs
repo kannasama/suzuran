@@ -129,4 +129,18 @@ impl Store for SqliteStore {
             .map(|_| ())
             .map_err(AppError::Database)
     }
+
+    async fn update_session_token_hash(
+        &self,
+        session_id: i64,
+        token_hash: &str,
+    ) -> Result<(), AppError> {
+        sqlx::query("UPDATE sessions SET token_hash = ?1 WHERE id = ?2")
+            .bind(token_hash)
+            .bind(session_id)
+            .execute(&self.pool)
+            .await
+            .map(|_| ())
+            .map_err(AppError::Database)
+    }
 }
