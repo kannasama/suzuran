@@ -32,6 +32,9 @@ impl FromRequestParts<AppState> for AuthUser {
             .ok_or(AppError::Unauthorized)?;
 
         let claims = AuthService::decode_token(&token, &state.config.jwt_secret)?;
+        if claims.tfa {
+            return Err(AppError::Unauthorized); // 2fa_pending tokens cannot access protected routes
+        }
         let token_hash = AuthService::hash_token(&token);
 
         let session = state

@@ -91,22 +91,29 @@ async fn login(
     jar: CookieJar,
     Json(body): Json<LoginRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let token = AuthService::login(
-        &state.db,
-        &body.username,
-        &body.password,
-        &state.config.jwt_secret,
-    )
-    .await?;
+    use crate::services::auth::LoginResult;
 
-    let cookie = Cookie::build(("session", token))
-        .http_only(true)
-        .same_site(SameSite::Strict)
-        .max_age(Duration::days(30))
-        .path("/")
-        .build();
-
-    Ok((jar.add(cookie), StatusCode::NO_CONTENT))
+    match AuthService::login(&state.db, &body.username, &body.password, &state.config.jwt_secret)
+        .await?
+    {
+        LoginResult::Session { token } => {
+            let cookie = Cookie::build(("session", token))
+                .http_only(true)
+                .same_site(SameSite::Strict)
+                .max_age(Duration::days(30))
+                .path("/")
+                .build();
+            Ok((jar.add(cookie), StatusCode::NO_CONTENT).into_response())
+        }
+        LoginResult::TwoFactorRequired { token } => Ok((
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "two_factor_required": true,
+                "token": token
+            })),
+        )
+            .into_response()),
+    }
 }
 
 async fn logout(
