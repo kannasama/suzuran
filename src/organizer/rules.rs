@@ -17,7 +17,8 @@ pub fn match_rule(
 }
 
 /// Evaluate a priority-ordered rule list. Returns the first matching rendered path.
-/// `rules` must be sorted by priority ascending before calling.
+/// `rules` must be sorted by priority value ascending (lowest number = highest precedence)
+/// before calling; this function does not sort.
 pub fn apply_rules(
     rules: &[(Option<serde_json::Value>, String)],
     tags: &HashMap<String, String>,
