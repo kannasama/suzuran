@@ -75,9 +75,9 @@ export function LibraryFormModal({ library, libraries, onClose }: Props) {
       updateMutation.mutate({
         name: name.trim(),
         scan_enabled: library!.scan_enabled,
-        scan_interval_secs: 3600,
-        auto_transcode_on_ingest: false,
-        auto_organize_on_ingest: false,
+        scan_interval_secs: library!.scan_interval_secs,
+        auto_transcode_on_ingest: library!.auto_transcode_on_ingest,
+        auto_organize_on_ingest: library!.auto_organize_on_ingest,
       })
     } else {
       createMutation.mutate({
@@ -97,7 +97,7 @@ export function LibraryFormModal({ library, libraries, onClose }: Props) {
 
   return (
     <div
-      className="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
+      className="fixed inset-0 bg-bg-base/75 flex items-center justify-center z-50"
       onClick={e => { if (e.target === e.currentTarget) onClose() }}
     >
       <div
