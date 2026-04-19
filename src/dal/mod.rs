@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 
 use serde_json::Value as JsonValue;
 
-use crate::{error::AppError, models::{Job, Library, Session, Setting, Theme, TotpEntry, Track, User, WebauthnChallenge, WebauthnCredential}};
+use crate::{error::AppError, models::{Job, Library, OrganizationRule, Session, Setting, Theme, TotpEntry, Track, User, WebauthnChallenge, WebauthnCredential}};
 
 pub struct UpsertTrack {
     pub library_id: i64,
@@ -174,6 +174,31 @@ pub trait Store: Send + Sync {
     async fn list_jobs(&self, status: Option<&str>, limit: i64) -> Result<Vec<Job>, AppError>;
     async fn get_job(&self, id: i64) -> Result<Option<Job>, AppError>;
 
+    // ── organization rules ────────────────────────────────────────
+    /// Returns all rules when library_id is None; when Some, returns global rules
+    /// (library_id IS NULL) plus rules scoped to that library, ordered by priority asc.
+    async fn list_organization_rules(&self, library_id: Option<i64>) -> Result<Vec<OrganizationRule>, AppError>;
+    async fn get_organization_rule(&self, id: i64) -> Result<Option<OrganizationRule>, AppError>;
+    async fn create_organization_rule(
+        &self,
+        name: &str,
+        library_id: Option<i64>,
+        priority: i32,
+        conditions: Option<serde_json::Value>,
+        path_template: &str,
+        enabled: bool,
+    ) -> Result<OrganizationRule, AppError>;
+    async fn update_organization_rule(
+        &self,
+        id: i64,
+        name: &str,
+        priority: i32,
+        conditions: Option<serde_json::Value>,
+        path_template: &str,
+        enabled: bool,
+    ) -> Result<Option<OrganizationRule>, AppError>;
+    async fn delete_organization_rule(&self, id: i64) -> Result<(), AppError>;
+
     // ── tracks ────────────────────────────────────────────────────
     async fn list_tracks_by_library(&self, library_id: i64) -> Result<Vec<Track>, AppError>;
     async fn get_track(&self, id: i64) -> Result<Option<Track>, AppError>;
@@ -188,4 +213,5 @@ pub trait Store: Send + Sync {
         &self,
         library_id: i64,
     ) -> Result<Vec<(i64, String, String)>, AppError>;
+    async fn update_track_path(&self, id: i64, relative_path: &str) -> Result<(), AppError>;
 }

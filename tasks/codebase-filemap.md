@@ -43,20 +43,25 @@ docker compose logs -f app
 | `src/config.rs` | `Config` struct — `from_env()` reads `DATABASE_URL`, `JWT_SECRET`, `PORT`, `LOG_LEVEL`, `RP_ID`, `RP_ORIGIN` |
 | `src/error.rs` | `AppError` enum — `IntoResponse` impl; maps DB/internal errors to JSON |
 | `src/state.rs` | `AppState` — holds `Arc<dyn Store>`, `Arc<Config>`, `Arc<Webauthn>`, shared via Axum `State` extractor |
-| `src/models/mod.rs` | `User`, `Session`, `TotpEntry`, `WebauthnCredential`, `WebauthnChallenge`, `Setting`, `Theme`, `Library`, `Track`, `Job` with `sqlx::FromRow` and `serde` derives |
-| `src/dal/mod.rs` | `Store` trait + `UpsertTrack` DTO — health check, user/session CRUD, TOTP CRUD, WebAuthn credential/challenge CRUD, settings/themes CRUD, library/track CRUD, job queue CRUD |
+| `src/models/mod.rs` | `User`, `Session`, `TotpEntry`, `WebauthnCredential`, `WebauthnChallenge`, `Setting`, `Theme`, `Library`, `Track`, `Job`, `OrganizationRule` with `sqlx::FromRow` and `serde` derives |
+| `src/dal/mod.rs` | `Store` trait + `UpsertTrack` DTO — health check, user/session CRUD, TOTP CRUD, WebAuthn credential/challenge CRUD, settings/themes CRUD, library/track CRUD (incl. `update_track_path`), job queue CRUD, organization rule CRUD |
 | `src/dal/postgres.rs` | `PgStore` — Postgres impl of `Store`; runs migrations; library + track queries |
 | `src/dal/sqlite.rs` | `SqliteStore` — SQLite impl of `Store`; runs migrations; library + track queries |
+| `src/organizer/mod.rs` | Organizer module root — re-exports `conditions`, `rules`, and `template` submodules |
+| `src/organizer/conditions.rs` | `Condition` enum + `eval_condition` — serde-tagged condition tree evaluator; supports comparison (eq/ne/contains/starts_with/ends_with), and/or/not, empty/nonempty; all comparisons case-insensitive |
+| `src/organizer/rules.rs` | `match_rule` / `apply_rules` — evaluates a priority-ordered rule list against a tag map; returns first matching rendered path template |
+| `src/organizer/template.rs` | `render_template` — renders path templates from tag maps; supports `{field}`, `{field:02}` zero-pad, `{field\|fallback}`, `{discfolder}` synthetic token |
 | `src/tagger/mod.rs` | `read_tags` / `write_tags` — lofty-based tag read/write; returns `HashMap<String,String>` keyed by MusicBrainz field names + `AudioProperties` |
 | `src/scanner/mod.rs` | `scan_library` — walks root with walkdir, SHA-256 hashes files, diffs against DB, upserts/removes tracks |
-| `src/jobs/mod.rs` | `JobHandler` trait + `ScanPayload` DTO |
+| `src/jobs/mod.rs` | `JobHandler` trait + `ScanPayload` + `OrganizePayload` DTOs |
 | `src/jobs/scan.rs` | `ScanJobHandler` — runs `scan_library`, logs result, returns JSON summary |
+| `src/jobs/organize.rs` | `OrganizeJobHandler` — evaluates rules against a track, moves the file via `tokio::fs::rename`, updates `tracks.relative_path` in DB; supports `dry_run` mode |
 | `src/scheduler/mod.rs` | `Scheduler` — Tokio poll loop; claims pending jobs, semaphore-caps concurrency per type, retries on failure |
 | `src/services/mod.rs` | Re-exports `auth`, `totp`, `webauthn` service modules |
 | `src/services/auth.rs` | `AuthService` — Argon2 hashing, JWT sign/verify, login flow with `LoginResult` enum, `2fa_pending` token issue/decode, `create_full_session` |
 | `src/services/totp.rs` | `TotpService` — TOTP secret generation, otpauth URI, code verification |
 | `src/services/webauthn.rs` | `WebauthnService` — passkey registration/authentication start+finish flows |
-| `src/api/mod.rs` | `api_router()` — mounts `/auth`, `/totp`, `/webauthn`, `/settings`, `/themes`, `/libraries`, `/jobs`, `/tracks` subrouters |
+| `src/api/mod.rs` | `api_router()` — mounts `/auth`, `/totp`, `/webauthn`, `/settings`, `/themes`, `/libraries`, `/jobs`, `/tracks`, `/organization-rules` subrouters |
 | `src/api/libraries.rs` | Handlers: `GET /` (list), `GET /:id`, `POST /` (admin), `PUT /:id` (admin), `DELETE /:id` (admin), `GET /:id/tracks` |
 | `src/api/jobs.rs` | Handlers: `GET /` (list+filter), `GET /:id`, `POST /:id/cancel` (admin), `POST /scan` (admin, enqueue scan) |
 | `src/api/auth.rs` | Handlers: `POST /register`, `POST /login` (returns 204 or 200+2fa token), `POST /logout`, `GET /me` |
@@ -65,6 +70,7 @@ docker compose logs -f app
 | `src/api/settings.rs` | Handlers: `GET /` (list), `GET /:key`, `PUT /:key` (admin-only write) |
 | `src/api/themes.rs` | Handlers: `GET /`, `POST /` (admin), `GET /:id`, `PUT /:id` (admin), `DELETE /:id` (admin) |
 | `src/api/tracks.rs` | `GET/HEAD /:id/stream` — byte-range streaming with `Content-Range`, `Accept-Ranges`, `X-File-Size`, `X-Duration-Secs`, `X-Bitrate`, `X-Sample-Rate` headers |
+| `src/api/organization_rules.rs` | Handlers: `GET /` (list, optional `?library_id=N`), `POST /` (admin, create → 201), `GET /:id`, `PUT /:id` (admin), `DELETE /:id` (admin → 204), `POST /preview` (admin, dry-run path proposals), `POST /apply` (admin, enqueue organize jobs) |
 | `src/api/middleware/mod.rs` | Re-exports `auth` and `admin` middleware modules |
 | `src/api/middleware/auth.rs` | `AuthUser` extractor — verifies session cookie JWT + DB session row; rejects `tfa:true` tokens |
 | `src/api/middleware/admin.rs` | `AdminUser` extractor — wraps `AuthUser`, additionally requires `role = "admin"` |
@@ -80,6 +86,11 @@ docker compose logs -f app
 | `tests/scanner.rs` | Integration tests: scanner inserts new files, removes deleted files, skips unchanged files |
 | `tests/scheduler.rs` | Integration test: end-to-end scan job enqueue → scheduler picks up → track appears in library |
 | `tests/streaming.rs` | Integration tests: full file stream, byte-range (206), HEAD metadata headers, auth guard |
+| `tests/organization_rules.rs` | DAL tests: CRUD for organization_rules — create global/scoped rules, list, get, update, delete |
+| `tests/organizer_conditions.rs` | Unit tests for `eval_condition`, `match_rule`, `apply_rules` — 18 cases covering all condition types, logical composites, presence checks, and rule priority |
+| `tests/organizer_template.rs` | Unit tests for `render_template` — 12 cases covering all token types and edge cases |
+| `tests/organize_job.rs` | Integration tests for `OrganizeJobHandler` — file move + DB path update, dry-run mode |
+| `tests/organization_rules_api.rs` | Integration tests for organization rules REST API — full CRUD flow (create, list, list-filtered, get, update, delete) and auth guard (unauthenticated → 401) |
 
 ## Migrations
 
@@ -94,6 +105,7 @@ docker compose logs -f app
 | `0005_tracks.sql` | `tracks` (JSONB `tags`, indexed common fields) |
 | `0006_jobs.sql` | `jobs` (type + status CHECK constraints, priority index) |
 | `0007_webauthn_challenge_uq.sql` | `UNIQUE (user_id, kind)` constraint on `webauthn_challenges` (enables upsert) |
+| `0008_organization_rules.sql` | `organization_rules` table (BIGSERIAL id, JSONB conditions, priority, path_template, enabled) with library FK |
 
 ### `migrations/sqlite/`
 
@@ -106,6 +118,7 @@ docker compose logs -f app
 | `0005_tracks.sql` | Same as Postgres equivalent — `tags` as `TEXT` (not JSONB) |
 | `0006_jobs.sql` | Same as Postgres equivalent — `payload`/`result` as `TEXT` |
 | `0007_webauthn_challenge_uq.sql` | Unique index on `webauthn_challenges(user_id, kind)` (enables upsert) |
+| `0008_organization_rules.sql` | `organization_rules` table (INTEGER id, TEXT conditions, priority, path_template, enabled) with library FK |
 
 ## Directories
 
@@ -119,7 +132,7 @@ docker compose logs -f app
 | `secrets/` | Local secret files (gitignored except README) |
 | `ui/` | React + Vite + Tailwind SPA — `npm run build` → `ui/dist/` |
 | `ui/src/theme/` | `tokens.ts` (dark/light CSS vars) + `ThemeProvider.tsx` (context + `applyTokens`) |
-| `ui/src/api/` | `client.ts` (Axios), `auth.ts` (login/register/logout/me), `libraries.ts` (list) |
+| `ui/src/api/` | `client.ts` (Axios), `auth.ts` (login/register/logout/me), `libraries.ts` (list, create, update, delete), `organizationRules.ts` (list, create, update, delete org rules) |
 | `ui/src/contexts/` | `AuthContext.tsx` — current user context, `useAuth` hook |
-| `ui/src/pages/` | `LoginPage.tsx`, `RegisterPage.tsx`, `LibraryPage.tsx` (two-pane layout) |
-| `ui/src/components/` | `TopNav.tsx` (nav bar), `LibraryTree.tsx` (library/artist tree skeleton) |
+| `ui/src/pages/` | `LoginPage.tsx`, `RegisterPage.tsx`, `LibraryPage.tsx` (two-pane layout; wires `useAuth` → `isAdmin` + `selectedLibraryId` → `LibraryTree`), `OrganizationPage.tsx` (organization rules management, admin only) |
+| `ui/src/components/` | `TopNav.tsx` (nav bar), `LibraryTree.tsx` (real data, hierarchy, admin create/edit/delete), `LibraryFormModal.tsx` (create/edit modal with TanStack Query mutations), `RuleEditor.tsx` (modal for create/edit organization rules), `TemplatePreview.tsx` (client-side template renderer for live preview) |

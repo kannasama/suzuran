@@ -2,6 +2,7 @@ pub mod auth;
 pub mod jobs;
 pub mod libraries;
 pub mod middleware;
+pub mod organization_rules;
 pub mod settings;
 pub mod themes;
 pub mod totp;
@@ -21,4 +22,5 @@ pub fn api_router(_state: AppState) -> Router<AppState> {
         .nest("/libraries", libraries::router())
         .nest("/jobs", jobs::router())
         .nest("/tracks", tracks::router())
+        .nest("/organization-rules", organization_rules::router())
 }

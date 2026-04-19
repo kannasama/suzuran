@@ -134,3 +134,15 @@ pub struct Theme {
     pub background_url: Option<String>,
     pub created_at: DateTime<Utc>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct OrganizationRule {
+    pub id: i64,
+    pub name: String,
+    pub library_id: Option<i64>,
+    pub priority: i32,
+    pub conditions: Option<serde_json::Value>,
+    pub path_template: String,
+    pub enabled: bool,
+    pub created_at: DateTime<Utc>,
+}

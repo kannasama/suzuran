@@ -1,4 +1,5 @@
 pub mod scan;
+pub mod organize;
 
 use std::sync::Arc;
 
@@ -15,4 +16,11 @@ pub trait JobHandler: Send + Sync {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ScanPayload {
     pub library_id: i64,
+}
+
+/// Payload for the `organize` job type.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct OrganizePayload {
+    pub track_id: i64,
+    pub dry_run: bool,
 }

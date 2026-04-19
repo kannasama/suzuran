@@ -286,6 +286,20 @@ for explicit approval before continuing to the next task.
 **How to apply:** Execute one task completely (all steps + commit), report, then stop. The
 executing-plans skill's default of "3 tasks per batch" is overridden by this rule.
 
+## 2026-04-18 — No per-subphase branches; work directly on the phase branch
+
+**Context:** Phase 2 work was being done on `0.2.1`, a subphase branch cut from `0.2`.
+User asked to merge up and drop the subphase branch convention.
+
+**Rule:** Do all phase development directly on the phase branch (e.g. `0.2`). Do not create
+numbered subphase branches (e.g. `0.2.1`, `0.2.2`). The CLAUDE.md branching section describes
+subphase branches as an option; this project does not use them.
+
+**Why:** Extra branch granularity adds merge overhead without benefit for a solo-operator project.
+
+**How to apply:** When starting a new phase, create only the phase branch (e.g. `git checkout -b 0.3 main`).
+Commit subphase work directly to it. No subphase branch needed.
+
 ## 2026-04-16 — Commit all documentation changes immediately, not just plan docs
 
 **Pattern:** CHANGELOG.md was updated but not committed. The existing rule in memory was scoped
