@@ -106,7 +106,7 @@ export function RuleEditor({ existing, onClose }: Props) {
 
           <div className="flex justify-end gap-2 pt-1">
             <button type="button" onClick={onClose}
-              className="text-xs text-text-muted bg-bg-panel border border-border rounded px-3 py-1 hover:text-text-primary">
+              className="text-xs text-text-muted bg-bg-panel border border-border rounded px-3 py-1 hover:text-text-primary hover:border-border">
               Cancel
             </button>
             <button type="submit"
