@@ -216,6 +216,12 @@ pub trait Store: Send + Sync {
         library_id: i64,
     ) -> Result<Vec<(i64, String, String)>, AppError>;
     async fn update_track_path(&self, id: i64, relative_path: &str) -> Result<(), AppError>;
+    async fn update_track_fingerprint(
+        &self,
+        track_id: i64,
+        fingerprint: &str,
+        duration_secs: f64,
+    ) -> Result<(), AppError>;
 
     // ── tag suggestions ───────────────────────────────────────────
     async fn create_tag_suggestion(&self, dto: UpsertTagSuggestion) -> Result<TagSuggestion, AppError>;

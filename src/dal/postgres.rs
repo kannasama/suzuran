@@ -587,6 +587,28 @@ impl Store for PgStore {
             .map_err(AppError::Database)
     }
 
+    async fn update_track_fingerprint(
+        &self,
+        track_id: i64,
+        fingerprint: &str,
+        duration_secs: f64,
+    ) -> Result<(), AppError> {
+        sqlx::query(
+            r#"UPDATE tracks
+               SET tags = tags || jsonb_build_object('acoustid_fingerprint', $1::text),
+                   duration_secs = $2,
+                   acoustid_fingerprint = $1
+               WHERE id = $3"#,
+        )
+        .bind(fingerprint)
+        .bind(duration_secs)
+        .bind(track_id)
+        .execute(&self.pool)
+        .await
+        .map(|_| ())
+        .map_err(AppError::Database)
+    }
+
     async fn enqueue_job(
         &self,
         job_type: &str,

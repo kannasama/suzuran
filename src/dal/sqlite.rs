@@ -592,6 +592,39 @@ impl Store for SqliteStore {
             .map_err(AppError::Database)
     }
 
+    async fn update_track_fingerprint(
+        &self,
+        track_id: i64,
+        fingerprint: &str,
+        duration_secs: f64,
+    ) -> Result<(), AppError> {
+        // Fetch current tags, merge fingerprint key, re-serialize
+        let row: (Option<String>,) =
+            sqlx::query_as("SELECT tags FROM tracks WHERE id = ?1")
+                .bind(track_id)
+                .fetch_one(&self.pool)
+                .await
+                .map_err(AppError::Database)?;
+        let mut tags: serde_json::Value = row
+            .0
+            .as_deref()
+            .and_then(|s| serde_json::from_str(s).ok())
+            .unwrap_or_else(|| serde_json::json!({}));
+        tags["acoustid_fingerprint"] = serde_json::Value::String(fingerprint.into());
+        let tags_str = serde_json::to_string(&tags).unwrap();
+        sqlx::query(
+            "UPDATE tracks SET tags = ?1, duration_secs = ?2, acoustid_fingerprint = ?3 WHERE id = ?4",
+        )
+        .bind(&tags_str)
+        .bind(duration_secs)
+        .bind(fingerprint)
+        .bind(track_id)
+        .execute(&self.pool)
+        .await
+        .map(|_| ())
+        .map_err(AppError::Database)
+    }
+
     async fn enqueue_job(
         &self,
         job_type: &str,

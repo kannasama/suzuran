@@ -1,5 +1,6 @@
 pub mod scan;
 pub mod organize;
+pub mod fingerprint;
 
 use std::sync::Arc;
 
@@ -23,4 +24,10 @@ pub struct ScanPayload {
 pub struct OrganizePayload {
     pub track_id: i64,
     pub dry_run: bool,
+}
+
+/// Payload for the `fingerprint` job type.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FingerprintPayload {
+    pub track_id: i64,
 }

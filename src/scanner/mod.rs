@@ -127,10 +127,17 @@ pub async fn scan_library(
             has_embedded_art: audio_props.has_embedded_art,
         };
 
-        db.upsert_track(upsert).await?;
+        let track = db.upsert_track(upsert).await?;
 
         if is_new {
             result.inserted += 1;
+            // Enqueue fingerprint job for newly discovered tracks
+            db.enqueue_job(
+                "fingerprint",
+                serde_json::json!({"track_id": track.id}),
+                5,
+            )
+            .await?;
         } else {
             result.updated += 1;
         }
