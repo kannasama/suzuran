@@ -4,7 +4,7 @@ use tokio::sync::Semaphore;
 
 use crate::{
     dal::Store,
-    jobs::{organize::OrganizeJobHandler, scan::ScanJobHandler, JobHandler},
+    jobs::{fingerprint::FingerprintJobHandler, organize::OrganizeJobHandler, scan::ScanJobHandler, JobHandler},
 };
 
 const DEFAULT_SCAN_CONCURRENCY: usize = 2;
@@ -21,6 +21,7 @@ impl Scheduler {
     pub fn new(db: Arc<dyn Store>) -> Self {
         let mut handlers: HashMap<&'static str, Arc<dyn JobHandler>> = HashMap::new();
         handlers.insert("scan", Arc::new(ScanJobHandler));
+        handlers.insert("fingerprint", Arc::new(FingerprintJobHandler));
         handlers.insert("organize", Arc::new(OrganizeJobHandler));
 
         let mut semaphores: HashMap<&'static str, Arc<Semaphore>> = HashMap::new();
