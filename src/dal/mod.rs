@@ -213,4 +213,5 @@ pub trait Store: Send + Sync {
         &self,
         library_id: i64,
     ) -> Result<Vec<(i64, String, String)>, AppError>;
+    async fn update_track_path(&self, id: i64, relative_path: &str) -> Result<(), AppError>;
 }

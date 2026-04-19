@@ -577,6 +577,16 @@ impl Store for PgStore {
         .bind(library_id).fetch_all(&self.pool).await.map_err(AppError::Database)
     }
 
+    async fn update_track_path(&self, id: i64, relative_path: &str) -> Result<(), AppError> {
+        sqlx::query("UPDATE tracks SET relative_path = $1 WHERE id = $2")
+            .bind(relative_path)
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map(|_| ())
+            .map_err(AppError::Database)
+    }
+
     async fn enqueue_job(
         &self,
         job_type: &str,
