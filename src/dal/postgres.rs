@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 
-use crate::{dal::{Store, UpsertTrack}, error::AppError, models::{Job, Library, OrganizationRule, Session, Setting, Theme, TotpEntry, Track, User, WebauthnChallenge, WebauthnCredential}};
+use crate::{dal::{Store, UpsertTrack}, error::AppError, models::{Job, Library, OrganizationRule, Session, Setting, TagSuggestion, Theme, TotpEntry, Track, UpsertTagSuggestion, User, WebauthnChallenge, WebauthnCredential}};
 use sqlx::PgPool;
 
 pub struct PgStore {
@@ -664,5 +664,67 @@ impl Store for PgStore {
     async fn get_job(&self, id: i64) -> Result<Option<Job>, AppError> {
         sqlx::query_as::<_, Job>("SELECT * FROM jobs WHERE id = $1")
             .bind(id).fetch_optional(&self.pool).await.map_err(AppError::Database)
+    }
+
+    // ── tag suggestions ───────────────────────────────────────────
+
+    async fn create_tag_suggestion(&self, dto: UpsertTagSuggestion) -> Result<TagSuggestion, AppError> {
+        sqlx::query_as::<_, TagSuggestion>(
+            "INSERT INTO tag_suggestions
+             (track_id, source, suggested_tags, confidence, mb_recording_id, mb_release_id, cover_art_url)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
+             RETURNING *",
+        )
+        .bind(dto.track_id)
+        .bind(dto.source)
+        .bind(dto.suggested_tags)
+        .bind(dto.confidence)
+        .bind(dto.mb_recording_id)
+        .bind(dto.mb_release_id)
+        .bind(dto.cover_art_url)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(AppError::Database)
+    }
+
+    async fn list_pending_tag_suggestions(&self, track_id: Option<i64>) -> Result<Vec<TagSuggestion>, AppError> {
+        sqlx::query_as::<_, TagSuggestion>(
+            "SELECT * FROM tag_suggestions
+             WHERE status = 'pending'
+               AND ($1::bigint IS NULL OR track_id = $1)
+             ORDER BY confidence DESC, created_at ASC",
+        )
+        .bind(track_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(AppError::Database)
+    }
+
+    async fn get_tag_suggestion(&self, id: i64) -> Result<TagSuggestion, AppError> {
+        sqlx::query_as::<_, TagSuggestion>("SELECT * FROM tag_suggestions WHERE id = $1")
+            .bind(id)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(AppError::Database)
+    }
+
+    async fn set_tag_suggestion_status(&self, id: i64, status: &str) -> Result<(), AppError> {
+        sqlx::query("UPDATE tag_suggestions SET status = $1 WHERE id = $2")
+            .bind(status)
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map(|_| ())
+            .map_err(AppError::Database)
+    }
+
+    async fn pending_tag_suggestion_count(&self) -> Result<i64, AppError> {
+        let row: (i64,) = sqlx::query_as(
+            "SELECT COUNT(*) FROM tag_suggestions WHERE status = 'pending'",
+        )
+        .fetch_one(&self.pool)
+        .await
+        .map_err(AppError::Database)?;
+        Ok(row.0)
     }
 }

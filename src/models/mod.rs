@@ -146,3 +146,27 @@ pub struct OrganizationRule {
     pub enabled: bool,
     pub created_at: DateTime<Utc>,
 }
+
+#[derive(Debug, Clone, sqlx::FromRow, serde::Serialize, serde::Deserialize)]
+pub struct TagSuggestion {
+    pub id: i64,
+    pub track_id: i64,
+    pub source: String,
+    pub suggested_tags: serde_json::Value,
+    pub confidence: f32,
+    pub mb_recording_id: Option<String>,
+    pub mb_release_id: Option<String>,
+    pub cover_art_url: Option<String>,
+    pub status: String,
+    pub created_at: DateTime<Utc>,
+}
+
+pub struct UpsertTagSuggestion {
+    pub track_id: i64,
+    pub source: String,                       // "acoustid" | "mb_search" | "freedb"
+    pub suggested_tags: serde_json::Value,
+    pub confidence: f32,
+    pub mb_recording_id: Option<String>,
+    pub mb_release_id: Option<String>,
+    pub cover_art_url: Option<String>,
+}

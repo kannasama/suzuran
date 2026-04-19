@@ -5,7 +5,9 @@ use chrono::{DateTime, Utc};
 
 use serde_json::Value as JsonValue;
 
-use crate::{error::AppError, models::{Job, Library, OrganizationRule, Session, Setting, Theme, TotpEntry, Track, User, WebauthnChallenge, WebauthnCredential}};
+use crate::{error::AppError, models::{Job, Library, OrganizationRule, Session, Setting, TagSuggestion, Theme, TotpEntry, Track, User, WebauthnChallenge, WebauthnCredential}};
+
+pub use crate::models::UpsertTagSuggestion;
 
 pub struct UpsertTrack {
     pub library_id: i64,
@@ -214,4 +216,11 @@ pub trait Store: Send + Sync {
         library_id: i64,
     ) -> Result<Vec<(i64, String, String)>, AppError>;
     async fn update_track_path(&self, id: i64, relative_path: &str) -> Result<(), AppError>;
+
+    // ── tag suggestions ───────────────────────────────────────────
+    async fn create_tag_suggestion(&self, dto: UpsertTagSuggestion) -> Result<TagSuggestion, AppError>;
+    async fn list_pending_tag_suggestions(&self, track_id: Option<i64>) -> Result<Vec<TagSuggestion>, AppError>;
+    async fn get_tag_suggestion(&self, id: i64) -> Result<TagSuggestion, AppError>;
+    async fn set_tag_suggestion_status(&self, id: i64, status: &str) -> Result<(), AppError>;
+    async fn pending_tag_suggestion_count(&self) -> Result<i64, AppError>;
 }
