@@ -132,7 +132,7 @@ docker compose logs -f app
 | `secrets/` | Local secret files (gitignored except README) |
 | `ui/` | React + Vite + Tailwind SPA — `npm run build` → `ui/dist/` |
 | `ui/src/theme/` | `tokens.ts` (dark/light CSS vars) + `ThemeProvider.tsx` (context + `applyTokens`) |
-| `ui/src/api/` | `client.ts` (Axios), `auth.ts` (login/register/logout/me), `libraries.ts` (list, create, update, delete) |
+| `ui/src/api/` | `client.ts` (Axios), `auth.ts` (login/register/logout/me), `libraries.ts` (list, create, update, delete), `organizationRules.ts` (list, create, update, delete org rules) |
 | `ui/src/contexts/` | `AuthContext.tsx` — current user context, `useAuth` hook |
-| `ui/src/pages/` | `LoginPage.tsx`, `RegisterPage.tsx`, `LibraryPage.tsx` (two-pane layout; wires `useAuth` → `isAdmin` + `selectedLibraryId` → `LibraryTree`) |
-| `ui/src/components/` | `TopNav.tsx` (nav bar), `LibraryTree.tsx` (real data, hierarchy, admin create/edit/delete), `LibraryFormModal.tsx` (create/edit modal with TanStack Query mutations) |
+| `ui/src/pages/` | `LoginPage.tsx`, `RegisterPage.tsx`, `LibraryPage.tsx` (two-pane layout; wires `useAuth` → `isAdmin` + `selectedLibraryId` → `LibraryTree`), `OrganizationPage.tsx` (organization rules management, admin only) |
+| `ui/src/components/` | `TopNav.tsx` (nav bar), `LibraryTree.tsx` (real data, hierarchy, admin create/edit/delete), `LibraryFormModal.tsx` (create/edit modal with TanStack Query mutations), `RuleEditor.tsx` (modal for create/edit organization rules), `TemplatePreview.tsx` (client-side template renderer for live preview) |

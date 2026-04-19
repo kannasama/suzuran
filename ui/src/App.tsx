@@ -5,6 +5,7 @@ import { getSetupStatus } from './api/auth'
 import { LoginPage } from './pages/LoginPage'
 import { RegisterPage } from './pages/RegisterPage'
 import { LibraryPage } from './pages/LibraryPage'
+import OrganizationPage from './pages/OrganizationPage'
 
 function useSetupStatus() {
   return useQuery({
@@ -38,6 +39,10 @@ function AppRoutes() {
       <Route path="/login" element={<LoginPage />} />
       {/* Register is first-run only — redirect away once setup is done */}
       <Route path="/register" element={<Navigate to="/login" replace />} />
+      <Route
+        path="/organization"
+        element={user ? <OrganizationPage /> : <Navigate to="/login" replace />}
+      />
       <Route
         path="/*"
         element={user ? <LibraryPage /> : <Navigate to="/login" replace />}

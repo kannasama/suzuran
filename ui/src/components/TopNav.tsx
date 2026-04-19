@@ -28,6 +28,7 @@ export function TopNav() {
       {navItem('/inbox', 'Inbox')}
       {navItem('/issues', 'Issues')}
       {navItem('/jobs', 'Jobs')}
+      {user?.role === 'admin' && navItem('/organization', 'Organization')}
       <div className="ml-auto flex items-center gap-3">
         <NavLink
           to="/settings"
