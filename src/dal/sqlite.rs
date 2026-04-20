@@ -453,6 +453,16 @@ impl Store for SqliteStore {
             .map_err(AppError::Database)
     }
 
+    async fn list_child_libraries(&self, parent_id: i64) -> Result<Vec<Library>, AppError> {
+        sqlx::query_as::<_, Library>(
+            "SELECT * FROM libraries WHERE parent_library_id = ?1 ORDER BY id",
+        )
+        .bind(parent_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(AppError::Database)
+    }
+
     async fn list_organization_rules(&self, library_id: Option<i64>) -> Result<Vec<OrganizationRule>, AppError> {
         let rows = if let Some(lid) = library_id {
             sqlx::query_as::<_, OrganizationRule>(

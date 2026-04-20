@@ -35,6 +35,13 @@ pub async fn scan_library(
 ) -> Result<ScanResult, AppError> {
     let mut result = ScanResult { inserted: 0, updated: 0, removed: 0, errors: vec![] };
 
+    // Look up the library's format for use in auto-transcode compatibility checks.
+    let library_format = db
+        .get_library(library_id)
+        .await?
+        .map(|lib| lib.format)
+        .unwrap_or_default();
+
     // --- Pass 1: find CUE files and their paired audio ---
     let mut cue_backed_audio: HashSet<PathBuf> = HashSet::new();
     let mut cue_files: Vec<PathBuf> = Vec::new();
@@ -169,6 +176,43 @@ pub async fn scan_library(
                 5,
             )
             .await?;
+
+            // Auto-transcode to child libraries (pre-filter by compatibility)
+            let children = db.list_child_libraries(library_id).await?;
+            for child in children.iter().filter(|c| c.auto_transcode_on_ingest) {
+                if let Some(ep_id) = child.encoding_profile_id {
+                    if let Ok(profile) = db.get_encoding_profile(ep_id).await {
+                        let src_ext = std::path::Path::new(&track.relative_path)
+                            .extension()
+                            .and_then(|e| e.to_str())
+                            .unwrap_or("")
+                            .to_lowercase();
+                        let src_fmt = if src_ext.is_empty() {
+                            library_format.as_str()
+                        } else {
+                            src_ext.as_str()
+                        };
+                        if !crate::services::transcode_compat::is_compatible(
+                            src_fmt,
+                            track.sample_rate,
+                            track.bit_depth,
+                            track.bitrate,
+                            &profile,
+                        ) {
+                            continue;
+                        }
+                    }
+                }
+                db.enqueue_job(
+                    "transcode",
+                    serde_json::json!({
+                        "source_track_id": track.id,
+                        "target_library_id": child.id,
+                    }),
+                    4,
+                )
+                .await?;
+            }
         } else {
             result.updated += 1;
         }

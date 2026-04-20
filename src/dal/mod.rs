@@ -262,6 +262,9 @@ pub trait Store: Send + Sync {
     async fn list_derived_tracks(&self, source_id: i64) -> Result<Vec<TrackLink>, AppError>;
     async fn list_source_tracks(&self, derived_id: i64) -> Result<Vec<TrackLink>, AppError>;
 
+    // ── child libraries ───────────────────────────────────────────
+    async fn list_child_libraries(&self, parent_id: i64) -> Result<Vec<Library>, AppError>;
+
     // ── tag suggestions ───────────────────────────────────────────
     async fn create_tag_suggestion(&self, dto: UpsertTagSuggestion) -> Result<TagSuggestion, AppError>;
     async fn list_pending_tag_suggestions(&self, track_id: Option<i64>) -> Result<Vec<TagSuggestion>, AppError>;

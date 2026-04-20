@@ -1,3 +1,4 @@
+pub mod art;
 pub mod art_profiles;
 pub mod auth;
 pub mod encoding_profiles;
@@ -9,6 +10,7 @@ pub mod settings;
 pub mod tag_suggestions;
 pub mod themes;
 pub mod totp;
+pub mod transcode;
 pub mod tracks;
 pub mod webauthn;
 
@@ -29,4 +31,6 @@ pub fn api_router(_state: AppState) -> Router<AppState> {
         .nest("/tag-suggestions", tag_suggestions::router())
         .nest("/encoding-profiles", encoding_profiles::router())
         .nest("/art-profiles", art_profiles::router())
+        .merge(transcode::router())
+        .merge(art::router())
 }
