@@ -5,25 +5,37 @@ use suzuran_server::{
     scanner::scan_library,
 };
 
+/// 1-second mono 44100 Hz WavPack silence — generated with ffmpeg lavfi anullsrc.
+/// Ensures lofty can actually parse WavPack headers, not just that the extension filter works.
+static SILENCE_WV: &[u8] = include_bytes!("fixtures/silence.wv");
+
+/// 1-second mono 44100 Hz Monkey's Audio silence — generated with mac (Monkey's Audio v12.62).
+/// Ensures lofty can actually parse APE headers, not just that the extension filter works.
+static SILENCE_APE: &[u8] = include_bytes!("fixtures/silence.ape");
+
+/// 1-second mono 44100 Hz TrueAudio silence — generated with ffmpeg lavfi anullsrc.
+/// Ensures lofty can actually parse TTA headers, not just that the extension filter works.
+static SILENCE_TTA: &[u8] = include_bytes!("fixtures/silence.tta");
+
 async fn make_db() -> Arc<dyn Store> {
     let store = SqliteStore::new("sqlite::memory:").await.unwrap();
     store.migrate().await.unwrap();
     Arc::new(store)
 }
 
-/// Returns a temp dir containing a single file with the given filename (empty content).
-/// The scanner accepts empty files — tag read errors fall back to an empty tag map.
-async fn make_temp_library_with_file(filename: &str) -> (tempfile::TempDir, PathBuf) {
+/// Returns a temp dir containing a single file with the given filename and real audio bytes.
+/// Writes real fixture bytes so lofty actually parses the file headers.
+async fn make_temp_library_with_file(filename: &str, content: &[u8]) -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::TempDir::new().unwrap();
     let root = dir.path().to_path_buf();
-    fs::write(root.join(filename), b"").await.unwrap();
+    fs::write(root.join(filename), content).await.unwrap();
     (dir, root)
 }
 
 #[tokio::test]
 async fn test_wavpack_file_ingested() {
     let db = make_db().await;
-    let (dir, root) = make_temp_library_with_file("silence.wv").await;
+    let (dir, root) = make_temp_library_with_file("silence.wv", SILENCE_WV).await;
 
     let lib = db.create_library("Test", root.to_str().unwrap(), "wv", None).await.unwrap();
     scan_library(&db, lib.id, &root).await.unwrap();
@@ -36,7 +48,7 @@ async fn test_wavpack_file_ingested() {
 #[tokio::test]
 async fn test_ape_file_ingested() {
     let db = make_db().await;
-    let (dir, root) = make_temp_library_with_file("silence.ape").await;
+    let (dir, root) = make_temp_library_with_file("silence.ape", SILENCE_APE).await;
 
     let lib = db.create_library("Test", root.to_str().unwrap(), "ape", None).await.unwrap();
     scan_library(&db, lib.id, &root).await.unwrap();
@@ -49,7 +61,7 @@ async fn test_ape_file_ingested() {
 #[tokio::test]
 async fn test_tta_file_ingested() {
     let db = make_db().await;
-    let (dir, root) = make_temp_library_with_file("silence.tta").await;
+    let (dir, root) = make_temp_library_with_file("silence.tta", SILENCE_TTA).await;
 
     let lib = db.create_library("Test", root.to_str().unwrap(), "tta", None).await.unwrap();
     scan_library(&db, lib.id, &root).await.unwrap();
