@@ -32,6 +32,7 @@ async fn list(
     Ok(Json(state.db.list_pending_tag_suggestions(track_id).await?))
 }
 
+// Intentionally public — drives the nav badge without requiring auth
 async fn count(
     State(state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, AppError> {

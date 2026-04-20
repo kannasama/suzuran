@@ -767,14 +767,29 @@ impl Store for SqliteStore {
     }
 
     async fn set_tag_suggestion_status(&self, id: i64, status: &str) -> Result<(), AppError> {
-        let result = sqlx::query("UPDATE tag_suggestions SET status = ?1 WHERE id = ?2")
-            .bind(status)
-            .bind(id)
-            .execute(&self.pool)
-            .await
-            .map_err(AppError::Database)?;
+        let result = sqlx::query(
+            "UPDATE tag_suggestions SET status = ?1 WHERE id = ?2 AND status = 'pending'",
+        )
+        .bind(status)
+        .bind(id)
+        .execute(&self.pool)
+        .await
+        .map_err(AppError::Database)?;
         if result.rows_affected() == 0 {
-            return Err(AppError::NotFound(format!("tag_suggestion {id} not found")));
+            // Distinguish: row missing vs. row exists but already resolved
+            let exists: bool =
+                sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM tag_suggestions WHERE id = ?1)")
+                    .bind(id)
+                    .fetch_one(&self.pool)
+                    .await
+                    .map_err(AppError::Database)?;
+            if exists {
+                return Err(AppError::Conflict(format!(
+                    "tag_suggestion {id} is not pending"
+                )));
+            } else {
+                return Err(AppError::NotFound(format!("tag_suggestion {id}")));
+            }
         }
         Ok(())
     }
