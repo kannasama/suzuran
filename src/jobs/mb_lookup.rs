@@ -55,6 +55,7 @@ impl super::JobHandler for MbLookupJobHandler {
             .await
             .map_err(|e| AppError::Internal(anyhow::anyhow!("AcoustID: {e}")))?;
 
+        let acoustid_had_results = !results.is_empty();
         let mut suggestions_created: usize = 0;
 
         for result in results.iter().filter(|r| r.score >= ACOUSTID_THRESHOLD) {
@@ -91,7 +92,7 @@ impl super::JobHandler for MbLookupJobHandler {
             }
         }
 
-        if suggestions_created == 0 {
+        if suggestions_created == 0 && !acoustid_had_results {
             db.enqueue_job(
                 "freedb_lookup",
                 serde_json::json!({"track_id": track_id}),

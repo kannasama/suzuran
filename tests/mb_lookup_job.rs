@@ -103,11 +103,44 @@ async fn test_mb_lookup_below_threshold_creates_no_suggestion() {
 
     assert_eq!(result["suggestions_created"].as_i64(), Some(0));
 
-    // Should have enqueued a freedb_lookup fallback
+    // Should NOT enqueue freedb_lookup — AcoustID recognised the track but confidence was low
+    let jobs = store.list_jobs(Some("pending"), 50).await.unwrap();
+    assert!(
+        !jobs.iter().any(|j| j.job_type == "freedb_lookup"),
+        "freedb_lookup should not be enqueued for below-threshold AcoustID matches"
+    );
+}
+
+#[tokio::test]
+async fn test_mb_lookup_no_acoustid_results_enqueues_freedb() {
+    let acoustid_server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path_regex("/v2/lookup"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "status": "ok",
+            "results": []
+        })))
+        .mount(&acoustid_server)
+        .await;
+
+    let (store, track_id) = common::setup_with_fingerprinted_track().await;
+    let mb_svc = Arc::new(MusicBrainzService::with_base_urls(
+        "test-key".into(),
+        "http://unused".into(),
+        acoustid_server.uri(),
+    ));
+
+    let handler = MbLookupJobHandler::new(mb_svc);
+    handler
+        .run(store.clone(), serde_json::json!({"track_id": track_id}))
+        .await
+        .unwrap();
+
     let jobs = store.list_jobs(Some("pending"), 50).await.unwrap();
     assert!(
         jobs.iter().any(|j| j.job_type == "freedb_lookup"),
-        "expected a freedb_lookup job to be enqueued"
+        "freedb_lookup should be enqueued when AcoustID returns no results"
     );
 }
 
