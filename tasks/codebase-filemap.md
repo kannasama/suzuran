@@ -70,7 +70,7 @@ docker compose logs -f app
 | `src/services/musicbrainz.rs` | `MusicBrainzService` — AcoustID fingerprint lookup, MusicBrainz recording fetch (with 1.1s rate limit), `to_tag_map` (recording+release → tag HashMap), `caa_url` (Cover Art Archive URL) |
 | `src/services/totp.rs` | `TotpService` — TOTP secret generation, otpauth URI, code verification |
 | `src/services/webauthn.rs` | `WebauthnService` — passkey registration/authentication start+finish flows |
-| `src/api/mod.rs` | `api_router()` — mounts `/auth`, `/totp`, `/webauthn`, `/settings`, `/themes`, `/libraries`, `/jobs`, `/tracks`, `/organization-rules`, `/tag-suggestions` subrouters |
+| `src/api/mod.rs` | `api_router()` — mounts `/auth`, `/totp`, `/webauthn`, `/settings`, `/themes`, `/libraries`, `/jobs`, `/tracks`, `/organization-rules`, `/tag-suggestions`, `/encoding-profiles`, `/art-profiles` subrouters |
 | `src/api/libraries.rs` | Handlers: `GET /` (list), `GET /:id`, `POST /` (admin), `PUT /:id` (admin), `DELETE /:id` (admin), `GET /:id/tracks` |
 | `src/api/jobs.rs` | Handlers: `GET /` (list+filter), `GET /:id`, `POST /:id/cancel` (admin), `POST /scan` (admin, enqueue scan) |
 | `src/api/auth.rs` | Handlers: `POST /register`, `POST /login` (returns 204 or 200+2fa token), `POST /logout`, `GET /me` |
@@ -81,6 +81,8 @@ docker compose logs -f app
 | `src/api/tracks.rs` | `GET /:id` (auth, returns `Track` JSON, 404 if missing); `GET/HEAD /:id/stream` — byte-range streaming with `Content-Range`, `Accept-Ranges`, `X-File-Size`, `X-Duration-Secs`, `X-Bitrate`, `X-Sample-Rate` headers |
 | `src/api/organization_rules.rs` | Handlers: `GET /` (list, optional `?library_id=N`), `POST /` (admin, create → 201), `GET /:id`, `PUT /:id` (admin), `DELETE /:id` (admin → 204), `POST /preview` (admin, dry-run path proposals), `POST /apply` (admin, enqueue organize jobs) |
 | `src/api/tag_suggestions.rs` | Handlers: `GET /` (list pending, optional `?track_id=N`, auth), `GET /count` (public nav badge), `GET /:id` (auth, 404 if missing), `POST /:id/accept` (auth, calls tagging stub + sets status), `POST /:id/reject` (auth), `POST /batch-accept` (auth, body `{min_confidence}`) |
+| `src/api/encoding_profiles.rs` | Handlers: `GET /` (list, auth), `POST /` (admin, create → 201), `GET /:id` (auth), `PUT /:id` (admin), `DELETE /:id` (admin → 204); body `EncodingProfileBody` maps to `UpsertEncodingProfile` |
+| `src/api/art_profiles.rs` | Handlers: `GET /` (list, auth), `POST /` (admin, create → 201), `GET /:id` (auth), `PUT /:id` (admin), `DELETE /:id` (admin → 204); body `ArtProfileBody` maps to `UpsertArtProfile` |
 | `src/services/tagging.rs` | `apply_suggestion` — merges existing track tags with suggestion tags, writes to audio file via `tagger::write_tags`, updates DB via `update_track_tags`; enqueues `art_process` embed job if `cover_art_url` is present |
 | `src/services/transcode_compat.rs` | `is_compatible(src_format, src_sample_rate, src_bit_depth, src_bitrate, profile)` — quality-matching rules: rejects lossy→lossless, sample-rate upsampling, bit-depth inflation, bitrate upscaling; `is_lossless(format)` pub helper |
 | `src/api/middleware/mod.rs` | Re-exports `auth` and `admin` middleware modules |
@@ -121,6 +123,8 @@ docker compose logs -f app
 | `tests/cue_split_job.rs` | Integration tests for `CueSplitJobHandler` — creates 3 tracks from CUE+FLAC (skips gracefully if ffmpeg absent), idempotency (second run returns 0), scanner skips CUE-backed audio and enqueues cue_split job |
 | `tests/transcode_compat.rs` | Unit tests for `is_compatible` — 6 tests covering lossy→lossless rejection, lossless→lossy allowed, upsample rejection, bit-depth inflation rejection, bitrate upscale rejection, unknown-values pass-through |
 | `tests/transcode_job.rs` | Tests for `TranscodeJobHandler` — `codec_extension` unit tests, fails without encoding_profile_id, skips lossy→lossless (no ffmpeg needed), errors on missing source track |
+| `tests/encoding_profiles_api.rs` | Integration tests for encoding profiles REST API — full CRUD flow (create → 201, list, get, update, delete → 204) and auth guards (unauthenticated → 401, non-admin POST → 403) |
+| `tests/art_profiles_api.rs` | Integration tests for art profiles REST API — full CRUD flow (create → 201, list, get, update, delete → 204) and auth guards (unauthenticated → 401, non-admin POST → 403) |
 | `tests/common/mod.rs` | Shared test helpers: `make_db()`, `setup_store()`, `setup_with_fingerprinted_track()`, `setup_with_discid_track()`, `setup_with_track()`, `setup_with_audio_track()` (FLAC with VORBISCOMMENT), `setup_cue_library()`, `setup_transcode_scenario_no_profile()` (source FLAC track + target library with no profile), `setup_transcode_lossy_to_lossless_scenario()` (AAC source + FLAC profile target), `TAGGED_FLAC` bytes constant |
 
 ## Migrations

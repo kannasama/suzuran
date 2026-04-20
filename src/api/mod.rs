@@ -1,4 +1,6 @@
+pub mod art_profiles;
 pub mod auth;
+pub mod encoding_profiles;
 pub mod jobs;
 pub mod libraries;
 pub mod middleware;
@@ -25,4 +27,6 @@ pub fn api_router(_state: AppState) -> Router<AppState> {
         .nest("/tracks", tracks::router())
         .nest("/organization-rules", organization_rules::router())
         .nest("/tag-suggestions", tag_suggestions::router())
+        .nest("/encoding-profiles", encoding_profiles::router())
+        .nest("/art-profiles", art_profiles::router())
 }
