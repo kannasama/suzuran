@@ -195,3 +195,27 @@ pub struct UpsertEncodingProfile {
     pub bit_depth: Option<i64>,
     pub advanced_args: Option<String>,
 }
+
+#[derive(Debug, Clone, sqlx::FromRow, serde::Serialize, serde::Deserialize)]
+pub struct ArtProfile {
+    pub id: i64,
+    pub name: String,
+    pub max_width_px: i64,
+    pub max_height_px: i64,
+    pub max_size_bytes: Option<i64>,
+    pub format: String,     // "jpeg" | "png"
+    pub quality: i64,       // 1–100
+    pub apply_to_library_id: Option<i64>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Clone)]
+pub struct UpsertArtProfile {
+    pub name: String,
+    pub max_width_px: i64,
+    pub max_height_px: i64,
+    pub max_size_bytes: Option<i64>,
+    pub format: String,
+    pub quality: i64,
+    pub apply_to_library_id: Option<i64>,
+}

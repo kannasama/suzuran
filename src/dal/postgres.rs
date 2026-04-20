@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 
-use crate::{dal::{Store, UpsertEncodingProfile, UpsertTrack}, error::AppError, models::{EncodingProfile, Job, Library, OrganizationRule, Session, Setting, TagSuggestion, Theme, TotpEntry, Track, UpsertTagSuggestion, User, WebauthnChallenge, WebauthnCredential}};
+use crate::{dal::{Store, UpsertArtProfile, UpsertEncodingProfile, UpsertTrack}, error::AppError, models::{ArtProfile, EncodingProfile, Job, Library, OrganizationRule, Session, Setting, TagSuggestion, Theme, TotpEntry, Track, UpsertTagSuggestion, User, WebauthnChallenge, WebauthnCredential}};
 use sqlx::PgPool;
 
 pub struct PgStore {
@@ -754,6 +754,75 @@ impl Store for PgStore {
             .map_err(AppError::Database)?;
         if result.rows_affected() == 0 {
             return Err(AppError::NotFound(format!("encoding_profile {id}")));
+        }
+        Ok(())
+    }
+
+    // ── art profiles ──────────────────────────────────────────────
+
+    async fn create_art_profile(&self, dto: UpsertArtProfile) -> Result<ArtProfile, AppError> {
+        sqlx::query_as::<_, ArtProfile>(
+            "INSERT INTO art_profiles (name, max_width_px, max_height_px, max_size_bytes, format, quality, apply_to_library_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
+             RETURNING *",
+        )
+        .bind(dto.name)
+        .bind(dto.max_width_px)
+        .bind(dto.max_height_px)
+        .bind(dto.max_size_bytes)
+        .bind(dto.format)
+        .bind(dto.quality)
+        .bind(dto.apply_to_library_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(AppError::Database)
+    }
+
+    async fn get_art_profile(&self, id: i64) -> Result<ArtProfile, AppError> {
+        sqlx::query_as::<_, ArtProfile>("SELECT * FROM art_profiles WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or_else(|| AppError::NotFound(format!("art_profile {id}")))
+    }
+
+    async fn list_art_profiles(&self) -> Result<Vec<ArtProfile>, AppError> {
+        sqlx::query_as::<_, ArtProfile>("SELECT * FROM art_profiles ORDER BY name")
+            .fetch_all(&self.pool)
+            .await
+            .map_err(AppError::Database)
+    }
+
+    async fn update_art_profile(&self, id: i64, dto: UpsertArtProfile) -> Result<ArtProfile, AppError> {
+        sqlx::query_as::<_, ArtProfile>(
+            "UPDATE art_profiles
+             SET name=$1, max_width_px=$2, max_height_px=$3, max_size_bytes=$4, format=$5, quality=$6, apply_to_library_id=$7
+             WHERE id=$8
+             RETURNING *",
+        )
+        .bind(dto.name)
+        .bind(dto.max_width_px)
+        .bind(dto.max_height_px)
+        .bind(dto.max_size_bytes)
+        .bind(dto.format)
+        .bind(dto.quality)
+        .bind(dto.apply_to_library_id)
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(AppError::Database)?
+        .ok_or_else(|| AppError::NotFound(format!("art_profile {id}")))
+    }
+
+    async fn delete_art_profile(&self, id: i64) -> Result<(), AppError> {
+        let result = sqlx::query("DELETE FROM art_profiles WHERE id = $1")
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map_err(AppError::Database)?;
+        if result.rows_affected() == 0 {
+            return Err(AppError::NotFound(format!("art_profile {id}")));
         }
         Ok(())
     }

@@ -5,10 +5,11 @@ use chrono::{DateTime, Utc};
 
 use serde_json::Value as JsonValue;
 
-use crate::{error::AppError, models::{EncodingProfile, Job, Library, OrganizationRule, Session, Setting, TagSuggestion, Theme, TotpEntry, Track, User, WebauthnChallenge, WebauthnCredential}};
+use crate::{error::AppError, models::{ArtProfile, EncodingProfile, Job, Library, OrganizationRule, Session, Setting, TagSuggestion, Theme, TotpEntry, Track, User, WebauthnChallenge, WebauthnCredential}};
 
 pub use crate::models::UpsertTagSuggestion;
 pub use crate::models::UpsertEncodingProfile;
+pub use crate::models::UpsertArtProfile;
 
 pub struct UpsertTrack {
     pub library_id: i64,
@@ -231,6 +232,13 @@ pub trait Store: Send + Sync {
     async fn list_encoding_profiles(&self) -> Result<Vec<EncodingProfile>, AppError>;
     async fn update_encoding_profile(&self, id: i64, dto: UpsertEncodingProfile) -> Result<EncodingProfile, AppError>;
     async fn delete_encoding_profile(&self, id: i64) -> Result<(), AppError>;
+
+    // ── art profiles ──────────────────────────────────────────────
+    async fn create_art_profile(&self, dto: UpsertArtProfile) -> Result<ArtProfile, AppError>;
+    async fn get_art_profile(&self, id: i64) -> Result<ArtProfile, AppError>;
+    async fn list_art_profiles(&self) -> Result<Vec<ArtProfile>, AppError>;
+    async fn update_art_profile(&self, id: i64, dto: UpsertArtProfile) -> Result<ArtProfile, AppError>;
+    async fn delete_art_profile(&self, id: i64) -> Result<(), AppError>;
 
     // ── tag suggestions ───────────────────────────────────────────
     async fn create_tag_suggestion(&self, dto: UpsertTagSuggestion) -> Result<TagSuggestion, AppError>;
