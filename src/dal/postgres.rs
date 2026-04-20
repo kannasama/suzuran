@@ -1003,4 +1003,17 @@ impl Store for PgStore {
         }
         Ok(())
     }
+
+    async fn set_track_has_embedded_art(&self, track_id: i64, has_art: bool) -> Result<(), AppError> {
+        let result = sqlx::query("UPDATE tracks SET has_embedded_art = $1 WHERE id = $2")
+            .bind(has_art)
+            .bind(track_id)
+            .execute(&self.pool)
+            .await
+            .map_err(AppError::Database)?;
+        if result.rows_affected() == 0 {
+            return Err(AppError::NotFound(format!("track {track_id}")));
+        }
+        Ok(())
+    }
 }

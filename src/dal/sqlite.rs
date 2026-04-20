@@ -1054,4 +1054,18 @@ impl Store for SqliteStore {
         }
         Ok(())
     }
+
+    async fn set_track_has_embedded_art(&self, track_id: i64, has_art: bool) -> Result<(), AppError> {
+        let has_art_int: i64 = if has_art { 1 } else { 0 };
+        let result = sqlx::query("UPDATE tracks SET has_embedded_art = ?1 WHERE id = ?2")
+            .bind(has_art_int)
+            .bind(track_id)
+            .execute(&self.pool)
+            .await
+            .map_err(AppError::Database)?;
+        if result.rows_affected() == 0 {
+            return Err(AppError::NotFound(format!("track {track_id}")));
+        }
+        Ok(())
+    }
 }

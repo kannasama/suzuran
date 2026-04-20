@@ -5,6 +5,7 @@ use tokio::sync::Semaphore;
 use crate::{
     dal::Store,
     jobs::{
+        art_process::ArtProcessJobHandler,
         cue_split::CueSplitJobHandler,
         fingerprint::FingerprintJobHandler,
         freedb_lookup::FreedBLookupJobHandler,
@@ -37,6 +38,7 @@ impl Scheduler {
         handlers.insert("freedb_lookup", Arc::new(FreedBLookupJobHandler::new(freedb_service)));
         handlers.insert("cue_split", Arc::new(CueSplitJobHandler::new(db.clone())));
         handlers.insert("transcode", Arc::new(TranscodeJobHandler::new(db.clone())));
+        handlers.insert("art_process", Arc::new(ArtProcessJobHandler::new(db.clone())));
 
         let mut semaphores: HashMap<&'static str, Arc<Semaphore>> = HashMap::new();
         semaphores.insert("scan",          Arc::new(Semaphore::new(DEFAULT_SCAN_CONCURRENCY)));

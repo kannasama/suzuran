@@ -1,3 +1,4 @@
+pub mod art_process;
 pub mod cue_split;
 pub mod fingerprint;
 pub mod freedb_lookup;
@@ -48,4 +49,16 @@ pub struct CueSplitPayload {
 pub struct TranscodePayload {
     pub source_track_id: i64,
     pub target_library_id: i64,
+}
+
+/// Payload for the `art_process` job type.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ArtProcessPayload {
+    pub track_id: i64,
+    /// One of: "embed", "extract", "standardize"
+    pub action: String,
+    /// URL to download art from (required for "embed")
+    pub source_url: Option<String>,
+    /// Art profile ID to use for "standardize" (optional — uses defaults if absent)
+    pub art_profile_id: Option<i64>,
 }
