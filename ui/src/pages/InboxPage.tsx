@@ -18,6 +18,9 @@ export default function InboxPage() {
       qc.invalidateQueries({ queryKey: ['tag-suggestions'] });
       qc.invalidateQueries({ queryKey: ['inbox-count'] });
     },
+    onError: (err) => {
+      console.error('Failed to accept suggestion:', err);
+    },
   });
 
   const reject = useMutation({
@@ -25,6 +28,9 @@ export default function InboxPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['tag-suggestions'] });
       qc.invalidateQueries({ queryKey: ['inbox-count'] });
+    },
+    onError: (err) => {
+      console.error('Failed to reject suggestion:', err);
     },
   });
 
@@ -34,10 +40,18 @@ export default function InboxPage() {
       qc.invalidateQueries({ queryKey: ['tag-suggestions'] });
       qc.invalidateQueries({ queryKey: ['inbox-count'] });
     },
+    onError: (err) => {
+      console.error('Failed to batch-accept suggestions:', err);
+    },
   });
 
   if (isLoading) {
-    return <div className="p-4 text-text-muted text-sm">Loading…</div>;
+    return (
+      <>
+        <TopNav />
+        <div className="p-4 text-text-muted text-sm">Loading…</div>
+      </>
+    );
   }
 
   return (
@@ -74,7 +88,10 @@ export default function InboxPage() {
                 suggestion={s}
                 onAccept={() => accept.mutate(s.id)}
                 onReject={() => reject.mutate(s.id)}
-                isPending={accept.isPending || reject.isPending}
+                isPending={
+                  (accept.isPending && accept.variables === s.id) ||
+                  (reject.isPending && reject.variables === s.id)
+                }
               />
             ))
           )}
