@@ -4,7 +4,14 @@ use tokio::sync::Semaphore;
 
 use crate::{
     dal::Store,
-    jobs::{fingerprint::FingerprintJobHandler, organize::OrganizeJobHandler, scan::ScanJobHandler, JobHandler},
+    jobs::{
+        fingerprint::FingerprintJobHandler,
+        mb_lookup::MbLookupJobHandler,
+        organize::OrganizeJobHandler,
+        scan::ScanJobHandler,
+        JobHandler,
+    },
+    services::musicbrainz::MusicBrainzService,
 };
 
 const DEFAULT_SCAN_CONCURRENCY: usize = 2;
@@ -18,11 +25,12 @@ pub struct Scheduler {
 }
 
 impl Scheduler {
-    pub fn new(db: Arc<dyn Store>) -> Self {
+    pub fn new(db: Arc<dyn Store>, mb_service: Arc<MusicBrainzService>) -> Self {
         let mut handlers: HashMap<&'static str, Arc<dyn JobHandler>> = HashMap::new();
         handlers.insert("scan", Arc::new(ScanJobHandler));
         handlers.insert("fingerprint", Arc::new(FingerprintJobHandler));
         handlers.insert("organize", Arc::new(OrganizeJobHandler));
+        handlers.insert("mb_lookup", Arc::new(MbLookupJobHandler::new(mb_service)));
 
         let mut semaphores: HashMap<&'static str, Arc<Semaphore>> = HashMap::new();
         semaphores.insert("scan",        Arc::new(Semaphore::new(DEFAULT_SCAN_CONCURRENCY)));

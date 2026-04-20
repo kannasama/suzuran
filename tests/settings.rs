@@ -2,7 +2,7 @@ use std::sync::Arc;
 use url::Url;
 use webauthn_rs::WebauthnBuilder;
 
-use suzuran_server::{build_router, config::Config, dal::sqlite::SqliteStore, state::AppState};
+use suzuran_server::{build_router, config::Config, dal::sqlite::SqliteStore, services::musicbrainz::MusicBrainzService, state::AppState};
 
 async fn spawn_test_server() -> String {
     let store = SqliteStore::new("sqlite::memory:").await.unwrap();
@@ -24,7 +24,8 @@ async fn spawn_test_server() -> String {
         rp_origin: "http://localhost:3000".into(),
     };
 
-    let state = AppState::new(Arc::new(store), config, webauthn);
+    let mb_service = Arc::new(MusicBrainzService::new(String::new()));
+    let state = AppState::new(Arc::new(store), config, webauthn, mb_service);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     tokio::spawn(async move { axum::serve(listener, build_router(state)).await.unwrap() });

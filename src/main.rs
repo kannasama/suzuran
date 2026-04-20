@@ -10,6 +10,7 @@ use suzuran_server::{
     config::Config,
     dal::{postgres::PgStore, sqlite::SqliteStore},
     scheduler::Scheduler,
+    services::musicbrainz::MusicBrainzService,
     state::AppState,
 };
 
@@ -49,10 +50,13 @@ async fn main() -> anyhow::Result<()> {
         .build()
         .context("Webauthn build failed")?;
 
-    let state = AppState::new(db.clone(), config.clone(), webauthn);
+    let acoustid_key = std::env::var("ACOUSTID_KEY").unwrap_or_default();
+    let mb_service = Arc::new(MusicBrainzService::new(acoustid_key));
+
+    let state = AppState::new(db.clone(), config.clone(), webauthn, mb_service.clone());
 
     // Spawn job scheduler
-    let scheduler = Arc::new(Scheduler::new(db));
+    let scheduler = Arc::new(Scheduler::new(db, mb_service.clone()));
     tokio::spawn({
         let s = scheduler.clone();
         async move { s.run().await }

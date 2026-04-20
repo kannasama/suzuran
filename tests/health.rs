@@ -6,6 +6,7 @@ use suzuran_server::{
     build_router,
     config::Config,
     dal::sqlite::SqliteStore,
+    services::musicbrainz::MusicBrainzService,
     state::AppState,
 };
 
@@ -33,7 +34,8 @@ async fn test_app() -> axum::Router {
         rp_origin: "http://localhost:3000".into(),
     };
 
-    let state = AppState::new(Arc::new(store), config, test_webauthn());
+    let mb_service = Arc::new(MusicBrainzService::new(String::new()));
+    let state = AppState::new(Arc::new(store), config, test_webauthn(), mb_service);
     build_router(state)
 }
 

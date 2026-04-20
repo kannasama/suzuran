@@ -139,16 +139,27 @@ impl MusicBrainzService {
     }
 
     pub async fn get_recording(&self, recording_id: &str) -> anyhow::Result<MbRecording> {
-        // Rate-limit: MusicBrainz allows max 1 req/sec
-        {
+        // Rate-limit: MusicBrainz allows max 1 req/sec.
+        // Compute the required sleep duration while holding the lock, then drop
+        // the guard before awaiting so that the MutexGuard is not held across
+        // an await point (which would make the future non-Send).
+        let sleep_duration = {
             let mut last = self.last_mb_request.lock().unwrap();
-            if let Some(t) = *last {
+            let dur = last.map(|t| {
                 let elapsed = t.elapsed();
                 if elapsed < Duration::from_millis(MB_RATE_LIMIT_MS) {
-                    sleep(Duration::from_millis(MB_RATE_LIMIT_MS) - elapsed).await;
+                    Duration::from_millis(MB_RATE_LIMIT_MS) - elapsed
+                } else {
+                    Duration::ZERO
                 }
-            }
+            });
             *last = Some(Instant::now());
+            dur
+        };
+        if let Some(d) = sleep_duration {
+            if d > Duration::ZERO {
+                sleep(d).await;
+            }
         }
         let url = format!("{}/recording/{}", self.mb_base, recording_id);
         let rec = self.client

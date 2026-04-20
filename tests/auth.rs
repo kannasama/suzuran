@@ -6,6 +6,7 @@ use suzuran_server::{
     build_router,
     config::Config,
     dal::sqlite::SqliteStore,
+    services::musicbrainz::MusicBrainzService,
     state::AppState,
 };
 
@@ -32,7 +33,8 @@ async fn spawn_test_server() -> String {
         rp_id: "localhost".into(),
         rp_origin: "http://localhost:3000".into(),
     };
-    let state = AppState::new(Arc::new(store), config, test_webauthn());
+    let mb_service = Arc::new(MusicBrainzService::new(String::new()));
+    let state = AppState::new(Arc::new(store), config, test_webauthn(), mb_service);
     let app = build_router(state);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

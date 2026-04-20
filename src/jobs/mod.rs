@@ -1,6 +1,7 @@
 pub mod scan;
 pub mod organize;
 pub mod fingerprint;
+pub mod mb_lookup;
 
 use std::sync::Arc;
 

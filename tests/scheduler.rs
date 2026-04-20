@@ -3,6 +3,7 @@ use url::Url;
 use webauthn_rs::WebauthnBuilder;
 use suzuran_server::{
     build_router, config::Config, dal::{sqlite::SqliteStore, Store}, scheduler::Scheduler,
+    services::musicbrainz::MusicBrainzService,
     state::AppState,
 };
 
@@ -24,10 +25,11 @@ async fn spawn_test_server() -> String {
     };
 
     let db: Arc<dyn Store> = store.clone();
-    let state = AppState::new(db.clone(), config, webauthn);
+    let mb_service = Arc::new(MusicBrainzService::new(String::new()));
+    let state = AppState::new(db.clone(), config, webauthn, mb_service.clone());
 
     // Spawn scheduler against the same DB
-    let scheduler = Arc::new(Scheduler::new(db));
+    let scheduler = Arc::new(Scheduler::new(db, mb_service));
     tokio::spawn({ let s = scheduler.clone(); async move { s.run().await } });
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
