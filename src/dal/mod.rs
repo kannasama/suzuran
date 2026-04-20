@@ -5,11 +5,12 @@ use chrono::{DateTime, Utc};
 
 use serde_json::Value as JsonValue;
 
-use crate::{error::AppError, models::{ArtProfile, EncodingProfile, Job, Library, OrganizationRule, Session, Setting, TagSuggestion, Theme, TotpEntry, Track, TrackLink, User, WebauthnChallenge, WebauthnCredential}};
+use crate::{error::AppError, models::{ArtProfile, EncodingProfile, Job, Library, OrganizationRule, Session, Setting, TagSuggestion, Theme, TotpEntry, Track, TrackLink, User, VirtualLibrary, VirtualLibrarySource, VirtualLibraryTrack, WebauthnChallenge, WebauthnCredential}};
 
 pub use crate::models::UpsertTagSuggestion;
 pub use crate::models::UpsertEncodingProfile;
 pub use crate::models::UpsertArtProfile;
+pub use crate::models::UpsertVirtualLibrary;
 
 #[derive(Default)]
 pub struct UpsertTrack {
@@ -274,4 +275,20 @@ pub trait Store: Send + Sync {
     async fn pending_tag_suggestion_count(&self) -> Result<i64, AppError>;
     async fn update_track_tags(&self, track_id: i64, tags: serde_json::Value) -> Result<(), AppError>;
     async fn set_track_has_embedded_art(&self, track_id: i64, has_art: bool) -> Result<(), AppError>;
+
+    // ── virtual libraries ─────────────────────────────────────────
+    async fn create_virtual_library(&self, dto: UpsertVirtualLibrary) -> Result<VirtualLibrary, AppError>;
+    async fn get_virtual_library(&self, id: i64) -> Result<VirtualLibrary, AppError>;
+    async fn list_virtual_libraries(&self) -> Result<Vec<VirtualLibrary>, AppError>;
+    async fn update_virtual_library(&self, id: i64, dto: UpsertVirtualLibrary) -> Result<VirtualLibrary, AppError>;
+    async fn delete_virtual_library(&self, id: i64) -> Result<(), AppError>;
+
+    /// Replace the full source list atomically (delete old + insert new in a transaction).
+    /// `sources` contains `(library_id, priority)` tuples.
+    async fn set_virtual_library_sources(&self, id: i64, sources: &[(i64, i64)]) -> Result<(), AppError>;
+    async fn list_virtual_library_sources(&self, id: i64) -> Result<Vec<VirtualLibrarySource>, AppError>;
+
+    async fn upsert_virtual_library_track(&self, vlib_id: i64, track_id: i64, link_path: &str) -> Result<(), AppError>;
+    async fn list_virtual_library_tracks(&self, vlib_id: i64) -> Result<Vec<VirtualLibraryTrack>, AppError>;
+    async fn clear_virtual_library_tracks(&self, vlib_id: i64) -> Result<(), AppError>;
 }

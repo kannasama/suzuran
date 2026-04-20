@@ -43,8 +43,8 @@ docker compose logs -f app
 | `src/config.rs` | `Config` struct — `from_env()` reads `DATABASE_URL`, `JWT_SECRET`, `PORT`, `LOG_LEVEL`, `RP_ID`, `RP_ORIGIN` |
 | `src/error.rs` | `AppError` enum — `IntoResponse` impl; maps DB/internal errors to JSON |
 | `src/state.rs` | `AppState` — holds `Arc<dyn Store>`, `Arc<Config>`, `Arc<Webauthn>`, `Arc<MusicBrainzService>`, `Arc<FreedBService>`, shared via Axum `State` extractor |
-| `src/models/mod.rs` | `User`, `Session`, `TotpEntry`, `WebauthnCredential`, `WebauthnChallenge`, `Setting`, `Theme`, `Library` (includes `normalize_on_ingest: bool`), `Track` (includes `bit_depth: Option<i64>`), `Job`, `OrganizationRule`, `TagSuggestion`, `UpsertTagSuggestion`, `EncodingProfile`, `UpsertEncodingProfile`, `ArtProfile`, `UpsertArtProfile`, `TrackLink` with `sqlx::FromRow` and `serde` derives |
-| `src/dal/mod.rs` | `Store` trait + `UpsertTrack` DTO (derives `Default`; includes `bit_depth: Option<i64>`) — health check, user/session CRUD, TOTP CRUD, WebAuthn credential/challenge CRUD, settings/themes CRUD, library/track CRUD (incl. `update_track_path(id, relative_path, file_hash)`, `update_track_fingerprint`, `update_track_tags`, `set_library_encoding_profile`, `set_track_has_embedded_art`, `list_child_libraries`; `update_library` now takes `normalize_on_ingest: bool`), job queue CRUD (incl. `list_jobs_by_type_and_payload_key`), organization rule CRUD, tag suggestion CRUD, encoding profile CRUD, art profile CRUD (`create`, `get`, `list`, `update`, `delete` with 404 guard), track link CRUD (`create_track_link`, `list_derived_tracks`, `list_source_tracks`); exports `UpsertTagSuggestion` + `UpsertEncodingProfile` + `UpsertArtProfile` |
+| `src/models/mod.rs` | `User`, `Session`, `TotpEntry`, `WebauthnCredential`, `WebauthnChallenge`, `Setting`, `Theme`, `Library` (includes `normalize_on_ingest: bool`), `Track` (includes `bit_depth: Option<i64>`), `Job`, `OrganizationRule`, `TagSuggestion`, `UpsertTagSuggestion`, `EncodingProfile`, `UpsertEncodingProfile`, `ArtProfile`, `UpsertArtProfile`, `TrackLink`, `VirtualLibrary`, `UpsertVirtualLibrary`, `VirtualLibrarySource`, `VirtualLibraryTrack` with `sqlx::FromRow` and `serde` derives |
+| `src/dal/mod.rs` | `Store` trait + `UpsertTrack` DTO (derives `Default`; includes `bit_depth: Option<i64>`) — health check, user/session CRUD, TOTP CRUD, WebAuthn credential/challenge CRUD, settings/themes CRUD, library/track CRUD (incl. `update_track_path(id, relative_path, file_hash)`, `update_track_fingerprint`, `update_track_tags`, `set_library_encoding_profile`, `set_track_has_embedded_art`, `list_child_libraries`; `update_library` now takes `normalize_on_ingest: bool`), job queue CRUD (incl. `list_jobs_by_type_and_payload_key`), organization rule CRUD, tag suggestion CRUD, encoding profile CRUD, art profile CRUD (`create`, `get`, `list`, `update`, `delete` with 404 guard), track link CRUD (`create_track_link`, `list_derived_tracks`, `list_source_tracks`), virtual library CRUD + sources (`set_virtual_library_sources` atomic, `list_virtual_library_sources` ordered by priority) + tracks (`upsert_virtual_library_track`, `list_virtual_library_tracks`, `clear_virtual_library_tracks`); exports `UpsertTagSuggestion` + `UpsertEncodingProfile` + `UpsertArtProfile` + `UpsertVirtualLibrary` |
 | `src/dal/postgres.rs` | `PgStore` — Postgres impl of `Store`; runs migrations; library + track queries |
 | `src/dal/sqlite.rs` | `SqliteStore` — SQLite impl of `Store`; runs migrations; library + track queries |
 | `src/organizer/mod.rs` | Organizer module root — re-exports `conditions`, `rules`, and `template` submodules |
@@ -131,6 +131,7 @@ docker compose logs -f app
 | `tests/transcode_api.rs` | Integration tests for transcode REST API — auth guards (401), 404 on missing track, single-track enqueue, library bulk enqueue (count), transcode-sync skips already-linked tracks |
 | `tests/art_api.rs` | Integration tests for art REST API — auth guards (401) for all 4 endpoints, 404 on missing track, embed/extract/standardize enqueue jobs, library standardize filters by has_embedded_art (count) |
 | `tests/normalize_job.rs` | Tests for `NormalizeJobHandler` — skips when `normalize_on_ingest=false`, skips when already correct format, skips when no encoding profile; all skip paths enqueue `mb_lookup`; fingerprint chaining verification |
+| `tests/virtual_libraries_dal.rs` | DAL tests for virtual libraries — CRUD flow with `UpsertVirtualLibrary`, atomic source replacement (`set_virtual_library_sources` with priority ordering), track upsert/list/clear |
 
 ## Migrations
 
@@ -155,6 +156,8 @@ docker compose logs -f app
 | `0015_tracks_add_bit_depth.sql` | `ALTER TABLE tracks ADD COLUMN IF NOT EXISTS bit_depth INTEGER` |
 | `0016_libraries_normalize_on_ingest.sql` | `ALTER TABLE libraries ADD COLUMN IF NOT EXISTS normalize_on_ingest BOOLEAN NOT NULL DEFAULT FALSE` |
 | `0017_jobs_add_normalize.sql` | Expands `job_type` CHECK constraint to include `normalize` via ALTER TABLE DROP/ADD CONSTRAINT |
+| `0018_virtual_libraries.sql` | `virtual_libraries` (BIGSERIAL id, name, root_path, link_type CHECK symlink/hardlink, created_at), `virtual_library_sources` (composite PK, priority, FK to libraries), `virtual_library_tracks` (composite PK, link_path, FK to tracks ON DELETE CASCADE), `idx_vls_priority` index |
+| `0019_jobs_add_virtual_sync.sql` | Expands `job_type` CHECK constraint to include `virtual_sync` via ALTER TABLE DROP/ADD CONSTRAINT |
 
 ### `migrations/sqlite/`
 
@@ -177,6 +180,8 @@ docker compose logs -f app
 | `0015_tracks_add_bit_depth.sql` | `ALTER TABLE tracks ADD COLUMN bit_depth INTEGER` |
 | `0016_libraries_normalize_on_ingest.sql` | `ALTER TABLE libraries ADD COLUMN normalize_on_ingest INTEGER NOT NULL DEFAULT 0` |
 | `0017_jobs_add_normalize.sql` | Recreates `jobs` table to add `normalize` to the `job_type` CHECK constraint |
+| `0018_virtual_libraries.sql` | `virtual_libraries` (INTEGER id AUTOINCREMENT, name, root_path, link_type CHECK symlink/hardlink, created_at TEXT), `virtual_library_sources` (composite PK, priority, FK to libraries), `virtual_library_tracks` (composite PK, link_path, FK to tracks ON DELETE CASCADE), `idx_vls_priority` index |
+| `0019_jobs_add_virtual_sync.sql` | Recreates `jobs` table to add `virtual_sync` to the `job_type` CHECK constraint |
 
 ## Directories
 

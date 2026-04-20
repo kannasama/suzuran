@@ -228,3 +228,33 @@ pub struct UpsertArtProfile {
     pub quality: i64,
     pub apply_to_library_id: Option<i64>,
 }
+
+#[derive(Debug, Clone, sqlx::FromRow, serde::Serialize, serde::Deserialize)]
+pub struct VirtualLibrary {
+    pub id: i64,
+    pub name: String,
+    pub root_path: String,
+    pub link_type: String,   // "symlink" | "hardlink"
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Clone)]
+pub struct UpsertVirtualLibrary {
+    pub name: String,
+    pub root_path: String,
+    pub link_type: String,
+}
+
+#[derive(Debug, Clone, sqlx::FromRow, serde::Serialize, serde::Deserialize)]
+pub struct VirtualLibrarySource {
+    pub virtual_library_id: i64,
+    pub library_id: i64,
+    pub priority: i64,
+}
+
+#[derive(Debug, Clone, sqlx::FromRow, serde::Serialize, serde::Deserialize)]
+pub struct VirtualLibraryTrack {
+    pub virtual_library_id: i64,
+    pub source_track_id: i64,
+    pub link_path: String,
+}

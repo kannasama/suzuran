@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 
-use crate::{dal::{Store, UpsertArtProfile, UpsertEncodingProfile, UpsertTrack}, error::AppError, models::{ArtProfile, EncodingProfile, Job, Library, OrganizationRule, Session, Setting, TagSuggestion, Theme, TotpEntry, Track, TrackLink, UpsertTagSuggestion, User, WebauthnChallenge, WebauthnCredential}};
+use crate::{dal::{Store, UpsertArtProfile, UpsertEncodingProfile, UpsertTrack, UpsertVirtualLibrary}, error::AppError, models::{ArtProfile, EncodingProfile, Job, Library, OrganizationRule, Session, Setting, TagSuggestion, Theme, TotpEntry, Track, TrackLink, UpsertTagSuggestion, User, VirtualLibrary, VirtualLibrarySource, VirtualLibraryTrack, WebauthnChallenge, WebauthnCredential}};
 use sqlx::PgPool;
 
 pub struct PgStore {
@@ -1029,5 +1029,133 @@ impl Store for PgStore {
             return Err(AppError::NotFound(format!("track {track_id}")));
         }
         Ok(())
+    }
+
+    // ── virtual libraries ─────────────────────────────────────────
+
+    async fn create_virtual_library(&self, dto: UpsertVirtualLibrary) -> Result<VirtualLibrary, AppError> {
+        sqlx::query_as::<_, VirtualLibrary>(
+            "INSERT INTO virtual_libraries (name, root_path, link_type)
+             VALUES ($1, $2, $3)
+             RETURNING *",
+        )
+        .bind(dto.name)
+        .bind(dto.root_path)
+        .bind(dto.link_type)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(AppError::Database)
+    }
+
+    async fn get_virtual_library(&self, id: i64) -> Result<VirtualLibrary, AppError> {
+        sqlx::query_as::<_, VirtualLibrary>("SELECT * FROM virtual_libraries WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or_else(|| AppError::NotFound(format!("virtual_library {id}")))
+    }
+
+    async fn list_virtual_libraries(&self) -> Result<Vec<VirtualLibrary>, AppError> {
+        sqlx::query_as::<_, VirtualLibrary>("SELECT * FROM virtual_libraries ORDER BY name")
+            .fetch_all(&self.pool)
+            .await
+            .map_err(AppError::Database)
+    }
+
+    async fn update_virtual_library(&self, id: i64, dto: UpsertVirtualLibrary) -> Result<VirtualLibrary, AppError> {
+        sqlx::query_as::<_, VirtualLibrary>(
+            "UPDATE virtual_libraries SET name=$1, root_path=$2, link_type=$3
+             WHERE id=$4
+             RETURNING *",
+        )
+        .bind(dto.name)
+        .bind(dto.root_path)
+        .bind(dto.link_type)
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(AppError::Database)?
+        .ok_or_else(|| AppError::NotFound(format!("virtual_library {id}")))
+    }
+
+    async fn delete_virtual_library(&self, id: i64) -> Result<(), AppError> {
+        sqlx::query("DELETE FROM virtual_libraries WHERE id = $1")
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map(|_| ())
+            .map_err(AppError::Database)
+    }
+
+    async fn set_virtual_library_sources(&self, id: i64, sources: &[(i64, i64)]) -> Result<(), AppError> {
+        let mut tx = self.pool.begin().await.map_err(AppError::Database)?;
+
+        sqlx::query("DELETE FROM virtual_library_sources WHERE virtual_library_id = $1")
+            .bind(id)
+            .execute(&mut *tx)
+            .await
+            .map_err(AppError::Database)?;
+
+        for (library_id, priority) in sources {
+            sqlx::query(
+                "INSERT INTO virtual_library_sources (virtual_library_id, library_id, priority)
+                 VALUES ($1, $2, $3)",
+            )
+            .bind(id)
+            .bind(library_id)
+            .bind(priority)
+            .execute(&mut *tx)
+            .await
+            .map_err(AppError::Database)?;
+        }
+
+        tx.commit().await.map_err(AppError::Database)
+    }
+
+    async fn list_virtual_library_sources(&self, id: i64) -> Result<Vec<VirtualLibrarySource>, AppError> {
+        sqlx::query_as::<_, VirtualLibrarySource>(
+            "SELECT * FROM virtual_library_sources
+             WHERE virtual_library_id = $1
+             ORDER BY priority ASC",
+        )
+        .bind(id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(AppError::Database)
+    }
+
+    async fn upsert_virtual_library_track(&self, vlib_id: i64, track_id: i64, link_path: &str) -> Result<(), AppError> {
+        sqlx::query(
+            "INSERT INTO virtual_library_tracks (virtual_library_id, source_track_id, link_path)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (virtual_library_id, source_track_id) DO UPDATE SET link_path = $3",
+        )
+        .bind(vlib_id)
+        .bind(track_id)
+        .bind(link_path)
+        .execute(&self.pool)
+        .await
+        .map(|_| ())
+        .map_err(AppError::Database)
+    }
+
+    async fn list_virtual_library_tracks(&self, vlib_id: i64) -> Result<Vec<VirtualLibraryTrack>, AppError> {
+        sqlx::query_as::<_, VirtualLibraryTrack>(
+            "SELECT * FROM virtual_library_tracks WHERE virtual_library_id = $1 ORDER BY source_track_id",
+        )
+        .bind(vlib_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(AppError::Database)
+    }
+
+    async fn clear_virtual_library_tracks(&self, vlib_id: i64) -> Result<(), AppError> {
+        sqlx::query("DELETE FROM virtual_library_tracks WHERE virtual_library_id = $1")
+            .bind(vlib_id)
+            .execute(&self.pool)
+            .await
+            .map(|_| ())
+            .map_err(AppError::Database)
     }
 }
