@@ -345,6 +345,56 @@ async fn test_accept_unknown_returns_404() {
     assert_eq!(resp.status(), 404);
 }
 
+#[tokio::test]
+async fn test_accept_already_accepted_returns_409() {
+    let (base, store) = spawn_test_server_with_store().await;
+    let client = login_admin(&base).await;
+
+    let track_id = seed_track(&store).await;
+    let suggestion_id = seed_suggestion(&store, track_id, 0.9).await;
+
+    // First accept — must succeed
+    let resp = client
+        .post(format!("{base}/api/v1/tag-suggestions/{suggestion_id}/accept"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+
+    // Second accept on the same suggestion — must return 409 Conflict
+    let resp = client
+        .post(format!("{base}/api/v1/tag-suggestions/{suggestion_id}/accept"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 409);
+}
+
+#[tokio::test]
+async fn test_reject_already_rejected_returns_409() {
+    let (base, store) = spawn_test_server_with_store().await;
+    let client = login_admin(&base).await;
+
+    let track_id = seed_track(&store).await;
+    let suggestion_id = seed_suggestion(&store, track_id, 0.9).await;
+
+    // First reject — must succeed
+    let resp = client
+        .post(format!("{base}/api/v1/tag-suggestions/{suggestion_id}/reject"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+
+    // Second reject on the same suggestion — must return 409 Conflict
+    let resp = client
+        .post(format!("{base}/api/v1/tag-suggestions/{suggestion_id}/reject"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 409);
+}
+
 // ── batch-accept ─────────────────────────────────────────────────────────────
 
 #[tokio::test]
