@@ -4,6 +4,7 @@ pub mod libraries;
 pub mod middleware;
 pub mod organization_rules;
 pub mod settings;
+pub mod tag_suggestions;
 pub mod themes;
 pub mod totp;
 pub mod tracks;
@@ -23,4 +24,5 @@ pub fn api_router(_state: AppState) -> Router<AppState> {
         .nest("/jobs", jobs::router())
         .nest("/tracks", tracks::router())
         .nest("/organization-rules", organization_rules::router())
+        .nest("/tag-suggestions", tag_suggestions::router())
 }

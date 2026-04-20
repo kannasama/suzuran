@@ -226,7 +226,7 @@ pub trait Store: Send + Sync {
     // ── tag suggestions ───────────────────────────────────────────
     async fn create_tag_suggestion(&self, dto: UpsertTagSuggestion) -> Result<TagSuggestion, AppError>;
     async fn list_pending_tag_suggestions(&self, track_id: Option<i64>) -> Result<Vec<TagSuggestion>, AppError>;
-    async fn get_tag_suggestion(&self, id: i64) -> Result<TagSuggestion, AppError>;
+    async fn get_tag_suggestion(&self, id: i64) -> Result<Option<TagSuggestion>, AppError>;
     async fn set_tag_suggestion_status(&self, id: i64, status: &str) -> Result<(), AppError>;
     async fn pending_tag_suggestion_count(&self) -> Result<i64, AppError>;
 }

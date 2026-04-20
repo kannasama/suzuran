@@ -101,7 +101,8 @@ async fn test_get_tag_suggestion() {
         cover_art_url: Some("https://example.com/art.jpg".into()),
     }).await.unwrap();
 
-    let fetched = store.get_tag_suggestion(s.id).await.unwrap();
+    let fetched = store.get_tag_suggestion(s.id).await.unwrap()
+        .expect("tag suggestion should exist");
     assert_eq!(fetched.id, s.id);
     assert_eq!(fetched.source, "acoustid");
     assert_eq!(fetched.cover_art_url, Some("https://example.com/art.jpg".into()));

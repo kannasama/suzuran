@@ -758,22 +758,25 @@ impl Store for SqliteStore {
         }
     }
 
-    async fn get_tag_suggestion(&self, id: i64) -> Result<TagSuggestion, AppError> {
+    async fn get_tag_suggestion(&self, id: i64) -> Result<Option<TagSuggestion>, AppError> {
         sqlx::query_as::<_, TagSuggestion>("SELECT * FROM tag_suggestions WHERE id = ?1")
             .bind(id)
-            .fetch_one(&self.pool)
+            .fetch_optional(&self.pool)
             .await
             .map_err(AppError::Database)
     }
 
     async fn set_tag_suggestion_status(&self, id: i64, status: &str) -> Result<(), AppError> {
-        sqlx::query("UPDATE tag_suggestions SET status = ?1 WHERE id = ?2")
+        let result = sqlx::query("UPDATE tag_suggestions SET status = ?1 WHERE id = ?2")
             .bind(status)
             .bind(id)
             .execute(&self.pool)
             .await
-            .map(|_| ())
-            .map_err(AppError::Database)
+            .map_err(AppError::Database)?;
+        if result.rows_affected() == 0 {
+            return Err(AppError::NotFound(format!("tag_suggestion {id} not found")));
+        }
+        Ok(())
     }
 
     async fn pending_tag_suggestion_count(&self) -> Result<i64, AppError> {
