@@ -4,6 +4,17 @@ All notable changes to suzuran will be documented in this file.
 
 ## [Unreleased]
 
+## [v0.3.0] — 2026-04-20
+
+### Added
+- Acoustic fingerprinting via fpcalc (Chromaprint) — runs automatically after scan for new tracks
+- AcoustID + MusicBrainz metadata lookup job chain — suggestions written to `tag_suggestions` table
+- gnudb.org (FreeDB) disc-ID lookup fallback — activates when DISCID tag present, mb_lookup finds no matches
+- Tag suggestions REST API (`/api/v1/tag-suggestions`) — list, accept, reject, batch-accept
+- Tagging service — apply_suggestion merges and writes tags to audio file via lofty, syncs DB
+- Inbox UI — nav badge with live count, suggestion cards with tag diff view and cover art
+- Batch accept action (≥ 80% confidence default)
+
 ## [0.1.1] — Phase 1.1 Scaffold (2026-04-17)
 
 ### Added
