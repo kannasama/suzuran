@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use tempfile::TempDir;
-use suzuran_server::dal::{sqlite::SqliteStore, Store, UpsertTrack};
+use suzuran_server::dal::{sqlite::SqliteStore, Store, UpsertEncodingProfile, UpsertTrack};
 
 pub async fn make_db() -> Arc<dyn Store> {
     let store = SqliteStore::new("sqlite::memory:").await.unwrap();
@@ -270,4 +270,98 @@ pub async fn setup_with_track() -> (Arc<dyn Store>, i64) {
         .unwrap();
 
     (db, track.id)
+}
+
+/// Set up an in-memory DB with:
+/// - A source library (FLAC) containing one AAC track with no encoding profile
+/// - A target library (aac) with no encoding_profile_id
+/// Returns `(store, source_track_id, target_library_id)`.
+#[allow(dead_code)]
+pub async fn setup_transcode_scenario_no_profile() -> (Arc<dyn Store>, i64, i64) {
+    let db = make_db().await;
+
+    let src_lib = db
+        .create_library("Source", "/music/source", "flac", None)
+        .await
+        .unwrap();
+
+    let track = db
+        .upsert_track(UpsertTrack {
+            library_id: src_lib.id,
+            relative_path: "artist/album/01 - Song.flac".into(),
+            file_hash: "transcode_src_hash_001".into(),
+            title: Some("Song".into()),
+            artist: Some("Artist".into()),
+            sample_rate: Some(44100),
+            bit_depth: Some(16),
+            bitrate: Some(1000),
+            tags: serde_json::json!({}),
+            ..UpsertTrack::default()
+        })
+        .await
+        .unwrap();
+
+    let tgt_lib = db
+        .create_library("Target AAC", "/music/target", "aac", None)
+        .await
+        .unwrap();
+    // target library intentionally has no encoding_profile_id
+
+    (db, track.id, tgt_lib.id)
+}
+
+/// Set up an in-memory DB with:
+/// - A source library containing one AAC track (lossy)
+/// - A target library with a FLAC encoding profile (lossless)
+/// This scenario should be skipped by the transcode job (lossy → lossless guard).
+/// Returns `(store, source_track_id, target_library_id)`.
+#[allow(dead_code)]
+pub async fn setup_transcode_lossy_to_lossless_scenario() -> (Arc<dyn Store>, i64, i64) {
+    let db = make_db().await;
+
+    let src_lib = db
+        .create_library("Source AAC", "/music/source_aac", "aac", None)
+        .await
+        .unwrap();
+
+    let track = db
+        .upsert_track(UpsertTrack {
+            library_id: src_lib.id,
+            relative_path: "01 - Song.aac".into(),
+            file_hash: "transcode_aac_hash_001".into(),
+            title: Some("Song".into()),
+            artist: Some("Artist".into()),
+            sample_rate: Some(44100),
+            bit_depth: None,
+            bitrate: Some(256),
+            tags: serde_json::json!({}),
+            ..UpsertTrack::default()
+        })
+        .await
+        .unwrap();
+
+    let tgt_lib = db
+        .create_library("Target FLAC", "/music/target_flac", "flac", None)
+        .await
+        .unwrap();
+
+    // Create a FLAC encoding profile and attach to target library
+    let flac_profile = db
+        .create_encoding_profile(UpsertEncodingProfile {
+            name: "FLAC Lossless".into(),
+            codec: "flac".into(),
+            bitrate: None,
+            sample_rate: None,
+            channels: None,
+            bit_depth: None,
+            advanced_args: None,
+        })
+        .await
+        .unwrap();
+
+    db.set_library_encoding_profile(tgt_lib.id, Some(flac_profile.id))
+        .await
+        .unwrap();
+
+    (db, track.id, tgt_lib.id)
 }

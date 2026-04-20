@@ -434,6 +434,20 @@ impl Store for PgStore {
             .bind(id).execute(&self.pool).await.map(|_| ()).map_err(AppError::Database)
     }
 
+    async fn set_library_encoding_profile(
+        &self,
+        library_id: i64,
+        encoding_profile_id: Option<i64>,
+    ) -> Result<(), AppError> {
+        sqlx::query("UPDATE libraries SET encoding_profile_id = $1 WHERE id = $2")
+            .bind(encoding_profile_id)
+            .bind(library_id)
+            .execute(&self.pool)
+            .await
+            .map(|_| ())
+            .map_err(AppError::Database)
+    }
+
     async fn list_organization_rules(&self, library_id: Option<i64>) -> Result<Vec<OrganizationRule>, AppError> {
         let rows = if let Some(lid) = library_id {
             sqlx::query_as::<_, OrganizationRule>(

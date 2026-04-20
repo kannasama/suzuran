@@ -11,6 +11,7 @@ pub use crate::models::UpsertTagSuggestion;
 pub use crate::models::UpsertEncodingProfile;
 pub use crate::models::UpsertArtProfile;
 
+#[derive(Default)]
 pub struct UpsertTrack {
     pub library_id: i64,
     pub relative_path: String,
@@ -164,6 +165,11 @@ pub trait Store: Send + Sync {
         auto_organize_on_ingest: bool,
     ) -> Result<Option<Library>, AppError>;
     async fn delete_library(&self, id: i64) -> Result<(), AppError>;
+    async fn set_library_encoding_profile(
+        &self,
+        library_id: i64,
+        encoding_profile_id: Option<i64>,
+    ) -> Result<(), AppError>;
 
     // ── jobs ─────────────────────────────────────────────────────
     async fn enqueue_job(

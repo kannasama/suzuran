@@ -4,6 +4,7 @@ pub mod freedb_lookup;
 pub mod mb_lookup;
 pub mod organize;
 pub mod scan;
+pub mod transcode;
 
 use std::sync::Arc;
 
@@ -40,4 +41,11 @@ pub struct FingerprintPayload {
 pub struct CueSplitPayload {
     pub cue_path: String,
     pub library_id: i64,
+}
+
+/// Payload for the `transcode` job type.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TranscodePayload {
+    pub source_track_id: i64,
+    pub target_library_id: i64,
 }

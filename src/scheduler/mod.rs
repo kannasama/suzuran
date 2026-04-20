@@ -11,6 +11,7 @@ use crate::{
         mb_lookup::MbLookupJobHandler,
         organize::OrganizeJobHandler,
         scan::ScanJobHandler,
+        transcode::TranscodeJobHandler,
         JobHandler,
     },
     services::{freedb::FreedBService, musicbrainz::MusicBrainzService},
@@ -35,6 +36,7 @@ impl Scheduler {
         handlers.insert("mb_lookup", Arc::new(MbLookupJobHandler::new(mb_service)));
         handlers.insert("freedb_lookup", Arc::new(FreedBLookupJobHandler::new(freedb_service)));
         handlers.insert("cue_split", Arc::new(CueSplitJobHandler::new(db.clone())));
+        handlers.insert("transcode", Arc::new(TranscodeJobHandler::new(db.clone())));
 
         let mut semaphores: HashMap<&'static str, Arc<Semaphore>> = HashMap::new();
         semaphores.insert("scan",          Arc::new(Semaphore::new(DEFAULT_SCAN_CONCURRENCY)));
