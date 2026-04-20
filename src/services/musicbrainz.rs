@@ -1,5 +1,5 @@
 use reqwest::Client;
-use std::{collections::HashMap, time::Duration};
+use std::{collections::HashMap, sync::{Arc, Mutex}, time::{Duration, Instant}};
 use tokio::time::sleep;
 
 const MB_RATE_LIMIT_MS: u64 = 1100; // MusicBrainz: max 1 req/sec
@@ -10,6 +10,7 @@ pub struct MusicBrainzService {
     acoustid_key: String,
     mb_base: String,
     acoustid_base: String,
+    last_mb_request: Arc<Mutex<Option<Instant>>>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -96,11 +97,17 @@ impl MusicBrainzService {
 
     pub fn with_base_urls(acoustid_key: String, mb_base: String, acoustid_base: String) -> Self {
         let client = Client::builder()
-            .user_agent("suzuran/0.3 ( https://github.com/user/suzuran )")
+            .user_agent("suzuran/0.3 ( music-library-manager )")
             .timeout(Duration::from_secs(30))
             .build()
             .expect("reqwest client build");
-        Self { client, acoustid_key, mb_base, acoustid_base }
+        Self {
+            client,
+            acoustid_key,
+            mb_base,
+            acoustid_base,
+            last_mb_request: Arc::new(Mutex::new(None)),
+        }
     }
 
     pub async fn acoustid_lookup(
@@ -132,7 +139,17 @@ impl MusicBrainzService {
     }
 
     pub async fn get_recording(&self, recording_id: &str) -> anyhow::Result<MbRecording> {
-        sleep(Duration::from_millis(MB_RATE_LIMIT_MS)).await;
+        // Rate-limit: MusicBrainz allows max 1 req/sec
+        {
+            let mut last = self.last_mb_request.lock().unwrap();
+            if let Some(t) = *last {
+                let elapsed = t.elapsed();
+                if elapsed < Duration::from_millis(MB_RATE_LIMIT_MS) {
+                    sleep(Duration::from_millis(MB_RATE_LIMIT_MS) - elapsed).await;
+                }
+            }
+            *last = Some(Instant::now());
+        }
         let url = format!("{}/recording/{}", self.mb_base, recording_id);
         let rec = self.client
             .get(&url)
@@ -159,15 +176,26 @@ impl MusicBrainzService {
             tags.insert("date".into(), date.clone());
         }
 
-        // Artist from recording-level artist-credit
+        // Recording-level artist → "artist" tag
         let artist_name = rec.artist_credit.as_ref()
             .and_then(|ac| ac.first())
             .and_then(|a| a.name.as_ref().or(a.artist.as_ref().map(|ar| &ar.name)))
             .cloned()
             .unwrap_or_default();
+
+        // Release-level artist → "albumartist" tag (falls back to recording artist if absent)
+        let albumartist_name = release.artist_credit.as_ref()
+            .and_then(|ac| ac.first())
+            .and_then(|a| a.name.as_ref().or(a.artist.as_ref().map(|ar| &ar.name)))
+            .cloned()
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| artist_name.clone());
+
         if !artist_name.is_empty() {
-            tags.insert("artist".into(), artist_name.clone());
-            tags.insert("albumartist".into(), artist_name);
+            tags.insert("artist".into(), artist_name);
+        }
+        if !albumartist_name.is_empty() {
+            tags.insert("albumartist".into(), albumartist_name);
         }
 
         // Label + catalog number

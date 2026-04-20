@@ -114,7 +114,92 @@ async fn test_to_tag_map_extracts_fields() {
     assert_eq!(tags.get("title").map(String::as_str), Some("Comfortably Numb"));
     assert_eq!(tags.get("album").map(String::as_str), Some("The Wall"));
     assert_eq!(tags.get("artist").map(String::as_str), Some("Pink Floyd"));
+    // albumartist falls back to recording artist when release has no artist_credit
+    assert_eq!(tags.get("albumartist").map(String::as_str), Some("Pink Floyd"));
     assert_eq!(tags.get("date").map(String::as_str), Some("1979"));
     assert_eq!(tags.get("musicbrainz_trackid").map(String::as_str), Some("rec-1"));
     assert_eq!(tags.get("musicbrainz_releaseid").map(String::as_str), Some("rel-1"));
+}
+
+#[tokio::test]
+async fn test_to_tag_map_uses_release_artist_for_albumartist() {
+    use suzuran_server::services::musicbrainz::{MbRecording, MbRelease, MbArtistCredit};
+
+    // Compilation: recording artist is the track artist, release artist is "Various Artists"
+    let rec = MbRecording {
+        id: "rec-2".into(),
+        title: "Blue Monday".into(),
+        length: Some(450000),
+        releases: None,
+        artist_credit: Some(vec![MbArtistCredit {
+            name: Some("New Order".into()),
+            artist: None,
+        }]),
+    };
+    let release = MbRelease {
+        id: "rel-2".into(),
+        title: "Now That's What I Call Music 1".into(),
+        date: Some("1983".into()),
+        artist_credit: Some(vec![MbArtistCredit {
+            name: Some("Various Artists".into()),
+            artist: None,
+        }]),
+        label_info: None,
+        release_group: None,
+        media: None,
+    };
+
+    let tags = MusicBrainzService::to_tag_map(&rec, &release);
+    assert_eq!(tags.get("artist").map(String::as_str), Some("New Order"));
+    assert_eq!(tags.get("albumartist").map(String::as_str), Some("Various Artists"));
+}
+
+#[tokio::test]
+async fn test_get_recording_rate_limit_second_call_does_not_sleep_full_interval() {
+    use std::time::Instant;
+
+    let server = MockServer::start().await;
+    // Mount the mock for two calls
+    Mock::given(method("GET"))
+        .and(path_regex("/recording/"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "rec-rl-1",
+            "title": "Rate Limit Test",
+            "length": null,
+            "releases": null,
+            "artist-credit": null
+        })))
+        .expect(2)
+        .mount(&server)
+        .await;
+
+    let svc = MusicBrainzService::with_base_urls(
+        "test-key".into(),
+        server.uri(),
+        "https://api.acoustid.org".into(),
+    );
+
+    // First call — no prior request, should return immediately (no sleep)
+    let t0 = Instant::now();
+    svc.get_recording("rec-rl-1").await.unwrap();
+    let first_call_ms = t0.elapsed().as_millis();
+
+    // First call must not sleep the full 1100ms
+    assert!(
+        first_call_ms < 1100,
+        "first call took {}ms, expected < 1100ms (no prior request)",
+        first_call_ms
+    );
+
+    // Second call — issued immediately; should sleep only the remaining window
+    // Total for two back-to-back calls must be < 2200ms (they share the rate-limit window)
+    let t1 = Instant::now();
+    svc.get_recording("rec-rl-1").await.unwrap();
+    let two_calls_ms = t1.elapsed().as_millis();
+
+    assert!(
+        two_calls_ms < 1200,
+        "second call took {}ms; expected the sleep to be well under 1200ms (most of the window already elapsed)",
+        two_calls_ms
+    );
 }
