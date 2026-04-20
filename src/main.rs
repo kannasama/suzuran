@@ -51,6 +51,9 @@ async fn main() -> anyhow::Result<()> {
         .context("Webauthn build failed")?;
 
     let acoustid_key = std::env::var("ACOUSTID_KEY").unwrap_or_default();
+    if acoustid_key.is_empty() {
+        tracing::warn!("ACOUSTID_KEY is not set — AcoustID lookups will fail; set this in settings after first boot");
+    }
     let mb_service = Arc::new(MusicBrainzService::new(acoustid_key));
 
     let state = AppState::new(db.clone(), config.clone(), webauthn, mb_service.clone());

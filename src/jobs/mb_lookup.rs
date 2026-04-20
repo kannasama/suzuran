@@ -92,6 +92,12 @@ impl super::JobHandler for MbLookupJobHandler {
             }
         }
 
+        tracing::debug!(
+            track_id,
+            suggestions_created,
+            "mb_lookup complete"
+        );
+
         if suggestions_created == 0 && !acoustid_had_results {
             db.enqueue_job(
                 "freedb_lookup",

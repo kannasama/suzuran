@@ -143,6 +143,9 @@ impl MusicBrainzService {
         // Compute the required sleep duration while holding the lock, then drop
         // the guard before awaiting so that the MutexGuard is not held across
         // an await point (which would make the future non-Send).
+        // Note: two concurrent callers can each compute their sleep duration against the same
+        // last-request timestamp and both sleep, potentially allowing a small burst. In practice
+        // the scheduler semaphore limits concurrent mb_lookup jobs, so this is acceptable.
         let sleep_duration = {
             let mut last = self.last_mb_request.lock().unwrap();
             let dur = last.map(|t| {
