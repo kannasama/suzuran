@@ -61,7 +61,7 @@ docker compose logs -f app
 | `src/jobs/freedb_lookup.rs` | `FreedBLookupJobHandler` — reads `DISCID` tag, calls `FreedBService::disc_lookup`, creates one `tag_suggestion` row with `confidence = 0.5`; skips cleanly if no DISCID |
 | `src/jobs/mb_lookup.rs` | `MbLookupJobHandler` — AcoustID lookup via `MusicBrainzService`, creates `tag_suggestion` rows for results ≥ 0.8; enqueues `freedb_lookup` fallback if zero suggestions |
 | `src/scheduler/mod.rs` | `Scheduler` — Tokio poll loop; claims pending jobs, semaphore-caps concurrency per type, retries on failure; takes `Arc<MusicBrainzService>` + `Arc<FreedBService>` to construct handlers |
-| `src/services/mod.rs` | Re-exports `auth`, `freedb`, `musicbrainz`, `tagging`, `totp`, `webauthn` service modules |
+| `src/services/mod.rs` | Re-exports `auth`, `freedb`, `musicbrainz`, `tagging`, `totp`, `transcode_compat`, `webauthn` service modules |
 | `src/services/auth.rs` | `AuthService` — Argon2 hashing, JWT sign/verify, login flow with `LoginResult` enum, `2fa_pending` token issue/decode, `create_full_session` |
 | `src/services/freedb.rs` | `FreedBService` — gnudb.org CDDB disc-ID lookup (query + read, two HTTP calls), XMCD response parsing, `to_tag_map` (candidate → tag HashMap) |
 | `src/services/musicbrainz.rs` | `MusicBrainzService` — AcoustID fingerprint lookup, MusicBrainz recording fetch (with 1.1s rate limit), `to_tag_map` (recording+release → tag HashMap), `caa_url` (Cover Art Archive URL) |
@@ -79,6 +79,7 @@ docker compose logs -f app
 | `src/api/organization_rules.rs` | Handlers: `GET /` (list, optional `?library_id=N`), `POST /` (admin, create → 201), `GET /:id`, `PUT /:id` (admin), `DELETE /:id` (admin → 204), `POST /preview` (admin, dry-run path proposals), `POST /apply` (admin, enqueue organize jobs) |
 | `src/api/tag_suggestions.rs` | Handlers: `GET /` (list pending, optional `?track_id=N`, auth), `GET /count` (public nav badge), `GET /:id` (auth, 404 if missing), `POST /:id/accept` (auth, calls tagging stub + sets status), `POST /:id/reject` (auth), `POST /batch-accept` (auth, body `{min_confidence}`) |
 | `src/services/tagging.rs` | `apply_suggestion` — merges existing track tags with suggestion tags, writes to audio file via `tagger::write_tags`, updates DB via `update_track_tags` |
+| `src/services/transcode_compat.rs` | `is_compatible(src_format, src_sample_rate, src_bit_depth, src_bitrate, profile)` — quality-matching rules: rejects lossy→lossless, sample-rate upsampling, bit-depth inflation, bitrate upscaling; `is_lossless(format)` pub helper |
 | `src/api/middleware/mod.rs` | Re-exports `auth` and `admin` middleware modules |
 | `src/api/middleware/auth.rs` | `AuthUser` extractor — verifies session cookie JWT + DB session row; rejects `tfa:true` tokens |
 | `src/api/middleware/admin.rs` | `AdminUser` extractor — wraps `AuthUser`, additionally requires `role = "admin"` |
@@ -113,6 +114,7 @@ docker compose logs -f app
 | `tests/track_links_dal.rs` | DAL tests for track_links — create link between two tracks, list_derived_tracks, list_source_tracks; verifies FK constraint satisfaction |
 | `tests/tagging_service.rs` | Integration tests for `apply_suggestion` — file + DB updated, indexed artist column correct, title preserved from merge, NotFound on missing track |
 | `tests/cue_parser.rs` | Unit tests for `parse_cue` — album-level fields, per-track fields, INDEX 01 time conversion (MM:SS:FF → seconds), 3-track parse, duration calc via next-track start |
+| `tests/transcode_compat.rs` | Unit tests for `is_compatible` — 6 tests covering lossy→lossless rejection, lossless→lossy allowed, upsample rejection, bit-depth inflation rejection, bitrate upscale rejection, unknown-values pass-through |
 
 ## Migrations
 
