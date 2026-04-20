@@ -7,5 +7,5 @@ CREATE TABLE encoding_profiles (
     channels      INTEGER,
     bit_depth     INTEGER,   -- max acceptable source bit depth (lossless profiles; NULL = no limit)
     advanced_args TEXT,
-    created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
