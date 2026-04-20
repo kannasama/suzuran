@@ -79,6 +79,20 @@ fn full_template_multi_disc() {
 }
 
 #[test]
+fn test_artist_and_albumartist_are_independent() {
+    let t = tags(&[
+        ("artist", "New Order"),
+        ("albumartist", "Various Artists"),
+        ("album", "Now That's What I Call Music"),
+        ("tracknumber", "3"),
+    ]);
+    assert_eq!(
+        render_template("{albumartist}/{album}/{tracknumber:02} - {artist}", &t),
+        "Various Artists/Now That's What I Call Music/03 - New Order"
+    );
+}
+
+#[test]
 fn full_template_single_disc() {
     let t = tags(&[
         ("albumartist", "Air"), ("date", "1998"), ("album", "Moon Safari"),
