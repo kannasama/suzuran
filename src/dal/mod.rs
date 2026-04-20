@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 
 use serde_json::Value as JsonValue;
 
-use crate::{error::AppError, models::{ArtProfile, EncodingProfile, Job, Library, OrganizationRule, Session, Setting, TagSuggestion, Theme, TotpEntry, Track, User, WebauthnChallenge, WebauthnCredential}};
+use crate::{error::AppError, models::{ArtProfile, EncodingProfile, Job, Library, OrganizationRule, Session, Setting, TagSuggestion, Theme, TotpEntry, Track, TrackLink, User, WebauthnChallenge, WebauthnCredential}};
 
 pub use crate::models::UpsertTagSuggestion;
 pub use crate::models::UpsertEncodingProfile;
@@ -239,6 +239,16 @@ pub trait Store: Send + Sync {
     async fn list_art_profiles(&self) -> Result<Vec<ArtProfile>, AppError>;
     async fn update_art_profile(&self, id: i64, dto: UpsertArtProfile) -> Result<ArtProfile, AppError>;
     async fn delete_art_profile(&self, id: i64) -> Result<(), AppError>;
+
+    // ── track links ───────────────────────────────────────────────
+    async fn create_track_link(
+        &self,
+        source_id: i64,
+        derived_id: i64,
+        encoding_profile_id: Option<i64>,
+    ) -> Result<TrackLink, AppError>;
+    async fn list_derived_tracks(&self, source_id: i64) -> Result<Vec<TrackLink>, AppError>;
+    async fn list_source_tracks(&self, derived_id: i64) -> Result<Vec<TrackLink>, AppError>;
 
     // ── tag suggestions ───────────────────────────────────────────
     async fn create_tag_suggestion(&self, dto: UpsertTagSuggestion) -> Result<TagSuggestion, AppError>;

@@ -209,6 +209,14 @@ pub struct ArtProfile {
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
+#[derive(Debug, Clone, sqlx::FromRow, serde::Serialize, serde::Deserialize)]
+pub struct TrackLink {
+    pub source_track_id: i64,
+    pub derived_track_id: i64,
+    pub encoding_profile_id: Option<i64>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
 #[derive(Debug, Clone)]
 pub struct UpsertArtProfile {
     pub name: String,

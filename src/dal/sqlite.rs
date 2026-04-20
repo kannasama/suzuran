@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 
-use crate::{dal::{Store, UpsertArtProfile, UpsertEncodingProfile, UpsertTrack}, error::AppError, models::{ArtProfile, EncodingProfile, Job, Library, OrganizationRule, Session, Setting, TagSuggestion, Theme, TotpEntry, Track, UpsertTagSuggestion, User, WebauthnChallenge, WebauthnCredential}};
+use crate::{dal::{Store, UpsertArtProfile, UpsertEncodingProfile, UpsertTrack}, error::AppError, models::{ArtProfile, EncodingProfile, Job, Library, OrganizationRule, Session, Setting, TagSuggestion, Theme, TotpEntry, Track, TrackLink, UpsertTagSuggestion, User, WebauthnChallenge, WebauthnCredential}};
 use sqlx::SqlitePool;
 
 pub struct SqliteStore {
@@ -941,6 +941,45 @@ impl Store for SqliteStore {
         .await
         .map_err(AppError::Database)?;
         Ok(row.0)
+    }
+
+    async fn create_track_link(
+        &self,
+        source_id: i64,
+        derived_id: i64,
+        encoding_profile_id: Option<i64>,
+    ) -> Result<TrackLink, AppError> {
+        sqlx::query_as::<_, TrackLink>(
+            "INSERT INTO track_links (source_track_id, derived_track_id, encoding_profile_id)
+             VALUES (?1, ?2, ?3)
+             RETURNING *",
+        )
+        .bind(source_id)
+        .bind(derived_id)
+        .bind(encoding_profile_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(AppError::Database)
+    }
+
+    async fn list_derived_tracks(&self, source_id: i64) -> Result<Vec<TrackLink>, AppError> {
+        sqlx::query_as::<_, TrackLink>(
+            "SELECT * FROM track_links WHERE source_track_id = ?1 ORDER BY created_at",
+        )
+        .bind(source_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(AppError::Database)
+    }
+
+    async fn list_source_tracks(&self, derived_id: i64) -> Result<Vec<TrackLink>, AppError> {
+        sqlx::query_as::<_, TrackLink>(
+            "SELECT * FROM track_links WHERE derived_track_id = ?1 ORDER BY created_at",
+        )
+        .bind(derived_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(AppError::Database)
     }
 
     async fn update_track_tags(&self, track_id: i64, tags: serde_json::Value) -> Result<(), AppError> {
