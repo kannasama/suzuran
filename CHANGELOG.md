@@ -25,6 +25,8 @@ All notable changes to suzuran will be documented in this file.
 - Art API: per-track embed/extract/standardize; per-library standardize
 - Settings UI: encoding profiles and art profiles management with inline forms
 - Library UI: transcode dialog (all / sync) on track and library level
+- Theme background image upload — `POST /api/v1/uploads/images` stores files under
+  `UPLOADS_DIR` (default `/app/uploads`); files served at `/uploads/…`; mount as Docker volume
 
 ## [v0.3.0] — 2026-04-20
 

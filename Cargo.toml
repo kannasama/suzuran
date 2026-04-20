@@ -12,7 +12,7 @@ name = "suzuran_server"
 path = "src/lib.rs"
 
 [dependencies]
-axum = "0.7"
+axum = { version = "0.7", features = ["multipart"] }
 axum-extra = { version = "0.9", features = ["cookie"] }
 tokio = { version = "1", features = ["full"] }
 tower = "0.4"
@@ -66,7 +66,7 @@ image = { version = "0.25", default-features = false, features = ["jpeg", "png"]
 reqwest = { version = "0.12", features = ["json"] }
 
 [dev-dependencies]
-reqwest = { version = "0.12", features = ["json", "cookies"] }
+reqwest = { version = "0.12", features = ["json", "cookies", "multipart"] }
 wiremock = "0.6"
 tokio = { version = "1", features = ["full"] }
 tempfile = "3"

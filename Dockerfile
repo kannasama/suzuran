@@ -47,6 +47,9 @@ WORKDIR /app
 COPY --from=rust-builder /build/target/release/suzuran-server ./
 COPY --from=ui-builder /ui/dist ./ui/dist
 
+RUN mkdir -p /app/uploads
+VOLUME ["/app/uploads"]
+
 ENV PORT=3000
 ENV LOG_LEVEL=info
 

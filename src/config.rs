@@ -10,6 +10,8 @@ pub struct Config {
     pub rp_id: String,
     /// WebAuthn Relying Party Origin — e.g. "http://localhost:3000"
     pub rp_origin: String,
+    /// Directory where uploaded files (e.g. theme background images) are stored
+    pub uploads_dir: std::path::PathBuf,
 }
 
 impl Config {
@@ -29,6 +31,9 @@ impl Config {
                 .unwrap_or_else(|_| "localhost".into()),
             rp_origin: std::env::var("RP_ORIGIN")
                 .unwrap_or_else(|_| "http://localhost:3000".into()),
+            uploads_dir: std::env::var("UPLOADS_DIR")
+                .unwrap_or_else(|_| "/app/uploads".into())
+                .into(),
         })
     }
 }

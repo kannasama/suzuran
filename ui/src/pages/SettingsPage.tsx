@@ -4,6 +4,7 @@ import { TopNav } from '../components/TopNav'
 import { EncodingProfileForm } from '../components/EncodingProfileForm'
 import { ArtProfileForm } from '../components/ArtProfileForm'
 import { VirtualLibraryForm } from '../components/VirtualLibraryForm'
+import { ImageUpload } from '../components/ImageUpload'
 import {
   listEncodingProfiles,
   createEncodingProfile,
@@ -25,11 +26,19 @@ import {
   setSources,
   triggerSync,
 } from '../api/virtualLibraries'
+import {
+  listThemes,
+  createTheme,
+  updateTheme,
+  deleteTheme,
+  type Theme,
+  type UpsertTheme,
+} from '../api/themes'
 import type { EncodingProfile, UpsertEncodingProfile } from '../types/encodingProfile'
 import type { ArtProfile, UpsertArtProfile } from '../types/artProfile'
 import type { VirtualLibrary, UpsertVirtualLibrary } from '../types/virtualLibrary'
 
-type ActiveTab = 'encoding' | 'art' | 'virtual'
+type ActiveTab = 'encoding' | 'art' | 'virtual' | 'themes'
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('encoding')
@@ -43,12 +52,14 @@ export default function SettingsPage() {
           <TabButton label="Encoding Profiles" active={activeTab === 'encoding'} onClick={() => setActiveTab('encoding')} />
           <TabButton label="Art Profiles" active={activeTab === 'art'} onClick={() => setActiveTab('art')} />
           <TabButton label="Virtual Libraries" active={activeTab === 'virtual'} onClick={() => setActiveTab('virtual')} />
+          <TabButton label="Themes" active={activeTab === 'themes'} onClick={() => setActiveTab('themes')} />
         </div>
 
         <div className="p-6">
           {activeTab === 'encoding' && <EncodingProfilesSection />}
           {activeTab === 'art' && <ArtProfilesSection />}
           {activeTab === 'virtual' && <VirtualLibrariesSection />}
+          {activeTab === 'themes' && <ThemesSection />}
         </div>
       </main>
     </div>
@@ -498,5 +509,181 @@ function VirtualLibraryRow({
         </div>
       </td>
     </tr>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Themes section
+// ---------------------------------------------------------------------------
+
+function ThemesSection() {
+  const qc = useQueryClient()
+  const { data: themes = [], isLoading } = useQuery({
+    queryKey: ['themes'],
+    queryFn: listThemes,
+  })
+  const [editing, setEditing] = useState<Theme | 'new' | null>(null)
+  const [editingTheme, setEditingTheme] = useState<UpsertTheme>({
+    name: '',
+    css_vars: {},
+    accent_color: null,
+    background_url: null,
+  })
+
+  const createMutation = useMutation({
+    mutationFn: (data: UpsertTheme) => createTheme(data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['themes'] }); setEditing(null) },
+  })
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: number; data: UpsertTheme }) => updateTheme(id, data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['themes'] }); setEditing(null) },
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => deleteTheme(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['themes'] }),
+  })
+
+  const isSavePending = createMutation.isPending || updateMutation.isPending
+
+  function startEdit(theme: Theme | 'new') {
+    setEditing(theme)
+    if (theme === 'new') {
+      setEditingTheme({ name: '', css_vars: {}, accent_color: null, background_url: null })
+    } else {
+      setEditingTheme({
+        name: theme.name,
+        css_vars: theme.css_vars,
+        accent_color: theme.accent_color,
+        background_url: theme.background_url,
+      })
+    }
+  }
+
+  async function handleSave() {
+    if (editing === 'new') {
+      await createMutation.mutateAsync(editingTheme)
+    } else if (editing != null) {
+      await updateMutation.mutateAsync({ id: editing.id, data: editingTheme })
+    }
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-5">
+        <h1 className="text-text-primary font-semibold text-sm">Themes</h1>
+        {editing == null && (
+          <button
+            onClick={() => startEdit('new')}
+            className="text-xs text-bg-base bg-accent rounded px-3 py-1 font-medium hover:opacity-90"
+          >
+            + New Theme
+          </button>
+        )}
+      </div>
+
+      {editing != null && (
+        <div className="mb-5 bg-bg-panel border border-border rounded p-4 max-w-lg">
+          <p className="text-text-muted text-[10px] uppercase tracking-wider mb-3">
+            {editing === 'new' ? 'New Theme' : `Edit: ${editing.name}`}
+          </p>
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs text-text-muted mb-1">Name</label>
+              <input
+                type="text"
+                value={editingTheme.name}
+                onChange={e => setEditingTheme(t => ({ ...t, name: e.target.value }))}
+                className="w-full text-sm bg-bg-input border border-border rounded px-2 py-1"
+                placeholder="My Theme"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-text-muted mb-1">Accent color</label>
+              <input
+                type="text"
+                value={editingTheme.accent_color ?? ''}
+                onChange={e => setEditingTheme(t => ({ ...t, accent_color: e.target.value || null }))}
+                className="w-full text-sm bg-bg-input border border-border rounded px-2 py-1"
+                placeholder="#6366f1"
+              />
+            </div>
+            <ImageUpload
+              value={editingTheme.background_url ?? ''}
+              onChange={url => setEditingTheme(t => ({ ...t, background_url: url || null }))}
+            />
+          </div>
+          <div className="flex gap-2 mt-4">
+            <button
+              onClick={handleSave}
+              disabled={isSavePending}
+              className="text-xs text-bg-base bg-accent rounded px-3 py-1 font-medium hover:opacity-90 disabled:opacity-50"
+            >
+              {isSavePending ? 'Saving…' : 'Save'}
+            </button>
+            <button
+              onClick={() => setEditing(null)}
+              className="text-xs text-text-muted hover:text-text-primary px-3 py-1"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {isLoading ? (
+        <p className="text-text-muted text-xs">Loading…</p>
+      ) : themes.length === 0 && editing == null ? (
+        <div className="flex flex-col items-center justify-center py-16 gap-2">
+          <p className="text-text-muted text-xs">No custom themes defined.</p>
+          <p className="text-text-muted text-[10px]">Themes can set an accent color and a background image.</p>
+        </div>
+      ) : themes.length > 0 ? (
+        <table className="w-full text-xs border-collapse">
+          <thead>
+            <tr className="border-b border-border text-text-muted text-[9px] uppercase tracking-wider">
+              <th className="text-left pb-2 pr-4 font-medium">Name</th>
+              <th className="text-left pb-2 pr-4 font-medium">Accent</th>
+              <th className="text-left pb-2 pr-4 font-medium">Background</th>
+              <th className="pb-2"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {themes.map(t => (
+              <tr key={t.id} className="border-b border-border-subtle hover:bg-bg-panel">
+                <td className="py-1.5 pr-4 text-text-primary font-medium">{t.name}</td>
+                <td className="py-1.5 pr-4 text-text-muted font-mono">{t.accent_color ?? '—'}</td>
+                <td className="py-1.5 pr-4 text-text-muted truncate max-w-[200px]">
+                  {t.background_url ? (
+                    <span className="font-mono">{t.background_url}</span>
+                  ) : '—'}
+                </td>
+                <td className="py-1.5 pl-2">
+                  <div className="flex gap-2 justify-end">
+                    <button
+                      onClick={() => startEdit(t)}
+                      className="text-text-muted hover:text-text-primary"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (window.confirm(`Delete theme "${t.name}"?`)) {
+                          deleteMutation.mutate(t.id)
+                        }
+                      }}
+                      className="text-text-muted hover:text-destructive"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : null}
+    </div>
   )
 }

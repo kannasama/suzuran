@@ -12,6 +12,7 @@ pub mod themes;
 pub mod totp;
 pub mod transcode;
 pub mod tracks;
+pub mod uploads;
 pub mod virtual_libraries;
 pub mod webauthn;
 
@@ -33,6 +34,7 @@ pub fn api_router(_state: AppState) -> Router<AppState> {
         .nest("/encoding-profiles", encoding_profiles::router())
         .nest("/art-profiles", art_profiles::router())
         .nest("/virtual-libraries", virtual_libraries::router())
+        .nest("/uploads", uploads::router())
         .merge(transcode::router())
         .merge(art::router())
 }

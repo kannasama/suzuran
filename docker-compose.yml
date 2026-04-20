@@ -26,6 +26,8 @@ services:
       JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-prod}
       PORT: 3000
       LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      - ./uploads:/app/uploads
     depends_on:
       db:
         condition: service_healthy

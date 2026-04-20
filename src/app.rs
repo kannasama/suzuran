@@ -9,9 +9,13 @@ pub fn build_router(state: AppState) -> Router {
     let ui_service = ServeDir::new("ui/dist")
         .not_found_service(ServeFile::new("ui/dist/index.html"));
 
+    // Serve uploaded files (theme backgrounds, etc.) from the uploads directory
+    let uploads_service = ServeDir::new(&*state.config.uploads_dir);
+
     Router::new()
         .route("/health", get(health))
         .nest("/api/v1", api_router(state.clone()))
+        .nest_service("/uploads", uploads_service)
         .fallback_service(ui_service)
         .with_state(state)
 }
