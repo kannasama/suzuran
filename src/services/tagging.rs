@@ -37,7 +37,12 @@ pub async fn apply_suggestion(
         }
     }
 
-    // Write to audio file
+    // Update DB first — more recoverable than a file write
+    store
+        .update_track_tags(suggestion.track_id, serde_json::Value::Object(merged.clone()))
+        .await?;
+
+    // Write to audio file only if DB succeeded
     let string_map: std::collections::HashMap<String, String> = merged
         .iter()
         .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
@@ -45,11 +50,6 @@ pub async fn apply_suggestion(
 
     tagger::write_tags(std::path::Path::new(&full_path), &string_map)
         .map_err(|e| AppError::Internal(anyhow::anyhow!("lofty write failed: {e}")))?;
-
-    // Update DB
-    store
-        .update_track_tags(suggestion.track_id, serde_json::Value::Object(merged))
-        .await?;
 
     Ok(())
 }

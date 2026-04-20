@@ -769,7 +769,7 @@ impl Store for PgStore {
     }
 
     async fn update_track_tags(&self, track_id: i64, tags: serde_json::Value) -> Result<(), AppError> {
-        sqlx::query(
+        let result = sqlx::query(
             r#"UPDATE tracks SET
                  tags          = $1,
                  title         = ($1 ->> 'title'),
@@ -788,7 +788,10 @@ impl Store for PgStore {
         .bind(track_id)
         .execute(&self.pool)
         .await
-        .map(|_| ())
-        .map_err(AppError::Database)
+        .map_err(AppError::Database)?;
+        if result.rows_affected() == 0 {
+            return Err(AppError::NotFound(format!("track {track_id}")));
+        }
+        Ok(())
     }
 }

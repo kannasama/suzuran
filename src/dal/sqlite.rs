@@ -808,7 +808,7 @@ impl Store for SqliteStore {
         let tags_str = serde_json::to_string(&tags).unwrap_or_else(|_| "{}".to_string());
         let t = tags.as_object().cloned().unwrap_or_default();
         let get = |k: &str| t.get(k).and_then(|v| v.as_str()).map(str::to_string);
-        sqlx::query(
+        let result = sqlx::query(
             r#"UPDATE tracks SET
                  tags          = ?,
                  title         = ?,
@@ -837,7 +837,10 @@ impl Store for SqliteStore {
         .bind(track_id)
         .execute(&self.pool)
         .await
-        .map(|_| ())
-        .map_err(AppError::Database)
+        .map_err(AppError::Database)?;
+        if result.rows_affected() == 0 {
+            return Err(AppError::NotFound(format!("track {track_id}")));
+        }
+        Ok(())
     }
 }
