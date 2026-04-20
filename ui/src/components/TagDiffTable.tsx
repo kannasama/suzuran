@@ -14,10 +14,14 @@ interface Props {
 }
 
 export function TagDiffTable({ trackId, suggestedTags }: Props) {
-  const { data: track } = useQuery({
+  const { data: track, isError } = useQuery({
     queryKey: ['track', trackId],
     queryFn: () => tracksApi.getTrack(trackId),
   });
+
+  if (isError) {
+    return <span className="text-xs italic text-text-muted">Could not load current tags</span>;
+  }
 
   const current: Record<string, string> = Object.fromEntries(
     Object.entries(track?.tags ?? {}).filter(([, v]) => typeof v === 'string') as [string, string][]
