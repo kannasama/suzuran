@@ -37,6 +37,7 @@ async fn spawn_test_server_with_store() -> (String, Arc<dyn Store>) {
         log_level: "error".into(),
         rp_id: "localhost".into(),
         rp_origin: "http://localhost:3000".into(),
+        uploads_dir: std::path::PathBuf::from("/tmp/suzuran-test-uploads"),
     };
     let mb_service = Arc::new(MusicBrainzService::new(String::new()));
     let freedb_service = Arc::new(FreedBService::new());
@@ -112,6 +113,7 @@ async fn seed_track(store: &Arc<dyn Store>) -> (i64, TempDir) {
             bitrate: None,
             sample_rate: None,
             channels: None,
+            bit_depth: None,
             has_embedded_art: false,
         })
         .await
@@ -264,6 +266,7 @@ async fn test_list_filtered_by_track_id() {
             bitrate: None,
             sample_rate: None,
             channels: None,
+            bit_depth: None,
             has_embedded_art: false,
         })
         .await

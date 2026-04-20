@@ -1,5 +1,6 @@
 pub mod api;
 pub mod config;
+pub mod cue;
 pub mod dal;
 pub mod error;
 pub mod jobs;

@@ -51,5 +51,20 @@ pub async fn apply_suggestion(
     tagger::write_tags(std::path::Path::new(&full_path), &string_map)
         .map_err(|e| AppError::Internal(anyhow::anyhow!("lofty write failed: {e}")))?;
 
+    // If the suggestion includes a cover art URL, enqueue an embed job
+    if let Some(url) = &suggestion.cover_art_url {
+        store
+            .enqueue_job(
+                "art_process",
+                serde_json::json!({
+                    "track_id": suggestion.track_id,
+                    "action": "embed",
+                    "source_url": url,
+                }),
+                3,
+            )
+            .await?;
+    }
+
     Ok(())
 }

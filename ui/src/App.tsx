@@ -7,6 +7,7 @@ import { RegisterPage } from './pages/RegisterPage'
 import { LibraryPage } from './pages/LibraryPage'
 import OrganizationPage from './pages/OrganizationPage'
 import InboxPage from './pages/InboxPage'
+import SettingsPage from './pages/SettingsPage'
 
 function useSetupStatus() {
   return useQuery({
@@ -47,6 +48,10 @@ function AppRoutes() {
       <Route
         path="/inbox"
         element={user ? <InboxPage /> : <Navigate to="/login" replace />}
+      />
+      <Route
+        path="/settings"
+        element={user ? <SettingsPage /> : <Navigate to="/login" replace />}
       />
       <Route
         path="/*"

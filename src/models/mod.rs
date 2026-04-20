@@ -70,6 +70,7 @@ pub struct Library {
     pub scan_interval_secs: i64,
     pub auto_transcode_on_ingest: bool,
     pub auto_organize_on_ingest: bool,
+    pub normalize_on_ingest: bool,
     pub created_at: DateTime<Utc>,
 }
 
@@ -97,6 +98,7 @@ pub struct Track {
     pub bitrate: Option<i64>,
     pub sample_rate: Option<i64>,
     pub channels: Option<i64>,
+    pub bit_depth: Option<i64>,
     pub has_embedded_art: bool,
     pub acoustid_fingerprint: Option<String>,
     pub last_scanned_at: DateTime<Utc>,
@@ -169,4 +171,90 @@ pub struct UpsertTagSuggestion {
     pub mb_recording_id: Option<String>,
     pub mb_release_id: Option<String>,
     pub cover_art_url: Option<String>,
+}
+
+#[derive(Debug, Clone, sqlx::FromRow, serde::Serialize, serde::Deserialize)]
+pub struct EncodingProfile {
+    pub id: i64,
+    pub name: String,
+    pub codec: String,             // "aac", "mp3", "opus", "flac", …
+    pub bitrate: Option<String>,   // "256k" — None for lossless codecs
+    pub sample_rate: Option<i64>,  // None = preserve source
+    pub channels: Option<i64>,     // None = preserve source
+    pub bit_depth: Option<i64>,    // max source bit depth for lossless profiles; None = no limit
+    pub advanced_args: Option<String>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Clone)]
+pub struct UpsertEncodingProfile {
+    pub name: String,
+    pub codec: String,
+    pub bitrate: Option<String>,
+    pub sample_rate: Option<i64>,
+    pub channels: Option<i64>,
+    pub bit_depth: Option<i64>,
+    pub advanced_args: Option<String>,
+}
+
+#[derive(Debug, Clone, sqlx::FromRow, serde::Serialize, serde::Deserialize)]
+pub struct ArtProfile {
+    pub id: i64,
+    pub name: String,
+    pub max_width_px: i64,
+    pub max_height_px: i64,
+    pub max_size_bytes: Option<i64>,
+    pub format: String,     // "jpeg" | "png"
+    pub quality: i64,       // 1–100
+    pub apply_to_library_id: Option<i64>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Clone, sqlx::FromRow, serde::Serialize, serde::Deserialize)]
+pub struct TrackLink {
+    pub source_track_id: i64,
+    pub derived_track_id: i64,
+    pub encoding_profile_id: Option<i64>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Clone)]
+pub struct UpsertArtProfile {
+    pub name: String,
+    pub max_width_px: i64,
+    pub max_height_px: i64,
+    pub max_size_bytes: Option<i64>,
+    pub format: String,
+    pub quality: i64,
+    pub apply_to_library_id: Option<i64>,
+}
+
+#[derive(Debug, Clone, sqlx::FromRow, serde::Serialize, serde::Deserialize)]
+pub struct VirtualLibrary {
+    pub id: i64,
+    pub name: String,
+    pub root_path: String,
+    pub link_type: String,   // "symlink" | "hardlink"
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Clone)]
+pub struct UpsertVirtualLibrary {
+    pub name: String,
+    pub root_path: String,
+    pub link_type: String,
+}
+
+#[derive(Debug, Clone, sqlx::FromRow, serde::Serialize, serde::Deserialize)]
+pub struct VirtualLibrarySource {
+    pub virtual_library_id: i64,
+    pub library_id: i64,
+    pub priority: i64,
+}
+
+#[derive(Debug, Clone, sqlx::FromRow, serde::Serialize, serde::Deserialize)]
+pub struct VirtualLibraryTrack {
+    pub virtual_library_id: i64,
+    pub source_track_id: i64,
+    pub link_path: String,
 }

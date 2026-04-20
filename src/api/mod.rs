@@ -1,4 +1,7 @@
+pub mod art;
+pub mod art_profiles;
 pub mod auth;
+pub mod encoding_profiles;
 pub mod jobs;
 pub mod libraries;
 pub mod middleware;
@@ -7,7 +10,10 @@ pub mod settings;
 pub mod tag_suggestions;
 pub mod themes;
 pub mod totp;
+pub mod transcode;
 pub mod tracks;
+pub mod uploads;
+pub mod virtual_libraries;
 pub mod webauthn;
 
 use axum::Router;
@@ -25,4 +31,10 @@ pub fn api_router(_state: AppState) -> Router<AppState> {
         .nest("/tracks", tracks::router())
         .nest("/organization-rules", organization_rules::router())
         .nest("/tag-suggestions", tag_suggestions::router())
+        .nest("/encoding-profiles", encoding_profiles::router())
+        .nest("/art-profiles", art_profiles::router())
+        .nest("/virtual-libraries", virtual_libraries::router())
+        .nest("/uploads", uploads::router())
+        .merge(transcode::router())
+        .merge(art::router())
 }

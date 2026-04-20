@@ -49,7 +49,7 @@ async fn organize_moves_file_and_updates_path() {
             "date": "1979"
         }),
         duration_secs: None, bitrate: None, sample_rate: None, channels: None,
-        has_embedded_art: false,
+        bit_depth: None, has_embedded_art: false,
     }).await.unwrap();
 
     db.create_organization_rule(
@@ -97,7 +97,7 @@ async fn organize_dry_run_does_not_move() {
         date: Some("2000".to_string()), genre: None, composer: None,
         label: None, catalognumber: None,
         duration_secs: None, bitrate: None, sample_rate: None, channels: None,
-        has_embedded_art: false,
+        bit_depth: None, has_embedded_art: false,
     }).await.unwrap();
 
     db.create_organization_rule("Default", None, 0, None, "{albumartist}/{date}/{title}", true).await.unwrap();

@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 
-use crate::{dal::{Store, UpsertTrack}, error::AppError, models::{Job, Library, OrganizationRule, Session, Setting, TagSuggestion, Theme, TotpEntry, Track, UpsertTagSuggestion, User, WebauthnChallenge, WebauthnCredential}};
+use crate::{dal::{Store, UpsertArtProfile, UpsertEncodingProfile, UpsertTrack, UpsertVirtualLibrary}, error::AppError, models::{ArtProfile, EncodingProfile, Job, Library, OrganizationRule, Session, Setting, TagSuggestion, Theme, TotpEntry, Track, TrackLink, UpsertTagSuggestion, User, VirtualLibrary, VirtualLibrarySource, VirtualLibraryTrack, WebauthnChallenge, WebauthnCredential}};
 use sqlx::PgPool;
 
 pub struct PgStore {
@@ -418,20 +418,47 @@ impl Store for PgStore {
     async fn update_library(
         &self, id: i64, name: &str, scan_enabled: bool, scan_interval_secs: i64,
         auto_transcode_on_ingest: bool, auto_organize_on_ingest: bool,
+        normalize_on_ingest: bool,
     ) -> Result<Option<Library>, AppError> {
         sqlx::query_as::<_, Library>(
             "UPDATE libraries SET name=$1, scan_enabled=$2, scan_interval_secs=$3,
-             auto_transcode_on_ingest=$4, auto_organize_on_ingest=$5
-             WHERE id=$6 RETURNING *",
+             auto_transcode_on_ingest=$4, auto_organize_on_ingest=$5,
+             normalize_on_ingest=$6
+             WHERE id=$7 RETURNING *",
         )
         .bind(name).bind(scan_enabled).bind(scan_interval_secs)
-        .bind(auto_transcode_on_ingest).bind(auto_organize_on_ingest).bind(id)
+        .bind(auto_transcode_on_ingest).bind(auto_organize_on_ingest)
+        .bind(normalize_on_ingest).bind(id)
         .fetch_optional(&self.pool).await.map_err(AppError::Database)
     }
 
     async fn delete_library(&self, id: i64) -> Result<(), AppError> {
         sqlx::query("DELETE FROM libraries WHERE id = $1")
             .bind(id).execute(&self.pool).await.map(|_| ()).map_err(AppError::Database)
+    }
+
+    async fn set_library_encoding_profile(
+        &self,
+        library_id: i64,
+        encoding_profile_id: Option<i64>,
+    ) -> Result<(), AppError> {
+        sqlx::query("UPDATE libraries SET encoding_profile_id = $1 WHERE id = $2")
+            .bind(encoding_profile_id)
+            .bind(library_id)
+            .execute(&self.pool)
+            .await
+            .map(|_| ())
+            .map_err(AppError::Database)
+    }
+
+    async fn list_child_libraries(&self, parent_id: i64) -> Result<Vec<Library>, AppError> {
+        sqlx::query_as::<_, Library>(
+            "SELECT * FROM libraries WHERE parent_library_id = $1 ORDER BY id",
+        )
+        .bind(parent_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(AppError::Database)
     }
 
     async fn list_organization_rules(&self, library_id: Option<i64>) -> Result<Vec<OrganizationRule>, AppError> {
@@ -546,14 +573,15 @@ impl Store for PgStore {
         sqlx::query_as::<_, Track>(
             "INSERT INTO tracks (library_id, relative_path, file_hash, title, artist, albumartist,
              album, tracknumber, discnumber, totaldiscs, totaltracks, date, genre, composer,
-             label, catalognumber, tags, duration_secs, bitrate, sample_rate, channels, has_embedded_art,
-             last_scanned_at)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,NOW())
+             label, catalognumber, tags, duration_secs, bitrate, sample_rate, channels, bit_depth,
+             has_embedded_art, last_scanned_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,NOW())
              ON CONFLICT (library_id, relative_path) DO UPDATE SET
                file_hash=$3, title=$4, artist=$5, albumartist=$6, album=$7, tracknumber=$8,
                discnumber=$9, totaldiscs=$10, totaltracks=$11, date=$12, genre=$13, composer=$14,
                label=$15, catalognumber=$16, tags=$17, duration_secs=$18, bitrate=$19,
-               sample_rate=$20, channels=$21, has_embedded_art=$22, last_scanned_at=NOW()
+               sample_rate=$20, channels=$21, bit_depth=$22, has_embedded_art=$23,
+               last_scanned_at=NOW()
              RETURNING *",
         )
         .bind(t.library_id).bind(&t.relative_path).bind(&t.file_hash)
@@ -561,7 +589,7 @@ impl Store for PgStore {
         .bind(&t.tracknumber).bind(&t.discnumber).bind(&t.totaldiscs).bind(&t.totaltracks)
         .bind(&t.date).bind(&t.genre).bind(&t.composer).bind(&t.label).bind(&t.catalognumber)
         .bind(&t.tags).bind(t.duration_secs).bind(t.bitrate).bind(t.sample_rate)
-        .bind(t.channels).bind(t.has_embedded_art)
+        .bind(t.channels).bind(t.bit_depth).bind(t.has_embedded_art)
         .fetch_one(&self.pool).await.map_err(AppError::Database)
     }
 
@@ -577,9 +605,10 @@ impl Store for PgStore {
         .bind(library_id).fetch_all(&self.pool).await.map_err(AppError::Database)
     }
 
-    async fn update_track_path(&self, id: i64, relative_path: &str) -> Result<(), AppError> {
-        sqlx::query("UPDATE tracks SET relative_path = $1 WHERE id = $2")
+    async fn update_track_path(&self, id: i64, relative_path: &str, file_hash: &str) -> Result<(), AppError> {
+        sqlx::query("UPDATE tracks SET relative_path = $1, file_hash = $2 WHERE id = $3")
             .bind(relative_path)
+            .bind(file_hash)
             .bind(id)
             .execute(&self.pool)
             .await
@@ -688,6 +717,161 @@ impl Store for PgStore {
             .bind(id).fetch_optional(&self.pool).await.map_err(AppError::Database)
     }
 
+    async fn list_jobs_by_type_and_payload_key(
+        &self,
+        job_type: &str,
+        key: &str,
+        value: &str,
+    ) -> Result<Vec<Job>, AppError> {
+        sqlx::query_as::<_, Job>(
+            "SELECT * FROM jobs WHERE job_type = $1 AND payload->>$2 = $3",
+        )
+        .bind(job_type)
+        .bind(key)
+        .bind(value)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(AppError::Database)
+    }
+
+    // ── encoding profiles ─────────────────────────────────────────
+
+    async fn create_encoding_profile(&self, dto: UpsertEncodingProfile) -> Result<EncodingProfile, AppError> {
+        sqlx::query_as::<_, EncodingProfile>(
+            "INSERT INTO encoding_profiles (name, codec, bitrate, sample_rate, channels, bit_depth, advanced_args)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
+             RETURNING *",
+        )
+        .bind(dto.name)
+        .bind(dto.codec)
+        .bind(dto.bitrate)
+        .bind(dto.sample_rate)
+        .bind(dto.channels)
+        .bind(dto.bit_depth)
+        .bind(dto.advanced_args)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(AppError::Database)
+    }
+
+    async fn get_encoding_profile(&self, id: i64) -> Result<EncodingProfile, AppError> {
+        sqlx::query_as::<_, EncodingProfile>("SELECT * FROM encoding_profiles WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or_else(|| AppError::NotFound(format!("encoding_profile {id}")))
+    }
+
+    async fn list_encoding_profiles(&self) -> Result<Vec<EncodingProfile>, AppError> {
+        sqlx::query_as::<_, EncodingProfile>("SELECT * FROM encoding_profiles ORDER BY name")
+            .fetch_all(&self.pool)
+            .await
+            .map_err(AppError::Database)
+    }
+
+    async fn update_encoding_profile(&self, id: i64, dto: UpsertEncodingProfile) -> Result<EncodingProfile, AppError> {
+        sqlx::query_as::<_, EncodingProfile>(
+            "UPDATE encoding_profiles
+             SET name=$1, codec=$2, bitrate=$3, sample_rate=$4, channels=$5, bit_depth=$6, advanced_args=$7
+             WHERE id=$8
+             RETURNING *",
+        )
+        .bind(dto.name)
+        .bind(dto.codec)
+        .bind(dto.bitrate)
+        .bind(dto.sample_rate)
+        .bind(dto.channels)
+        .bind(dto.bit_depth)
+        .bind(dto.advanced_args)
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(AppError::Database)?
+        .ok_or_else(|| AppError::NotFound(format!("encoding_profile {id}")))
+    }
+
+    async fn delete_encoding_profile(&self, id: i64) -> Result<(), AppError> {
+        let result = sqlx::query("DELETE FROM encoding_profiles WHERE id = $1")
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map_err(AppError::Database)?;
+        if result.rows_affected() == 0 {
+            return Err(AppError::NotFound(format!("encoding_profile {id}")));
+        }
+        Ok(())
+    }
+
+    // ── art profiles ──────────────────────────────────────────────
+
+    async fn create_art_profile(&self, dto: UpsertArtProfile) -> Result<ArtProfile, AppError> {
+        sqlx::query_as::<_, ArtProfile>(
+            "INSERT INTO art_profiles (name, max_width_px, max_height_px, max_size_bytes, format, quality, apply_to_library_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
+             RETURNING *",
+        )
+        .bind(dto.name)
+        .bind(dto.max_width_px)
+        .bind(dto.max_height_px)
+        .bind(dto.max_size_bytes)
+        .bind(dto.format)
+        .bind(dto.quality)
+        .bind(dto.apply_to_library_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(AppError::Database)
+    }
+
+    async fn get_art_profile(&self, id: i64) -> Result<ArtProfile, AppError> {
+        sqlx::query_as::<_, ArtProfile>("SELECT * FROM art_profiles WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or_else(|| AppError::NotFound(format!("art_profile {id}")))
+    }
+
+    async fn list_art_profiles(&self) -> Result<Vec<ArtProfile>, AppError> {
+        sqlx::query_as::<_, ArtProfile>("SELECT * FROM art_profiles ORDER BY name")
+            .fetch_all(&self.pool)
+            .await
+            .map_err(AppError::Database)
+    }
+
+    async fn update_art_profile(&self, id: i64, dto: UpsertArtProfile) -> Result<ArtProfile, AppError> {
+        sqlx::query_as::<_, ArtProfile>(
+            "UPDATE art_profiles
+             SET name=$1, max_width_px=$2, max_height_px=$3, max_size_bytes=$4, format=$5, quality=$6, apply_to_library_id=$7
+             WHERE id=$8
+             RETURNING *",
+        )
+        .bind(dto.name)
+        .bind(dto.max_width_px)
+        .bind(dto.max_height_px)
+        .bind(dto.max_size_bytes)
+        .bind(dto.format)
+        .bind(dto.quality)
+        .bind(dto.apply_to_library_id)
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(AppError::Database)?
+        .ok_or_else(|| AppError::NotFound(format!("art_profile {id}")))
+    }
+
+    async fn delete_art_profile(&self, id: i64) -> Result<(), AppError> {
+        let result = sqlx::query("DELETE FROM art_profiles WHERE id = $1")
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map_err(AppError::Database)?;
+        if result.rows_affected() == 0 {
+            return Err(AppError::NotFound(format!("art_profile {id}")));
+        }
+        Ok(())
+    }
+
     // ── tag suggestions ───────────────────────────────────────────
 
     async fn create_tag_suggestion(&self, dto: UpsertTagSuggestion) -> Result<TagSuggestion, AppError> {
@@ -768,6 +952,45 @@ impl Store for PgStore {
         Ok(row.0)
     }
 
+    async fn create_track_link(
+        &self,
+        source_id: i64,
+        derived_id: i64,
+        encoding_profile_id: Option<i64>,
+    ) -> Result<TrackLink, AppError> {
+        sqlx::query_as::<_, TrackLink>(
+            "INSERT INTO track_links (source_track_id, derived_track_id, encoding_profile_id)
+             VALUES ($1, $2, $3)
+             RETURNING *",
+        )
+        .bind(source_id)
+        .bind(derived_id)
+        .bind(encoding_profile_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(AppError::Database)
+    }
+
+    async fn list_derived_tracks(&self, source_id: i64) -> Result<Vec<TrackLink>, AppError> {
+        sqlx::query_as::<_, TrackLink>(
+            "SELECT * FROM track_links WHERE source_track_id = $1 ORDER BY created_at",
+        )
+        .bind(source_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(AppError::Database)
+    }
+
+    async fn list_source_tracks(&self, derived_id: i64) -> Result<Vec<TrackLink>, AppError> {
+        sqlx::query_as::<_, TrackLink>(
+            "SELECT * FROM track_links WHERE derived_track_id = $1 ORDER BY created_at",
+        )
+        .bind(derived_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(AppError::Database)
+    }
+
     async fn update_track_tags(&self, track_id: i64, tags: serde_json::Value) -> Result<(), AppError> {
         let result = sqlx::query(
             r#"UPDATE tracks SET
@@ -793,5 +1016,146 @@ impl Store for PgStore {
             return Err(AppError::NotFound(format!("track {track_id}")));
         }
         Ok(())
+    }
+
+    async fn set_track_has_embedded_art(&self, track_id: i64, has_art: bool) -> Result<(), AppError> {
+        let result = sqlx::query("UPDATE tracks SET has_embedded_art = $1 WHERE id = $2")
+            .bind(has_art)
+            .bind(track_id)
+            .execute(&self.pool)
+            .await
+            .map_err(AppError::Database)?;
+        if result.rows_affected() == 0 {
+            return Err(AppError::NotFound(format!("track {track_id}")));
+        }
+        Ok(())
+    }
+
+    // ── virtual libraries ─────────────────────────────────────────
+
+    async fn create_virtual_library(&self, dto: UpsertVirtualLibrary) -> Result<VirtualLibrary, AppError> {
+        sqlx::query_as::<_, VirtualLibrary>(
+            "INSERT INTO virtual_libraries (name, root_path, link_type)
+             VALUES ($1, $2, $3)
+             RETURNING *",
+        )
+        .bind(dto.name)
+        .bind(dto.root_path)
+        .bind(dto.link_type)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(AppError::Database)
+    }
+
+    async fn get_virtual_library(&self, id: i64) -> Result<VirtualLibrary, AppError> {
+        sqlx::query_as::<_, VirtualLibrary>("SELECT * FROM virtual_libraries WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or_else(|| AppError::NotFound(format!("virtual_library {id}")))
+    }
+
+    async fn list_virtual_libraries(&self) -> Result<Vec<VirtualLibrary>, AppError> {
+        sqlx::query_as::<_, VirtualLibrary>("SELECT * FROM virtual_libraries ORDER BY name")
+            .fetch_all(&self.pool)
+            .await
+            .map_err(AppError::Database)
+    }
+
+    async fn update_virtual_library(&self, id: i64, dto: UpsertVirtualLibrary) -> Result<VirtualLibrary, AppError> {
+        sqlx::query_as::<_, VirtualLibrary>(
+            "UPDATE virtual_libraries SET name=$1, root_path=$2, link_type=$3
+             WHERE id=$4
+             RETURNING *",
+        )
+        .bind(dto.name)
+        .bind(dto.root_path)
+        .bind(dto.link_type)
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(AppError::Database)?
+        .ok_or_else(|| AppError::NotFound(format!("virtual_library {id}")))
+    }
+
+    async fn delete_virtual_library(&self, id: i64) -> Result<(), AppError> {
+        sqlx::query("DELETE FROM virtual_libraries WHERE id = $1")
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map(|_| ())
+            .map_err(AppError::Database)
+    }
+
+    async fn set_virtual_library_sources(&self, id: i64, sources: &[(i64, i64)]) -> Result<(), AppError> {
+        let mut tx = self.pool.begin().await.map_err(AppError::Database)?;
+
+        sqlx::query("DELETE FROM virtual_library_sources WHERE virtual_library_id = $1")
+            .bind(id)
+            .execute(&mut *tx)
+            .await
+            .map_err(AppError::Database)?;
+
+        for (library_id, priority) in sources {
+            sqlx::query(
+                "INSERT INTO virtual_library_sources (virtual_library_id, library_id, priority)
+                 VALUES ($1, $2, $3)",
+            )
+            .bind(id)
+            .bind(library_id)
+            .bind(priority)
+            .execute(&mut *tx)
+            .await
+            .map_err(AppError::Database)?;
+        }
+
+        tx.commit().await.map_err(AppError::Database)
+    }
+
+    async fn list_virtual_library_sources(&self, id: i64) -> Result<Vec<VirtualLibrarySource>, AppError> {
+        sqlx::query_as::<_, VirtualLibrarySource>(
+            "SELECT * FROM virtual_library_sources
+             WHERE virtual_library_id = $1
+             ORDER BY priority ASC",
+        )
+        .bind(id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(AppError::Database)
+    }
+
+    async fn upsert_virtual_library_track(&self, vlib_id: i64, track_id: i64, link_path: &str) -> Result<(), AppError> {
+        sqlx::query(
+            "INSERT INTO virtual_library_tracks (virtual_library_id, source_track_id, link_path)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (virtual_library_id, source_track_id) DO UPDATE SET link_path = $3",
+        )
+        .bind(vlib_id)
+        .bind(track_id)
+        .bind(link_path)
+        .execute(&self.pool)
+        .await
+        .map(|_| ())
+        .map_err(AppError::Database)
+    }
+
+    async fn list_virtual_library_tracks(&self, vlib_id: i64) -> Result<Vec<VirtualLibraryTrack>, AppError> {
+        sqlx::query_as::<_, VirtualLibraryTrack>(
+            "SELECT * FROM virtual_library_tracks WHERE virtual_library_id = $1 ORDER BY source_track_id",
+        )
+        .bind(vlib_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(AppError::Database)
+    }
+
+    async fn clear_virtual_library_tracks(&self, vlib_id: i64) -> Result<(), AppError> {
+        sqlx::query("DELETE FROM virtual_library_tracks WHERE virtual_library_id = $1")
+            .bind(vlib_id)
+            .execute(&self.pool)
+            .await
+            .map(|_| ())
+            .map_err(AppError::Database)
     }
 }

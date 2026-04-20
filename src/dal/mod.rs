@@ -5,10 +5,14 @@ use chrono::{DateTime, Utc};
 
 use serde_json::Value as JsonValue;
 
-use crate::{error::AppError, models::{Job, Library, OrganizationRule, Session, Setting, TagSuggestion, Theme, TotpEntry, Track, User, WebauthnChallenge, WebauthnCredential}};
+use crate::{error::AppError, models::{ArtProfile, EncodingProfile, Job, Library, OrganizationRule, Session, Setting, TagSuggestion, Theme, TotpEntry, Track, TrackLink, User, VirtualLibrary, VirtualLibrarySource, VirtualLibraryTrack, WebauthnChallenge, WebauthnCredential}};
 
 pub use crate::models::UpsertTagSuggestion;
+pub use crate::models::UpsertEncodingProfile;
+pub use crate::models::UpsertArtProfile;
+pub use crate::models::UpsertVirtualLibrary;
 
+#[derive(Default)]
 pub struct UpsertTrack {
     pub library_id: i64,
     pub relative_path: String,
@@ -31,6 +35,7 @@ pub struct UpsertTrack {
     pub bitrate: Option<i64>,
     pub sample_rate: Option<i64>,
     pub channels: Option<i64>,
+    pub bit_depth: Option<i64>,
     pub has_embedded_art: bool,
 }
 
@@ -159,8 +164,14 @@ pub trait Store: Send + Sync {
         scan_interval_secs: i64,
         auto_transcode_on_ingest: bool,
         auto_organize_on_ingest: bool,
+        normalize_on_ingest: bool,
     ) -> Result<Option<Library>, AppError>;
     async fn delete_library(&self, id: i64) -> Result<(), AppError>;
+    async fn set_library_encoding_profile(
+        &self,
+        library_id: i64,
+        encoding_profile_id: Option<i64>,
+    ) -> Result<(), AppError>;
 
     // ── jobs ─────────────────────────────────────────────────────
     async fn enqueue_job(
@@ -175,6 +186,12 @@ pub trait Store: Send + Sync {
     async fn cancel_job(&self, id: i64) -> Result<(), AppError>;
     async fn list_jobs(&self, status: Option<&str>, limit: i64) -> Result<Vec<Job>, AppError>;
     async fn get_job(&self, id: i64) -> Result<Option<Job>, AppError>;
+    async fn list_jobs_by_type_and_payload_key(
+        &self,
+        job_type: &str,
+        key: &str,
+        value: &str,
+    ) -> Result<Vec<Job>, AppError>;
 
     // ── organization rules ────────────────────────────────────────
     /// Returns all rules when library_id is None; when Some, returns global rules
@@ -215,13 +232,40 @@ pub trait Store: Send + Sync {
         &self,
         library_id: i64,
     ) -> Result<Vec<(i64, String, String)>, AppError>;
-    async fn update_track_path(&self, id: i64, relative_path: &str) -> Result<(), AppError>;
+    async fn update_track_path(&self, id: i64, relative_path: &str, file_hash: &str) -> Result<(), AppError>;
     async fn update_track_fingerprint(
         &self,
         track_id: i64,
         fingerprint: &str,
         duration_secs: f64,
     ) -> Result<(), AppError>;
+
+    // ── encoding profiles ─────────────────────────────────────────
+    async fn create_encoding_profile(&self, dto: UpsertEncodingProfile) -> Result<EncodingProfile, AppError>;
+    async fn get_encoding_profile(&self, id: i64) -> Result<EncodingProfile, AppError>;
+    async fn list_encoding_profiles(&self) -> Result<Vec<EncodingProfile>, AppError>;
+    async fn update_encoding_profile(&self, id: i64, dto: UpsertEncodingProfile) -> Result<EncodingProfile, AppError>;
+    async fn delete_encoding_profile(&self, id: i64) -> Result<(), AppError>;
+
+    // ── art profiles ──────────────────────────────────────────────
+    async fn create_art_profile(&self, dto: UpsertArtProfile) -> Result<ArtProfile, AppError>;
+    async fn get_art_profile(&self, id: i64) -> Result<ArtProfile, AppError>;
+    async fn list_art_profiles(&self) -> Result<Vec<ArtProfile>, AppError>;
+    async fn update_art_profile(&self, id: i64, dto: UpsertArtProfile) -> Result<ArtProfile, AppError>;
+    async fn delete_art_profile(&self, id: i64) -> Result<(), AppError>;
+
+    // ── track links ───────────────────────────────────────────────
+    async fn create_track_link(
+        &self,
+        source_id: i64,
+        derived_id: i64,
+        encoding_profile_id: Option<i64>,
+    ) -> Result<TrackLink, AppError>;
+    async fn list_derived_tracks(&self, source_id: i64) -> Result<Vec<TrackLink>, AppError>;
+    async fn list_source_tracks(&self, derived_id: i64) -> Result<Vec<TrackLink>, AppError>;
+
+    // ── child libraries ───────────────────────────────────────────
+    async fn list_child_libraries(&self, parent_id: i64) -> Result<Vec<Library>, AppError>;
 
     // ── tag suggestions ───────────────────────────────────────────
     async fn create_tag_suggestion(&self, dto: UpsertTagSuggestion) -> Result<TagSuggestion, AppError>;
@@ -230,4 +274,21 @@ pub trait Store: Send + Sync {
     async fn set_tag_suggestion_status(&self, id: i64, status: &str) -> Result<(), AppError>;
     async fn pending_tag_suggestion_count(&self) -> Result<i64, AppError>;
     async fn update_track_tags(&self, track_id: i64, tags: serde_json::Value) -> Result<(), AppError>;
+    async fn set_track_has_embedded_art(&self, track_id: i64, has_art: bool) -> Result<(), AppError>;
+
+    // ── virtual libraries ─────────────────────────────────────────
+    async fn create_virtual_library(&self, dto: UpsertVirtualLibrary) -> Result<VirtualLibrary, AppError>;
+    async fn get_virtual_library(&self, id: i64) -> Result<VirtualLibrary, AppError>;
+    async fn list_virtual_libraries(&self) -> Result<Vec<VirtualLibrary>, AppError>;
+    async fn update_virtual_library(&self, id: i64, dto: UpsertVirtualLibrary) -> Result<VirtualLibrary, AppError>;
+    async fn delete_virtual_library(&self, id: i64) -> Result<(), AppError>;
+
+    /// Replace the full source list atomically (delete old + insert new in a transaction).
+    /// `sources` contains `(library_id, priority)` tuples.
+    async fn set_virtual_library_sources(&self, id: i64, sources: &[(i64, i64)]) -> Result<(), AppError>;
+    async fn list_virtual_library_sources(&self, id: i64) -> Result<Vec<VirtualLibrarySource>, AppError>;
+
+    async fn upsert_virtual_library_track(&self, vlib_id: i64, track_id: i64, link_path: &str) -> Result<(), AppError>;
+    async fn list_virtual_library_tracks(&self, vlib_id: i64) -> Result<Vec<VirtualLibraryTrack>, AppError>;
+    async fn clear_virtual_library_tracks(&self, vlib_id: i64) -> Result<(), AppError>;
 }

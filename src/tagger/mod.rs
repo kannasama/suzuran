@@ -15,6 +15,7 @@ pub struct AudioProperties {
     pub bitrate: Option<i64>,      // kbps
     pub sample_rate: Option<i64>,  // Hz
     pub channels: Option<i64>,
+    pub bit_depth: Option<i64>,    // bits per sample (lossless formats)
     pub has_embedded_art: bool,
 }
 
@@ -30,6 +31,7 @@ pub fn read_tags(path: &Path) -> anyhow::Result<(HashMap<String, String>, AudioP
     props.bitrate = file_props.overall_bitrate().map(|b| b as i64);
     props.sample_rate = file_props.sample_rate().map(|s| s as i64);
     props.channels = file_props.channels().map(|c| c as i64);
+    props.bit_depth = file_props.bit_depth().map(|b| b as i64);
 
     let mut tags: HashMap<String, String> = HashMap::new();
 

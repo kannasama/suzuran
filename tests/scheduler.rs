@@ -22,6 +22,7 @@ async fn spawn_test_server() -> String {
         log_level: "error".into(),
         rp_id: "localhost".into(),
         rp_origin: "http://localhost:3000".into(),
+        uploads_dir: std::path::PathBuf::from("/tmp/suzuran-test-uploads"),
     };
 
     let db: Arc<dyn Store> = store.clone();

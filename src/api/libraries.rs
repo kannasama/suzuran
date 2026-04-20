@@ -63,6 +63,8 @@ struct UpdateLibraryRequest {
     scan_interval_secs: i64,
     auto_transcode_on_ingest: bool,
     auto_organize_on_ingest: bool,
+    #[serde(default)]
+    normalize_on_ingest: bool,
 }
 
 async fn update_library(
@@ -73,7 +75,8 @@ async fn update_library(
 ) -> Result<Json<Library>, AppError> {
     state.db
         .update_library(id, &body.name, body.scan_enabled, body.scan_interval_secs,
-            body.auto_transcode_on_ingest, body.auto_organize_on_ingest)
+            body.auto_transcode_on_ingest, body.auto_organize_on_ingest,
+            body.normalize_on_ingest)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("library {id} not found")))
         .map(Json)

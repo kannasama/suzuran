@@ -1,11 +1,162 @@
 use std::sync::Arc;
 use tempfile::TempDir;
-use suzuran_server::dal::{sqlite::SqliteStore, Store, UpsertTrack};
+use url::Url;
+use webauthn_rs::WebauthnBuilder;
+use suzuran_server::{
+    build_router,
+    config::Config,
+    dal::{sqlite::SqliteStore, Store, UpsertEncodingProfile, UpsertTrack},
+    services::{freedb::FreedBService, musicbrainz::MusicBrainzService},
+    state::AppState,
+};
+
+// ── TestApp ───────────────────────────────────────────────────────────────────
+
+/// Shared test server harness. Spawn once per test via `TestApp::spawn().await`.
+#[allow(dead_code)]
+pub struct TestApp {
+    /// Base URL of the running test server, e.g. `http://127.0.0.1:54321`
+    pub addr: String,
+    /// Authenticated reqwest client (cookie store enabled — session cookie is
+    /// stored automatically after `seed_admin_user()` is called).
+    pub client: reqwest::Client,
+    // Keep the temp dir alive for the duration of the test.
+    _uploads_tmp: TempDir,
+}
+
+#[allow(dead_code)]
+impl TestApp {
+    pub async fn spawn() -> Self {
+        let uploads_tmp = TempDir::new().unwrap();
+        let uploads_path = uploads_tmp.path().to_path_buf();
+
+        let store = SqliteStore::new("sqlite::memory:").await.expect("SQLite failed");
+        store.migrate().await.expect("migrations failed");
+
+        let config = Config {
+            database_url: "sqlite::memory:".into(),
+            jwt_secret: "test-secret-32-chars-minimum-xxxx".into(),
+            port: 0,
+            log_level: "error".into(),
+            rp_id: "localhost".into(),
+            rp_origin: "http://localhost:3000".into(),
+            uploads_dir: uploads_path,
+        };
+
+        let origin = Url::parse("http://localhost:3000").unwrap();
+        let webauthn = WebauthnBuilder::new("localhost", &origin)
+            .unwrap()
+            .rp_name("suzuran-test")
+            .build()
+            .unwrap();
+
+        let mb_service = Arc::new(MusicBrainzService::new(String::new()));
+        let freedb_service = Arc::new(FreedBService::new());
+        let state = AppState::new(Arc::new(store), config, webauthn, mb_service, freedb_service);
+        let app = build_router(state);
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let client = reqwest::Client::builder()
+            .cookie_store(true)
+            .build()
+            .unwrap();
+
+        TestApp {
+            addr: format!("http://{addr}"),
+            client,
+            _uploads_tmp: uploads_tmp,
+        }
+    }
+
+    /// Register + log in as the first admin user. Returns the raw session JWT
+    /// string (extracted from the `Set-Cookie` response header).
+    ///
+    /// After this call the internal `client`'s cookie store also holds the
+    /// session cookie, so subsequent requests via `self.client` are already
+    /// authenticated without needing the token string.
+    pub async fn seed_admin_user(&self) -> String {
+        self.client
+            .post(format!("{}/api/v1/auth/register", self.addr))
+            .json(&serde_json::json!({
+                "username": "admin",
+                "email": "admin@test.com",
+                "password": "password123"
+            }))
+            .send()
+            .await
+            .unwrap();
+
+        let login_resp = self.client
+            .post(format!("{}/api/v1/auth/login", self.addr))
+            .json(&serde_json::json!({
+                "username": "admin",
+                "password": "password123"
+            }))
+            .send()
+            .await
+            .unwrap();
+
+        // Extract the session JWT from the Set-Cookie header so callers can
+        // pass it explicitly to authed_* helpers that set it manually.
+        let set_cookie = login_resp
+            .headers()
+            .get("set-cookie")
+            .expect("login must set a session cookie")
+            .to_str()
+            .unwrap();
+
+        // Header looks like: session=<jwt>; HttpOnly; ...
+        let token = set_cookie
+            .split(';')
+            .next()
+            .unwrap()
+            .trim_start_matches("session=")
+            .to_string();
+
+        token
+    }
+
+    /// POST multipart form to `path` authenticated as `token` (session cookie).
+    pub async fn authed_multipart(
+        &self,
+        token: &str,
+        path: &str,
+        form: reqwest::multipart::Form,
+    ) -> reqwest::Response {
+        self.client
+            .post(format!("{}{path}", self.addr))
+            .header("cookie", format!("session={token}"))
+            .multipart(form)
+            .send()
+            .await
+            .unwrap()
+    }
+}
+
+/// Returns true if `ffmpeg` is available on PATH.
+#[allow(dead_code)]
+pub fn ffmpeg_available() -> bool {
+    std::process::Command::new("ffmpeg")
+        .arg("-version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
 
 pub async fn make_db() -> Arc<dyn Store> {
     let store = SqliteStore::new("sqlite::memory:").await.unwrap();
     store.migrate().await.unwrap();
     Arc::new(store)
+}
+
+#[allow(dead_code)]
+pub async fn setup_store() -> Arc<dyn Store> {
+    make_db().await
 }
 
 /// Set up an in-memory DB with a track that has an AcoustID fingerprint in
@@ -41,6 +192,7 @@ pub async fn setup_with_fingerprinted_track() -> (Arc<dyn Store>, i64) {
             bitrate: None,
             sample_rate: None,
             channels: None,
+            bit_depth: None,
             has_embedded_art: false,
         })
         .await
@@ -89,6 +241,7 @@ pub async fn setup_with_discid_track(disc_id: &str, track_number: u32) -> (Arc<d
             bitrate: None,
             sample_rate: None,
             channels: None,
+            bit_depth: None,
             has_embedded_art: false,
         })
         .await
@@ -166,12 +319,62 @@ pub async fn setup_with_audio_track() -> (Arc<dyn Store>, i64, TempDir) {
             bitrate: None,
             sample_rate: Some(44100),
             channels: Some(1),
+            bit_depth: None,
             has_embedded_art: false,
         })
         .await
         .unwrap();
 
     (db, track.id, dir)
+}
+
+/// Set up an in-memory DB and a temp directory with a 3-track CUE sheet pointing
+/// to a minimal FLAC file (`album.flac`). The CUE timestamps are chosen so that
+/// all three tracks fall within the (very short) file duration:
+///   Track 1: 00:00:00 (0 s)
+///   Track 2: 00:00:01 (1 s) — ffmpeg -c:a copy will produce a zero/near-zero length segment
+///   Track 3: 00:00:02 (2 s)
+/// Returns `(store, library_id, TempDir)` — keep TempDir alive.
+pub async fn setup_cue_library() -> (Arc<dyn Store>, i64, TempDir) {
+    let dir = TempDir::new().unwrap();
+    let root = dir.path();
+
+    // Write the FLAC source file
+    let flac_path = root.join("album.flac");
+    tokio::fs::write(&flac_path, TAGGED_FLAC).await.unwrap();
+
+    // Write the CUE sheet
+    let cue_content = r#"TITLE "Test Album"
+PERFORMER "Test Artist"
+REM DATE 2024
+REM GENRE Rock
+FILE "album.flac" WAVE
+
+  TRACK 01 AUDIO
+    TITLE "Track One"
+    PERFORMER "Test Artist"
+    INDEX 01 00:00:00
+
+  TRACK 02 AUDIO
+    TITLE "Track Two"
+    PERFORMER "Test Artist"
+    INDEX 01 00:00:01
+
+  TRACK 03 AUDIO
+    TITLE "Track Three"
+    PERFORMER "Test Artist"
+    INDEX 01 00:00:02
+"#;
+    let cue_path = root.join("album.cue");
+    tokio::fs::write(&cue_path, cue_content).await.unwrap();
+
+    let db = make_db().await;
+    let lib = db
+        .create_library("CUE Test", root.to_str().unwrap(), "flac", None)
+        .await
+        .unwrap();
+
+    (db, lib.id, dir)
 }
 
 /// Set up an in-memory DB with a plain track (no fingerprint).
@@ -206,10 +409,105 @@ pub async fn setup_with_track() -> (Arc<dyn Store>, i64) {
             bitrate: None,
             sample_rate: None,
             channels: None,
+            bit_depth: None,
             has_embedded_art: false,
         })
         .await
         .unwrap();
 
     (db, track.id)
+}
+
+/// Set up an in-memory DB with:
+/// - A source library (FLAC) containing one AAC track with no encoding profile
+/// - A target library (aac) with no encoding_profile_id
+/// Returns `(store, source_track_id, target_library_id)`.
+#[allow(dead_code)]
+pub async fn setup_transcode_scenario_no_profile() -> (Arc<dyn Store>, i64, i64) {
+    let db = make_db().await;
+
+    let src_lib = db
+        .create_library("Source", "/music/source", "flac", None)
+        .await
+        .unwrap();
+
+    let track = db
+        .upsert_track(UpsertTrack {
+            library_id: src_lib.id,
+            relative_path: "artist/album/01 - Song.flac".into(),
+            file_hash: "transcode_src_hash_001".into(),
+            title: Some("Song".into()),
+            artist: Some("Artist".into()),
+            sample_rate: Some(44100),
+            bit_depth: Some(16),
+            bitrate: Some(1000),
+            tags: serde_json::json!({}),
+            ..UpsertTrack::default()
+        })
+        .await
+        .unwrap();
+
+    let tgt_lib = db
+        .create_library("Target AAC", "/music/target", "aac", None)
+        .await
+        .unwrap();
+    // target library intentionally has no encoding_profile_id
+
+    (db, track.id, tgt_lib.id)
+}
+
+/// Set up an in-memory DB with:
+/// - A source library containing one AAC track (lossy)
+/// - A target library with a FLAC encoding profile (lossless)
+/// This scenario should be skipped by the transcode job (lossy → lossless guard).
+/// Returns `(store, source_track_id, target_library_id)`.
+#[allow(dead_code)]
+pub async fn setup_transcode_lossy_to_lossless_scenario() -> (Arc<dyn Store>, i64, i64) {
+    let db = make_db().await;
+
+    let src_lib = db
+        .create_library("Source AAC", "/music/source_aac", "aac", None)
+        .await
+        .unwrap();
+
+    let track = db
+        .upsert_track(UpsertTrack {
+            library_id: src_lib.id,
+            relative_path: "01 - Song.aac".into(),
+            file_hash: "transcode_aac_hash_001".into(),
+            title: Some("Song".into()),
+            artist: Some("Artist".into()),
+            sample_rate: Some(44100),
+            bit_depth: None,
+            bitrate: Some(256),
+            tags: serde_json::json!({}),
+            ..UpsertTrack::default()
+        })
+        .await
+        .unwrap();
+
+    let tgt_lib = db
+        .create_library("Target FLAC", "/music/target_flac", "flac", None)
+        .await
+        .unwrap();
+
+    // Create a FLAC encoding profile and attach to target library
+    let flac_profile = db
+        .create_encoding_profile(UpsertEncodingProfile {
+            name: "FLAC Lossless".into(),
+            codec: "flac".into(),
+            bitrate: None,
+            sample_rate: None,
+            channels: None,
+            bit_depth: None,
+            advanced_args: None,
+        })
+        .await
+        .unwrap();
+
+    db.set_library_encoding_profile(tgt_lib.id, Some(flac_profile.id))
+        .await
+        .unwrap();
+
+    (db, track.id, tgt_lib.id)
 }

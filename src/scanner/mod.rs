@@ -1,4 +1,3 @@
-// stub — full implementation in Task 7
 use std::{
     collections::{HashMap, HashSet},
     path::{Path, PathBuf},
@@ -9,12 +8,18 @@ use sha2::{Digest, Sha256};
 use walkdir::WalkDir;
 
 use crate::{
+    cue::parse_cue,
     dal::{Store, UpsertTrack},
     error::AppError,
     tagger,
 };
 
-const AUDIO_EXTENSIONS: &[&str] = &["flac", "m4a", "mp3", "opus", "ogg", "aac", "wav", "aiff"];
+const AUDIO_EXTENSIONS: &[&str] = &[
+    "flac", "m4a", "mp3", "opus", "ogg", "aac", "wav", "aiff",
+    "wv",   // WavPack (lossless)
+    "ape",  // Monkey's Audio (lossless)
+    "tta",  // TrueAudio (lossless)
+];
 
 pub struct ScanResult {
     pub inserted: usize,
@@ -29,6 +34,32 @@ pub async fn scan_library(
     root_path: &Path,
 ) -> Result<ScanResult, AppError> {
     let mut result = ScanResult { inserted: 0, updated: 0, removed: 0, errors: vec![] };
+
+    // Look up the library's format for use in auto-transcode compatibility checks.
+    let library_format = db
+        .get_library(library_id)
+        .await?
+        .map(|lib| lib.format)
+        .unwrap_or_default();
+
+    // --- Pass 1: find CUE files and their paired audio ---
+    let mut cue_backed_audio: HashSet<PathBuf> = HashSet::new();
+    let mut cue_files: Vec<PathBuf> = Vec::new();
+
+    for entry in WalkDir::new(root_path).follow_links(true).into_iter().filter_map(|e| e.ok()) {
+        let p = entry.path().to_path_buf();
+        if p.extension().and_then(|e| e.to_str()) == Some("cue") {
+            if let Ok(content) = std::fs::read_to_string(&p) {
+                if let Ok(sheet) = parse_cue(&content) {
+                    let audio = p.parent().unwrap_or(root_path).join(&sheet.audio_file);
+                    if audio.exists() {
+                        cue_backed_audio.insert(audio);
+                        cue_files.push(p);
+                    }
+                }
+            }
+        }
+    }
 
     let existing: HashMap<String, (i64, String)> = db
         .list_track_paths_by_library(library_id)
@@ -46,6 +77,12 @@ pub async fn scan_library(
         .filter(|e| e.file_type().is_file())
     {
         let abs_path = entry.path().to_path_buf();
+
+        // Skip audio files that are backed by a CUE sheet — they will be
+        // split into individual tracks by the cue_split job instead.
+        if cue_backed_audio.contains(&abs_path) {
+            continue;
+        }
         let ext = abs_path
             .extension()
             .and_then(|e| e.to_str())
@@ -124,6 +161,7 @@ pub async fn scan_library(
             bitrate: audio_props.bitrate,
             sample_rate: audio_props.sample_rate,
             channels: audio_props.channels,
+            bit_depth: audio_props.bit_depth,
             has_embedded_art: audio_props.has_embedded_art,
         };
 
@@ -138,6 +176,43 @@ pub async fn scan_library(
                 5,
             )
             .await?;
+
+            // Auto-transcode to child libraries (pre-filter by compatibility)
+            let children = db.list_child_libraries(library_id).await?;
+            for child in children.iter().filter(|c| c.auto_transcode_on_ingest) {
+                if let Some(ep_id) = child.encoding_profile_id {
+                    if let Ok(profile) = db.get_encoding_profile(ep_id).await {
+                        let src_ext = std::path::Path::new(&track.relative_path)
+                            .extension()
+                            .and_then(|e| e.to_str())
+                            .unwrap_or("")
+                            .to_lowercase();
+                        let src_fmt = if src_ext.is_empty() {
+                            library_format.as_str()
+                        } else {
+                            src_ext.as_str()
+                        };
+                        if !crate::services::transcode_compat::is_compatible(
+                            src_fmt,
+                            track.sample_rate,
+                            track.bit_depth,
+                            track.bitrate,
+                            &profile,
+                        ) {
+                            continue;
+                        }
+                    }
+                }
+                db.enqueue_job(
+                    "transcode",
+                    serde_json::json!({
+                        "source_track_id": track.id,
+                        "target_library_id": child.id,
+                    }),
+                    4,
+                )
+                .await?;
+            }
         } else {
             result.updated += 1;
         }
@@ -147,6 +222,29 @@ pub async fn scan_library(
         if !seen_paths.contains(rel_path) {
             db.mark_track_removed(*id).await?;
             result.removed += 1;
+        }
+    }
+
+    // --- Pass 3: enqueue cue_split jobs for discovered CUE sheets ---
+    for cue_path in &cue_files {
+        let cue_str = cue_path.to_string_lossy().to_string();
+        let existing_jobs = db
+            .list_jobs_by_type_and_payload_key("cue_split", "cue_path", &cue_str)
+            .await?;
+        // Only enqueue if there is no pending/running/completed job for this CUE file.
+        let active = existing_jobs
+            .iter()
+            .any(|j| j.status == "pending" || j.status == "running" || j.status == "completed");
+        if !active {
+            db.enqueue_job(
+                "cue_split",
+                serde_json::json!({
+                    "cue_path": cue_str,
+                    "library_id": library_id,
+                }),
+                6,
+            )
+            .await?;
         }
     }
 

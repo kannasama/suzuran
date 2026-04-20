@@ -32,6 +32,7 @@ async fn test_app() -> axum::Router {
         log_level: "error".into(),
         rp_id: "localhost".into(),
         rp_origin: "http://localhost:3000".into(),
+        uploads_dir: std::path::PathBuf::from("/tmp/suzuran-test-uploads"),
     };
 
     let mb_service = Arc::new(MusicBrainzService::new(String::new()));
