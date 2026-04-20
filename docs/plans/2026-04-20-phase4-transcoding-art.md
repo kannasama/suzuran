@@ -2,9 +2,9 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Add ffmpeg-based transcode pipeline, album art standardization, CUE+FLAC sheet splitting, and extended lossless ingest format support (WavPack, APE, TrueAudio).
+**Goal:** Add ffmpeg-based transcode pipeline, album art standardization, CUE+audio sheet splitting (any format), and extended lossless ingest format support (WavPack, APE, TrueAudio).
 
-**Architecture:** Three new job handlers (`transcode`, `art_process`, `cue_split`) plus two new config tables (`encoding_profiles`, `art_profiles`) and a `track_links` relationship table. Transcode jobs build ffmpeg commands from encoding profiles and write derived `track_links` records. Art-process jobs use `lofty` for embed/extract and the `image` crate for resize/recompress. CUE+FLAC pairs are detected during scan, deferred from normal ingestion, and split into individual tracks via ffmpeg. Extended formats (WavPack `.wv`, APE `.ape`, TrueAudio `.tta`) are already tag-readable by lofty's default features — only the scanner's extension list needs updating.
+**Architecture:** Three new job handlers (`transcode`, `art_process`, `cue_split`) plus two new config tables (`encoding_profiles`, `art_profiles`) and a `track_links` relationship table. Transcode jobs build ffmpeg commands from encoding profiles and write derived `track_links` records. Art-process jobs use `lofty` for embed/extract and the `image` crate for resize/recompress. CUE+audio pairs are detected during scan for any format the scanner recognises (FLAC, WAV, APE, WavPack, etc.), deferred from normal ingestion, and split into individual tracks via `ffmpeg -c copy`; output files preserve the source format's extension. Extended formats (WavPack `.wv`, APE `.ape`, TrueAudio `.tta`) are already tag-readable by lofty's default features — only the scanner's extension list needs updating.
 
 **Tech Stack:** Rust/Axum + `lofty 0.21` (existing) + `ffmpeg` subprocess + `image = "0.25"` (new) + React/TanStack Query (existing).
 
@@ -17,9 +17,9 @@ git checkout main && git checkout -b 0.4
 
 ## Phase 4 Notes
 
-### CUE+FLAC splitting scope
+### CUE+audio splitting scope
 
-A `.cue` file references one audio file (`FILE` directive) and defines track boundaries as `INDEX 01 MM:SS:FF` timestamps. The scanner detects these pairs and skips the whole-file audio from normal ingestion, enqueueing a `cue_split` job instead. The handler splits with `ffmpeg -c copy` (no re-encode), writes CUE metadata to each output file via lofty, upserts individual tracks into DB, and enqueues fingerprint per track. Output files are placed alongside the CUE file (`{NN} - {title}.flac`); the organization engine handles final placement on accept.
+A `.cue` file references one audio file (`FILE` directive) and defines track boundaries as `INDEX 01 MM:SS:FF` timestamps. The scanner detects CUE+audio pairs for **any format in `AUDIO_EXTENSIONS`** (FLAC, WAV, APE, WavPack, etc.) and skips the whole-file audio from normal ingestion, enqueueing a `cue_split` job instead. The handler splits with `ffmpeg -c copy` (no re-encode), writes CUE metadata to each output file via lofty, upserts individual tracks into DB, and enqueues fingerprint per track. Output files are placed alongside the CUE file as `{NN} - {title}.{source_ext}` — the extension is taken from the source audio file, preserving the original format. The organization engine handles final placement on accept.
 
 The split is idempotent: if output files already exist on disk, the job skips re-splitting but still ensures tracks are in DB.
 
@@ -782,7 +782,10 @@ impl super::JobHandler for CueSplitJobHandler {
         for (i, track) in sheet.tracks.iter().enumerate() {
             let title = track.title.as_deref().unwrap_or("Track");
             let safe_title = sanitize_filename(title);
-            let output_name = format!("{:02} - {}.flac", track.number, safe_title);
+            let source_ext = audio_path.extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("flac");
+            let output_name = format!("{:02} - {}.{}", track.number, safe_title, source_ext);
             let output_path = cue_dir.join(&output_name);
 
             // Idempotency: skip if output already exists
