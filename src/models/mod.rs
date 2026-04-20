@@ -171,3 +171,27 @@ pub struct UpsertTagSuggestion {
     pub mb_release_id: Option<String>,
     pub cover_art_url: Option<String>,
 }
+
+#[derive(Debug, Clone, sqlx::FromRow, serde::Serialize, serde::Deserialize)]
+pub struct EncodingProfile {
+    pub id: i64,
+    pub name: String,
+    pub codec: String,             // "aac", "mp3", "opus", "flac", …
+    pub bitrate: Option<String>,   // "256k" — None for lossless codecs
+    pub sample_rate: Option<i64>,  // None = preserve source
+    pub channels: Option<i64>,     // None = preserve source
+    pub bit_depth: Option<i64>,    // max source bit depth for lossless profiles; None = no limit
+    pub advanced_args: Option<String>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Clone)]
+pub struct UpsertEncodingProfile {
+    pub name: String,
+    pub codec: String,
+    pub bitrate: Option<String>,
+    pub sample_rate: Option<i64>,
+    pub channels: Option<i64>,
+    pub bit_depth: Option<i64>,
+    pub advanced_args: Option<String>,
+}

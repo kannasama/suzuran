@@ -8,6 +8,11 @@ pub async fn make_db() -> Arc<dyn Store> {
     Arc::new(store)
 }
 
+#[allow(dead_code)]
+pub async fn setup_store() -> Arc<dyn Store> {
+    make_db().await
+}
+
 /// Set up an in-memory DB with a track that has an AcoustID fingerprint in
 /// both `acoustid_fingerprint` column and `tags` JSON.
 /// Returns `(store, track_id)`.

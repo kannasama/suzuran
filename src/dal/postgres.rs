@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 
-use crate::{dal::{Store, UpsertTrack}, error::AppError, models::{Job, Library, OrganizationRule, Session, Setting, TagSuggestion, Theme, TotpEntry, Track, UpsertTagSuggestion, User, WebauthnChallenge, WebauthnCredential}};
+use crate::{dal::{Store, UpsertEncodingProfile, UpsertTrack}, error::AppError, models::{EncodingProfile, Job, Library, OrganizationRule, Session, Setting, TagSuggestion, Theme, TotpEntry, Track, UpsertTagSuggestion, User, WebauthnChallenge, WebauthnCredential}};
 use sqlx::PgPool;
 
 pub struct PgStore {
@@ -687,6 +687,75 @@ impl Store for PgStore {
     async fn get_job(&self, id: i64) -> Result<Option<Job>, AppError> {
         sqlx::query_as::<_, Job>("SELECT * FROM jobs WHERE id = $1")
             .bind(id).fetch_optional(&self.pool).await.map_err(AppError::Database)
+    }
+
+    // ── encoding profiles ─────────────────────────────────────────
+
+    async fn create_encoding_profile(&self, dto: UpsertEncodingProfile) -> Result<EncodingProfile, AppError> {
+        sqlx::query_as::<_, EncodingProfile>(
+            "INSERT INTO encoding_profiles (name, codec, bitrate, sample_rate, channels, bit_depth, advanced_args)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
+             RETURNING *",
+        )
+        .bind(dto.name)
+        .bind(dto.codec)
+        .bind(dto.bitrate)
+        .bind(dto.sample_rate)
+        .bind(dto.channels)
+        .bind(dto.bit_depth)
+        .bind(dto.advanced_args)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(AppError::Database)
+    }
+
+    async fn get_encoding_profile(&self, id: i64) -> Result<EncodingProfile, AppError> {
+        sqlx::query_as::<_, EncodingProfile>("SELECT * FROM encoding_profiles WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or_else(|| AppError::NotFound(format!("encoding_profile {id}")))
+    }
+
+    async fn list_encoding_profiles(&self) -> Result<Vec<EncodingProfile>, AppError> {
+        sqlx::query_as::<_, EncodingProfile>("SELECT * FROM encoding_profiles ORDER BY name")
+            .fetch_all(&self.pool)
+            .await
+            .map_err(AppError::Database)
+    }
+
+    async fn update_encoding_profile(&self, id: i64, dto: UpsertEncodingProfile) -> Result<EncodingProfile, AppError> {
+        sqlx::query_as::<_, EncodingProfile>(
+            "UPDATE encoding_profiles
+             SET name=$1, codec=$2, bitrate=$3, sample_rate=$4, channels=$5, bit_depth=$6, advanced_args=$7
+             WHERE id=$8
+             RETURNING *",
+        )
+        .bind(dto.name)
+        .bind(dto.codec)
+        .bind(dto.bitrate)
+        .bind(dto.sample_rate)
+        .bind(dto.channels)
+        .bind(dto.bit_depth)
+        .bind(dto.advanced_args)
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(AppError::Database)?
+        .ok_or_else(|| AppError::NotFound(format!("encoding_profile {id}")))
+    }
+
+    async fn delete_encoding_profile(&self, id: i64) -> Result<(), AppError> {
+        let result = sqlx::query("DELETE FROM encoding_profiles WHERE id = $1")
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map_err(AppError::Database)?;
+        if result.rows_affected() == 0 {
+            return Err(AppError::NotFound(format!("encoding_profile {id}")));
+        }
+        Ok(())
     }
 
     // ── tag suggestions ───────────────────────────────────────────
