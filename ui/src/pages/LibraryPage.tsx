@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { TopNav } from '../components/TopNav'
 import { LibraryTree } from '../components/LibraryTree'
+import { TranscodeDialog } from '../components/TranscodeDialog'
 import { useAuth } from '../contexts/AuthContext'
 
 export function LibraryPage() {
@@ -8,6 +9,9 @@ export function LibraryPage() {
   const isAdmin = user?.role === 'admin'
 
   const [selectedLibraryId, setSelectedLibraryId] = useState<number | null>(null)
+  const [transcodeDialog, setTranscodeDialog] = useState<
+    { mode: 'track' | 'library'; sourceId: number } | null
+  >(null)
 
   return (
     <div className="flex flex-col h-screen bg-bg-base overflow-hidden">
@@ -30,6 +34,15 @@ export function LibraryPage() {
               {selectedLibraryId == null ? 'Select a library' : `Library #${selectedLibraryId}`}
             </span>
             <div className="ml-auto flex gap-1">
+              {selectedLibraryId != null && (
+                <button
+                  onClick={() => setTranscodeDialog({ mode: 'library', sourceId: selectedLibraryId })}
+                  className="text-xs text-text-muted bg-bg-panel border border-border rounded px-2 py-0.5 hover:text-text-primary hover:border-accent"
+                  title="Transcode this library to a derived library"
+                >
+                  Transcode ▾
+                </button>
+              )}
               <button className="text-xs text-text-muted bg-bg-panel border border-border rounded px-2 py-0.5 hover:border-border">
                 Group: None ▾
               </button>
@@ -51,6 +64,7 @@ export function LibraryPage() {
             <span className="w-12">Format</span>
             <span className="w-14">Bitrate</span>
             <span className="w-10">Time</span>
+            <span className="w-16">Actions</span>
             <span className="w-6 text-accent cursor-pointer" title="Customize columns">⊕</span>
           </div>
 
@@ -64,6 +78,15 @@ export function LibraryPage() {
           </div>
         </main>
       </div>
+
+      {/* Transcode dialog */}
+      {transcodeDialog != null && (
+        <TranscodeDialog
+          mode={transcodeDialog.mode}
+          sourceId={transcodeDialog.sourceId}
+          onClose={() => setTranscodeDialog(null)}
+        />
+      )}
     </div>
   )
 }

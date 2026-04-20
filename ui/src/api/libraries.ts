@@ -6,6 +6,7 @@ export interface Library {
   root_path: string
   format: string
   parent_library_id: number | null
+  encoding_profile_id: number | null
   scan_enabled: boolean
   scan_interval_secs: number
   auto_transcode_on_ingest: boolean
