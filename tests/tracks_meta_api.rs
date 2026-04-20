@@ -104,6 +104,7 @@ async fn seed_track(store: &Arc<dyn Store>) -> i64 {
             bitrate: None,
             sample_rate: None,
             channels: None,
+            bit_depth: None,
             has_embedded_art: false,
         })
         .await

@@ -31,6 +31,7 @@ pub struct UpsertTrack {
     pub bitrate: Option<i64>,
     pub sample_rate: Option<i64>,
     pub channels: Option<i64>,
+    pub bit_depth: Option<i64>,
     pub has_embedded_art: bool,
 }
 

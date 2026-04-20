@@ -32,6 +32,7 @@ async fn make_db_with_track() -> (Arc<dyn Store>, i64) {
         bitrate: None,
         sample_rate: None,
         channels: None,
+        bit_depth: None,
         has_embedded_art: false,
     }).await.unwrap();
     (db, track.id)

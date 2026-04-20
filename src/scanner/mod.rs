@@ -14,7 +14,12 @@ use crate::{
     tagger,
 };
 
-const AUDIO_EXTENSIONS: &[&str] = &["flac", "m4a", "mp3", "opus", "ogg", "aac", "wav", "aiff"];
+const AUDIO_EXTENSIONS: &[&str] = &[
+    "flac", "m4a", "mp3", "opus", "ogg", "aac", "wav", "aiff",
+    "wv",   // WavPack (lossless)
+    "ape",  // Monkey's Audio (lossless)
+    "tta",  // TrueAudio (lossless)
+];
 
 pub struct ScanResult {
     pub inserted: usize,
@@ -124,6 +129,7 @@ pub async fn scan_library(
             bitrate: audio_props.bitrate,
             sample_rate: audio_props.sample_rate,
             channels: audio_props.channels,
+            bit_depth: audio_props.bit_depth,
             has_embedded_art: audio_props.has_embedded_art,
         };
 

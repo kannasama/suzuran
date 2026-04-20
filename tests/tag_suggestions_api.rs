@@ -112,6 +112,7 @@ async fn seed_track(store: &Arc<dyn Store>) -> (i64, TempDir) {
             bitrate: None,
             sample_rate: None,
             channels: None,
+            bit_depth: None,
             has_embedded_art: false,
         })
         .await
@@ -264,6 +265,7 @@ async fn test_list_filtered_by_track_id() {
             bitrate: None,
             sample_rate: None,
             channels: None,
+            bit_depth: None,
             has_embedded_art: false,
         })
         .await

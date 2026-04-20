@@ -41,6 +41,7 @@ pub async fn setup_with_fingerprinted_track() -> (Arc<dyn Store>, i64) {
             bitrate: None,
             sample_rate: None,
             channels: None,
+            bit_depth: None,
             has_embedded_art: false,
         })
         .await
@@ -89,6 +90,7 @@ pub async fn setup_with_discid_track(disc_id: &str, track_number: u32) -> (Arc<d
             bitrate: None,
             sample_rate: None,
             channels: None,
+            bit_depth: None,
             has_embedded_art: false,
         })
         .await
@@ -166,6 +168,7 @@ pub async fn setup_with_audio_track() -> (Arc<dyn Store>, i64, TempDir) {
             bitrate: None,
             sample_rate: Some(44100),
             channels: Some(1),
+            bit_depth: None,
             has_embedded_art: false,
         })
         .await
@@ -206,6 +209,7 @@ pub async fn setup_with_track() -> (Arc<dyn Store>, i64) {
             bitrate: None,
             sample_rate: None,
             channels: None,
+            bit_depth: None,
             has_embedded_art: false,
         })
         .await

@@ -551,14 +551,15 @@ impl Store for SqliteStore {
         sqlx::query_as::<_, Track>(
             "INSERT INTO tracks (library_id, relative_path, file_hash, title, artist, albumartist,
              album, tracknumber, discnumber, totaldiscs, totaltracks, date, genre, composer,
-             label, catalognumber, tags, duration_secs, bitrate, sample_rate, channels, has_embedded_art,
-             last_scanned_at)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,datetime('now'))
+             label, catalognumber, tags, duration_secs, bitrate, sample_rate, channels, bit_depth,
+             has_embedded_art, last_scanned_at)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,datetime('now'))
              ON CONFLICT (library_id, relative_path) DO UPDATE SET
                file_hash=?3, title=?4, artist=?5, albumartist=?6, album=?7, tracknumber=?8,
                discnumber=?9, totaldiscs=?10, totaltracks=?11, date=?12, genre=?13, composer=?14,
                label=?15, catalognumber=?16, tags=?17, duration_secs=?18, bitrate=?19,
-               sample_rate=?20, channels=?21, has_embedded_art=?22, last_scanned_at=datetime('now')
+               sample_rate=?20, channels=?21, bit_depth=?22, has_embedded_art=?23,
+               last_scanned_at=datetime('now')
              RETURNING *",
         )
         .bind(t.library_id).bind(&t.relative_path).bind(&t.file_hash)
@@ -566,7 +567,7 @@ impl Store for SqliteStore {
         .bind(&t.tracknumber).bind(&t.discnumber).bind(&t.totaldiscs).bind(&t.totaltracks)
         .bind(&t.date).bind(&t.genre).bind(&t.composer).bind(&t.label).bind(&t.catalognumber)
         .bind(&t.tags).bind(t.duration_secs).bind(t.bitrate).bind(t.sample_rate)
-        .bind(t.channels).bind(t.has_embedded_art)
+        .bind(t.channels).bind(t.bit_depth).bind(t.has_embedded_art)
         .fetch_one(&self.pool).await.map_err(AppError::Database)
     }
 

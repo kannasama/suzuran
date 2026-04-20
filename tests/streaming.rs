@@ -64,6 +64,7 @@ async fn spawn_test_server() -> (String, reqwest::Client) {
         bitrate: Some(320),
         sample_rate: Some(44100),
         channels: Some(2),
+        bit_depth: None,
         has_embedded_art: false,
     }).await.unwrap();
 

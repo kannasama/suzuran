@@ -75,6 +75,7 @@ async fn setup_with_audio_track() -> (Arc<dyn Store>, i64, TempDir) {
             bitrate: None,
             sample_rate: None,
             channels: None,
+            bit_depth: None,
             has_embedded_art: false,
         })
         .await
@@ -163,6 +164,7 @@ async fn test_update_track_fingerprint_dal() {
             bitrate: None,
             sample_rate: None,
             channels: None,
+            bit_depth: None,
             has_embedded_art: false,
         })
         .await

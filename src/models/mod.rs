@@ -97,6 +97,7 @@ pub struct Track {
     pub bitrate: Option<i64>,
     pub sample_rate: Option<i64>,
     pub channels: Option<i64>,
+    pub bit_depth: Option<i64>,
     pub has_embedded_art: bool,
     pub acoustid_fingerprint: Option<String>,
     pub last_scanned_at: DateTime<Utc>,

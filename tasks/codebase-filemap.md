@@ -43,16 +43,16 @@ docker compose logs -f app
 | `src/config.rs` | `Config` struct — `from_env()` reads `DATABASE_URL`, `JWT_SECRET`, `PORT`, `LOG_LEVEL`, `RP_ID`, `RP_ORIGIN` |
 | `src/error.rs` | `AppError` enum — `IntoResponse` impl; maps DB/internal errors to JSON |
 | `src/state.rs` | `AppState` — holds `Arc<dyn Store>`, `Arc<Config>`, `Arc<Webauthn>`, `Arc<MusicBrainzService>`, `Arc<FreedBService>`, shared via Axum `State` extractor |
-| `src/models/mod.rs` | `User`, `Session`, `TotpEntry`, `WebauthnCredential`, `WebauthnChallenge`, `Setting`, `Theme`, `Library`, `Track`, `Job`, `OrganizationRule`, `TagSuggestion`, `UpsertTagSuggestion` with `sqlx::FromRow` and `serde` derives |
-| `src/dal/mod.rs` | `Store` trait + `UpsertTrack` DTO — health check, user/session CRUD, TOTP CRUD, WebAuthn credential/challenge CRUD, settings/themes CRUD, library/track CRUD (incl. `update_track_path`, `update_track_fingerprint`, `update_track_tags`), job queue CRUD, organization rule CRUD, tag suggestion CRUD (`create`, `list_pending`, `get` → `Option<TagSuggestion>`, `set_status` with rows_affected 404 guard, `count`) |
+| `src/models/mod.rs` | `User`, `Session`, `TotpEntry`, `WebauthnCredential`, `WebauthnChallenge`, `Setting`, `Theme`, `Library`, `Track` (includes `bit_depth: Option<i64>`), `Job`, `OrganizationRule`, `TagSuggestion`, `UpsertTagSuggestion` with `sqlx::FromRow` and `serde` derives |
+| `src/dal/mod.rs` | `Store` trait + `UpsertTrack` DTO (includes `bit_depth: Option<i64>`) — health check, user/session CRUD, TOTP CRUD, WebAuthn credential/challenge CRUD, settings/themes CRUD, library/track CRUD (incl. `update_track_path`, `update_track_fingerprint`, `update_track_tags`), job queue CRUD, organization rule CRUD, tag suggestion CRUD (`create`, `list_pending`, `get` → `Option<TagSuggestion>`, `set_status` with rows_affected 404 guard, `count`) |
 | `src/dal/postgres.rs` | `PgStore` — Postgres impl of `Store`; runs migrations; library + track queries |
 | `src/dal/sqlite.rs` | `SqliteStore` — SQLite impl of `Store`; runs migrations; library + track queries |
 | `src/organizer/mod.rs` | Organizer module root — re-exports `conditions`, `rules`, and `template` submodules |
 | `src/organizer/conditions.rs` | `Condition` enum + `eval_condition` — serde-tagged condition tree evaluator; supports comparison (eq/ne/contains/starts_with/ends_with), and/or/not, empty/nonempty; all comparisons case-insensitive |
 | `src/organizer/rules.rs` | `match_rule` / `apply_rules` — evaluates a priority-ordered rule list against a tag map; returns first matching rendered path template |
 | `src/organizer/template.rs` | `render_template` — renders path templates from tag maps; supports `{field}`, `{field:02}` zero-pad, `{field\|fallback}`, `{discfolder}` synthetic token |
-| `src/tagger/mod.rs` | `read_tags` / `write_tags` — lofty-based tag read/write; returns `HashMap<String,String>` keyed by MusicBrainz field names + `AudioProperties` |
-| `src/scanner/mod.rs` | `scan_library` — walks root with walkdir, SHA-256 hashes files, diffs against DB, upserts/removes tracks; enqueues `fingerprint` job for each newly inserted track |
+| `src/tagger/mod.rs` | `read_tags` / `write_tags` — lofty-based tag read/write; returns `HashMap<String,String>` keyed by MusicBrainz field names + `AudioProperties` (includes `bit_depth: Option<i64>` from lofty `AudioFile::properties().bit_depth()`) |
+| `src/scanner/mod.rs` | `scan_library` — walks root with walkdir, SHA-256 hashes files, diffs against DB, upserts/removes tracks; enqueues `fingerprint` job for each newly inserted track; `AUDIO_EXTENSIONS` includes `wv`, `ape`, `tta` (Phase 4) |
 | `src/jobs/mod.rs` | `JobHandler` trait + `ScanPayload` + `OrganizePayload` + `FingerprintPayload` DTOs |
 | `src/jobs/scan.rs` | `ScanJobHandler` — runs `scan_library`, logs result, returns JSON summary |
 | `src/jobs/organize.rs` | `OrganizeJobHandler` — evaluates rules against a track, moves the file via `tokio::fs::rename`, updates `tracks.relative_path` in DB; supports `dry_run` mode |
@@ -91,6 +91,7 @@ docker compose logs -f app
 | `tests/auth.rs` | Integration tests: register→admin, login sets cookie, `/me` requires auth, `/me` returns user |
 | `tests/totp.rs` | Integration tests: TOTP enroll returns otpauth URI, enroll then disenroll |
 | `tests/scanner.rs` | Integration tests: scanner inserts new files, removes deleted files, skips unchanged files |
+| `tests/scanner_extended_formats.rs` | Integration tests: WavPack (`.wv`), APE (`.ape`), TrueAudio (`.tta`) files are ingested by the scanner |
 | `tests/scheduler.rs` | Integration test: end-to-end scan job enqueue → scheduler picks up → track appears in library |
 | `tests/streaming.rs` | Integration tests: full file stream, byte-range (206), HEAD metadata headers, auth guard |
 | `tests/organization_rules.rs` | DAL tests: CRUD for organization_rules — create global/scoped rules, list, get, update, delete |
@@ -124,6 +125,7 @@ docker compose logs -f app
 | `0008_organization_rules.sql` | `organization_rules` table (BIGSERIAL id, JSONB conditions, priority, path_template, enabled) with library FK |
 | `0009_tag_suggestions.sql` | `tag_suggestions` table (BIGSERIAL id, track FK, source CHECK, JSONB suggested_tags, confidence, mb IDs, status CHECK) |
 | `0010_jobs_add_freedb_lookup.sql` | Expands `job_type` CHECK constraint to include `freedb_lookup` via ALTER TABLE DROP/ADD CONSTRAINT |
+| `0015_tracks_add_bit_depth.sql` | `ALTER TABLE tracks ADD COLUMN IF NOT EXISTS bit_depth INTEGER` |
 
 ### `migrations/sqlite/`
 
@@ -139,6 +141,7 @@ docker compose logs -f app
 | `0008_organization_rules.sql` | `organization_rules` table (INTEGER id, TEXT conditions, priority, path_template, enabled) with library FK |
 | `0009_tag_suggestions.sql` | `tag_suggestions` table (INTEGER id, track FK, TEXT source, TEXT suggested_tags, confidence, mb IDs, status) |
 | `0010_jobs_add_freedb_lookup.sql` | Recreates `jobs` table to add `freedb_lookup` to the `job_type` CHECK constraint |
+| `0015_tracks_add_bit_depth.sql` | `ALTER TABLE tracks ADD COLUMN bit_depth INTEGER` |
 
 ## Directories
 
