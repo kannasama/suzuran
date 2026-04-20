@@ -16,6 +16,11 @@ docker compose down                  # stop stack
 docker compose logs -f app           # follow app logs
 ```
 
+## Docker Hub
+
+Published image: `kannasama/suzuran`
+`docker-compose.yml` defaults to `kannasama/suzuran:latest`; set `build: .` for local dev.
+
 ## Design Context
 
 See `.impeccable.md` for the full design context. Summary:
@@ -40,9 +45,9 @@ See `.impeccable.md` for the full design context. Summary:
 - `resources/` — App assets (logos, icons)
 - `scripts/` — Developer tooling (`setup-dev-hooks.sh`)
 - `secrets/` — Local secret files (gitignored except README)
-- `src/` — Rust/Axum backend _(to be populated)_
-- `ui/` — Web frontend — Vite + React + Tailwind CSS _(to be populated)_
-- `tests/` — Integration tests _(to be populated)_
+- `src/` — Rust/Axum backend
+- `ui/` — Web frontend — Vite + React + Tailwind CSS
+- `tests/` — Integration tests
 - `tasks/codebase-filemap.md` — Lightweight index of every significant file; check before reading code
 - `tasks/lessons.md` — Authoritative process rules and lessons learned (git-tracked)
 

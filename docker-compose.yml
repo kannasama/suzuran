@@ -17,17 +17,27 @@ services:
       retries: 5
 
   app:
-    build: .
+    image: kannasama/suzuran:latest
+    # build: .  # uncomment to build from source instead
     restart: unless-stopped
     ports:
       - "${PORT:-3000}:3000"
     environment:
       DATABASE_URL: postgres://suzuran:suzuran@db:5432/suzuran
-      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-prod}
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
       PORT: 3000
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Set UPLOADS_DIR if you want uploaded images stored outside the default /app/uploads
+      # UPLOADS_DIR: /app/uploads
     volumes:
+      # Background image uploads — persists between container restarts
       - ./uploads:/app/uploads
+      # Music library mounts — add one volume per library path you configure in the UI.
+      # The container path is what you enter when creating a library in suzuran.
+      # Example: mount your main music collection read-write so suzuran can organise it
+      - ${MUSIC_DIR:-/path/to/your/music}:/music
+      # Example: mount a second collection (read-only if suzuran should not move files)
+      # - /path/to/more/music:/music2:ro
     depends_on:
       db:
         condition: service_healthy

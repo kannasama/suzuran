@@ -117,4 +117,7 @@ git checkout -b 0.1
 
 | Release | Rationale |
 |---------|-----------|
-| *(none yet — pre-development)* | |
+| `v0.1.0` | Phase 1 complete: auth, scanner, job queue, streaming, UI shell |
+| `v0.2.0` | Phase 2 complete: organization rules, path templates, multi-library, rules UI |
+| `v0.3.0` | Phase 3 complete: AcoustID fingerprinting, MusicBrainz tagging, Inbox UI |
+| `v0.4.0` | Phase 4 complete: transcoding, encoding profiles, album art, CUE splitting, virtual libraries, image uploads |
