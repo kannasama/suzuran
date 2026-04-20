@@ -803,4 +803,41 @@ impl Store for SqliteStore {
         .map_err(AppError::Database)?;
         Ok(row.0)
     }
+
+    async fn update_track_tags(&self, track_id: i64, tags: serde_json::Value) -> Result<(), AppError> {
+        let tags_str = serde_json::to_string(&tags).unwrap_or_else(|_| "{}".to_string());
+        let t = tags.as_object().cloned().unwrap_or_default();
+        let get = |k: &str| t.get(k).and_then(|v| v.as_str()).map(str::to_string);
+        sqlx::query(
+            r#"UPDATE tracks SET
+                 tags          = ?,
+                 title         = ?,
+                 artist        = ?,
+                 albumartist   = ?,
+                 album         = ?,
+                 date          = ?,
+                 genre         = ?,
+                 tracknumber   = ?,
+                 discnumber    = ?,
+                 label         = ?,
+                 catalognumber = ?
+               WHERE id = ?"#,
+        )
+        .bind(tags_str)
+        .bind(get("title"))
+        .bind(get("artist"))
+        .bind(get("albumartist"))
+        .bind(get("album"))
+        .bind(get("date"))
+        .bind(get("genre"))
+        .bind(get("tracknumber"))
+        .bind(get("discnumber"))
+        .bind(get("label"))
+        .bind(get("catalognumber"))
+        .bind(track_id)
+        .execute(&self.pool)
+        .await
+        .map(|_| ())
+        .map_err(AppError::Database)
+    }
 }

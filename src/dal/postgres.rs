@@ -767,4 +767,28 @@ impl Store for PgStore {
         .map_err(AppError::Database)?;
         Ok(row.0)
     }
+
+    async fn update_track_tags(&self, track_id: i64, tags: serde_json::Value) -> Result<(), AppError> {
+        sqlx::query(
+            r#"UPDATE tracks SET
+                 tags          = $1,
+                 title         = ($1 ->> 'title'),
+                 artist        = ($1 ->> 'artist'),
+                 albumartist   = ($1 ->> 'albumartist'),
+                 album         = ($1 ->> 'album'),
+                 date          = ($1 ->> 'date'),
+                 genre         = ($1 ->> 'genre'),
+                 tracknumber   = ($1 ->> 'tracknumber'),
+                 discnumber    = ($1 ->> 'discnumber'),
+                 label         = ($1 ->> 'label'),
+                 catalognumber = ($1 ->> 'catalognumber')
+               WHERE id = $2"#,
+        )
+        .bind(tags)
+        .bind(track_id)
+        .execute(&self.pool)
+        .await
+        .map(|_| ())
+        .map_err(AppError::Database)
+    }
 }

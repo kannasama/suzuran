@@ -44,7 +44,7 @@ docker compose logs -f app
 | `src/error.rs` | `AppError` enum — `IntoResponse` impl; maps DB/internal errors to JSON |
 | `src/state.rs` | `AppState` — holds `Arc<dyn Store>`, `Arc<Config>`, `Arc<Webauthn>`, `Arc<MusicBrainzService>`, `Arc<FreedBService>`, shared via Axum `State` extractor |
 | `src/models/mod.rs` | `User`, `Session`, `TotpEntry`, `WebauthnCredential`, `WebauthnChallenge`, `Setting`, `Theme`, `Library`, `Track`, `Job`, `OrganizationRule`, `TagSuggestion`, `UpsertTagSuggestion` with `sqlx::FromRow` and `serde` derives |
-| `src/dal/mod.rs` | `Store` trait + `UpsertTrack` DTO — health check, user/session CRUD, TOTP CRUD, WebAuthn credential/challenge CRUD, settings/themes CRUD, library/track CRUD (incl. `update_track_path`, `update_track_fingerprint`), job queue CRUD, organization rule CRUD, tag suggestion CRUD (`create`, `list_pending`, `get` → `Option<TagSuggestion>`, `set_status` with rows_affected 404 guard, `count`) |
+| `src/dal/mod.rs` | `Store` trait + `UpsertTrack` DTO — health check, user/session CRUD, TOTP CRUD, WebAuthn credential/challenge CRUD, settings/themes CRUD, library/track CRUD (incl. `update_track_path`, `update_track_fingerprint`, `update_track_tags`), job queue CRUD, organization rule CRUD, tag suggestion CRUD (`create`, `list_pending`, `get` → `Option<TagSuggestion>`, `set_status` with rows_affected 404 guard, `count`) |
 | `src/dal/postgres.rs` | `PgStore` — Postgres impl of `Store`; runs migrations; library + track queries |
 | `src/dal/sqlite.rs` | `SqliteStore` — SQLite impl of `Store`; runs migrations; library + track queries |
 | `src/organizer/mod.rs` | Organizer module root — re-exports `conditions`, `rules`, and `template` submodules |
@@ -77,7 +77,7 @@ docker compose logs -f app
 | `src/api/tracks.rs` | `GET/HEAD /:id/stream` — byte-range streaming with `Content-Range`, `Accept-Ranges`, `X-File-Size`, `X-Duration-Secs`, `X-Bitrate`, `X-Sample-Rate` headers |
 | `src/api/organization_rules.rs` | Handlers: `GET /` (list, optional `?library_id=N`), `POST /` (admin, create → 201), `GET /:id`, `PUT /:id` (admin), `DELETE /:id` (admin → 204), `POST /preview` (admin, dry-run path proposals), `POST /apply` (admin, enqueue organize jobs) |
 | `src/api/tag_suggestions.rs` | Handlers: `GET /` (list pending, optional `?track_id=N`, auth), `GET /count` (public nav badge), `GET /:id` (auth, 404 if missing), `POST /:id/accept` (auth, calls tagging stub + sets status), `POST /:id/reject` (auth), `POST /batch-accept` (auth, body `{min_confidence}`) |
-| `src/services/tagging.rs` | `apply_suggestion` stub — returns `Ok(())`, full implementation in Task 7 |
+| `src/services/tagging.rs` | `apply_suggestion` — merges existing track tags with suggestion tags, writes to audio file via `tagger::write_tags`, updates DB via `update_track_tags` |
 | `src/api/middleware/mod.rs` | Re-exports `auth` and `admin` middleware modules |
 | `src/api/middleware/auth.rs` | `AuthUser` extractor — verifies session cookie JWT + DB session row; rejects `tfa:true` tokens |
 | `src/api/middleware/admin.rs` | `AdminUser` extractor — wraps `AuthUser`, additionally requires `role = "admin"` |
@@ -105,7 +105,8 @@ docker compose logs -f app
 | `tests/mb_lookup_job.rs` | wiremock integration tests for `MbLookupJobHandler` — creates suggestion on ≥0.8 score, skips below threshold + enqueues freedb_lookup, errors on missing fingerprint |
 | `tests/freedb_service.rs` | wiremock tests for `FreedBService` — disc lookup (two-mock query+read), 202 no-match, read failure, `to_tag_map` field extraction |
 | `tests/freedb_lookup_job.rs` | wiremock integration tests for `FreedBLookupJobHandler` — creates suggestion for DISCID track, skips without DISCID, zero suggestions on no match, error on missing track |
-| `tests/common/mod.rs` | Shared test helpers: `make_db()`, `setup_with_fingerprinted_track()`, `setup_with_discid_track()`, `setup_with_track()` |
+| `tests/common/mod.rs` | Shared test helpers: `make_db()`, `setup_with_fingerprinted_track()`, `setup_with_discid_track()`, `setup_with_track()`, `setup_with_audio_track()` (FLAC with VORBISCOMMENT for tagging tests), `TAGGED_FLAC` bytes constant |
+| `tests/tagging_service.rs` | Integration tests for `apply_suggestion` — file + DB updated, indexed artist column correct, title preserved from merge, NotFound on missing track |
 
 ## Migrations
 

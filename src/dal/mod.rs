@@ -229,4 +229,5 @@ pub trait Store: Send + Sync {
     async fn get_tag_suggestion(&self, id: i64) -> Result<Option<TagSuggestion>, AppError>;
     async fn set_tag_suggestion_status(&self, id: i64, status: &str) -> Result<(), AppError>;
     async fn pending_tag_suggestion_count(&self) -> Result<i64, AppError>;
+    async fn update_track_tags(&self, track_id: i64, tags: serde_json::Value) -> Result<(), AppError>;
 }

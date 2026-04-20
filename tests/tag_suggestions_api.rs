@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use tempfile::TempDir;
 use url::Url;
 use webauthn_rs::WebauthnBuilder;
 
@@ -73,10 +74,31 @@ async fn login_admin(base: &str) -> reqwest::Client {
     client
 }
 
-/// Create a library + track in the store, return the track id.
-async fn seed_track(store: &Arc<dyn Store>) -> i64 {
+/// Minimal valid FLAC with VORBISCOMMENT block and audio frame — same bytes as in common/mod.rs.
+const TAGGED_FLAC: &[u8] = &[
+    0x66, 0x4c, 0x61, 0x43, 0x00, 0x00, 0x00, 0x22,
+    0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x0a, 0xc4, 0x40, 0xf0, 0x00, 0x00, 0x00, 0x01,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x84, 0x00, 0x00, 0x12,
+    0x0a, 0x00, 0x00, 0x00,
+    0x6c, 0x6f, 0x66, 0x74, 0x79, 0x20, 0x74, 0x65, 0x73, 0x74,
+    0x00, 0x00, 0x00, 0x00,
+    0xff, 0xf8, 0x6c, 0x08, 0x00, 0x00, 0x53, 0x00, 0x00, 0x00, 0x28, 0x27,
+];
+
+/// Create a library + track in the store backed by a real audio file.
+/// Returns `(track_id, TempDir)` — keep TempDir alive to prevent cleanup.
+async fn seed_track(store: &Arc<dyn Store>) -> (i64, TempDir) {
+    let dir = TempDir::new().unwrap();
+    let root = dir.path();
+
+    let track_file = root.join("test.flac");
+    tokio::fs::write(&track_file, TAGGED_FLAC).await.unwrap();
+
     let lib = store
-        .create_library("Test", "/music", "flac", None)
+        .create_library("Test", root.to_str().unwrap(), "flac", None)
         .await
         .unwrap();
     let track = store
@@ -97,7 +119,7 @@ async fn seed_track(store: &Arc<dyn Store>) -> i64 {
             composer: None,
             label: None,
             catalognumber: None,
-            tags: serde_json::json!({}),
+            tags: serde_json::json!({"title": "Test Song", "artist": "Test Artist"}),
             duration_secs: Some(180.0),
             bitrate: None,
             sample_rate: None,
@@ -106,7 +128,7 @@ async fn seed_track(store: &Arc<dyn Store>) -> i64 {
         })
         .await
         .unwrap();
-    track.id
+    (track.id, dir)
 }
 
 /// Create a tag suggestion for the given track_id.
@@ -171,7 +193,7 @@ async fn test_count_is_public() {
 #[tokio::test]
 async fn test_count_reflects_pending() {
     let (base, store) = spawn_test_server_with_store().await;
-    let track_id = seed_track(&store).await;
+    let (track_id, _dir) = seed_track(&store).await;
     seed_suggestion(&store, track_id, 0.9).await;
     seed_suggestion(&store, track_id, 0.7).await;
 
@@ -209,7 +231,7 @@ async fn test_list_returns_pending() {
     let (base, store) = spawn_test_server_with_store().await;
     let client = login_admin(&base).await;
 
-    let track_id = seed_track(&store).await;
+    let (track_id, _dir) = seed_track(&store).await;
     seed_suggestion(&store, track_id, 0.9).await;
     seed_suggestion(&store, track_id, 0.7).await;
 
@@ -229,7 +251,7 @@ async fn test_list_filtered_by_track_id() {
     let (base, store) = spawn_test_server_with_store().await;
     let client = login_admin(&base).await;
 
-    let track_id = seed_track(&store).await;
+    let (track_id, _dir) = seed_track(&store).await;
     let lib2 = store.create_library("L2", "/music2", "flac", None).await.unwrap();
     let track2 = store
         .upsert_track(UpsertTrack {
@@ -282,7 +304,7 @@ async fn test_reject_sets_status() {
     let (base, store) = spawn_test_server_with_store().await;
     let client = login_admin(&base).await;
 
-    let track_id = seed_track(&store).await;
+    let (track_id, _dir) = seed_track(&store).await;
     let suggestion_id = seed_suggestion(&store, track_id, 0.9).await;
 
     let resp = client
@@ -317,7 +339,7 @@ async fn test_accept_sets_status() {
     let (base, store) = spawn_test_server_with_store().await;
     let client = login_admin(&base).await;
 
-    let track_id = seed_track(&store).await;
+    let (track_id, _dir) = seed_track(&store).await;
     let suggestion_id = seed_suggestion(&store, track_id, 0.9).await;
 
     let resp = client
@@ -350,7 +372,7 @@ async fn test_accept_already_accepted_returns_409() {
     let (base, store) = spawn_test_server_with_store().await;
     let client = login_admin(&base).await;
 
-    let track_id = seed_track(&store).await;
+    let (track_id, _dir) = seed_track(&store).await;
     let suggestion_id = seed_suggestion(&store, track_id, 0.9).await;
 
     // First accept — must succeed
@@ -375,7 +397,7 @@ async fn test_reject_already_rejected_returns_409() {
     let (base, store) = spawn_test_server_with_store().await;
     let client = login_admin(&base).await;
 
-    let track_id = seed_track(&store).await;
+    let (track_id, _dir) = seed_track(&store).await;
     let suggestion_id = seed_suggestion(&store, track_id, 0.9).await;
 
     // First reject — must succeed
@@ -402,7 +424,7 @@ async fn test_batch_accept_above_threshold() {
     let (base, store) = spawn_test_server_with_store().await;
     let client = login_admin(&base).await;
 
-    let track_id = seed_track(&store).await;
+    let (track_id, _dir) = seed_track(&store).await;
     // Three suggestions at different confidence levels
     seed_suggestion(&store, track_id, 0.9).await;
     seed_suggestion(&store, track_id, 0.7).await;
@@ -428,7 +450,7 @@ async fn test_batch_accept_all_above_threshold() {
     let (base, store) = spawn_test_server_with_store().await;
     let client = login_admin(&base).await;
 
-    let track_id = seed_track(&store).await;
+    let (track_id, _dir) = seed_track(&store).await;
     seed_suggestion(&store, track_id, 0.9).await;
     seed_suggestion(&store, track_id, 0.85).await;
 
@@ -466,7 +488,7 @@ async fn test_get_one_returns_suggestion() {
     let (base, store) = spawn_test_server_with_store().await;
     let client = login_admin(&base).await;
 
-    let track_id = seed_track(&store).await;
+    let (track_id, _dir) = seed_track(&store).await;
     let suggestion_id = seed_suggestion(&store, track_id, 0.9).await;
 
     let body: serde_json::Value = client
