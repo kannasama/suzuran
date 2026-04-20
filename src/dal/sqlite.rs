@@ -715,6 +715,25 @@ impl Store for SqliteStore {
             .bind(id).fetch_optional(&self.pool).await.map_err(AppError::Database)
     }
 
+    async fn list_jobs_by_type_and_payload_key(
+        &self,
+        job_type: &str,
+        key: &str,
+        value: &str,
+    ) -> Result<Vec<Job>, AppError> {
+        // SQLite: json_extract(payload, '$.' || key) = value
+        let query = format!(
+            "SELECT * FROM jobs WHERE job_type = ? AND json_extract(payload, '$.{}') = ?",
+            key.replace('\'', "''")
+        );
+        sqlx::query_as::<_, Job>(&query)
+            .bind(job_type)
+            .bind(value)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(AppError::Database)
+    }
+
     // ── encoding profiles ─────────────────────────────────────────
 
     async fn create_encoding_profile(&self, dto: UpsertEncodingProfile) -> Result<EncodingProfile, AppError> {

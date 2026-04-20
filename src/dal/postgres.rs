@@ -689,6 +689,23 @@ impl Store for PgStore {
             .bind(id).fetch_optional(&self.pool).await.map_err(AppError::Database)
     }
 
+    async fn list_jobs_by_type_and_payload_key(
+        &self,
+        job_type: &str,
+        key: &str,
+        value: &str,
+    ) -> Result<Vec<Job>, AppError> {
+        sqlx::query_as::<_, Job>(
+            "SELECT * FROM jobs WHERE job_type = $1 AND payload->>$2 = $3",
+        )
+        .bind(job_type)
+        .bind(key)
+        .bind(value)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(AppError::Database)
+    }
+
     // ── encoding profiles ─────────────────────────────────────────
 
     async fn create_encoding_profile(&self, dto: UpsertEncodingProfile) -> Result<EncodingProfile, AppError> {

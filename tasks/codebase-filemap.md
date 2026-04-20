@@ -44,7 +44,7 @@ docker compose logs -f app
 | `src/error.rs` | `AppError` enum — `IntoResponse` impl; maps DB/internal errors to JSON |
 | `src/state.rs` | `AppState` — holds `Arc<dyn Store>`, `Arc<Config>`, `Arc<Webauthn>`, `Arc<MusicBrainzService>`, `Arc<FreedBService>`, shared via Axum `State` extractor |
 | `src/models/mod.rs` | `User`, `Session`, `TotpEntry`, `WebauthnCredential`, `WebauthnChallenge`, `Setting`, `Theme`, `Library`, `Track` (includes `bit_depth: Option<i64>`), `Job`, `OrganizationRule`, `TagSuggestion`, `UpsertTagSuggestion`, `EncodingProfile`, `UpsertEncodingProfile`, `ArtProfile`, `UpsertArtProfile`, `TrackLink` with `sqlx::FromRow` and `serde` derives |
-| `src/dal/mod.rs` | `Store` trait + `UpsertTrack` DTO (includes `bit_depth: Option<i64>`) — health check, user/session CRUD, TOTP CRUD, WebAuthn credential/challenge CRUD, settings/themes CRUD, library/track CRUD (incl. `update_track_path`, `update_track_fingerprint`, `update_track_tags`), job queue CRUD, organization rule CRUD, tag suggestion CRUD, encoding profile CRUD, art profile CRUD (`create`, `get`, `list`, `update`, `delete` with 404 guard), track link CRUD (`create_track_link`, `list_derived_tracks`, `list_source_tracks`); exports `UpsertTagSuggestion` + `UpsertEncodingProfile` + `UpsertArtProfile` |
+| `src/dal/mod.rs` | `Store` trait + `UpsertTrack` DTO (includes `bit_depth: Option<i64>`) — health check, user/session CRUD, TOTP CRUD, WebAuthn credential/challenge CRUD, settings/themes CRUD, library/track CRUD (incl. `update_track_path`, `update_track_fingerprint`, `update_track_tags`), job queue CRUD (incl. `list_jobs_by_type_and_payload_key`), organization rule CRUD, tag suggestion CRUD, encoding profile CRUD, art profile CRUD (`create`, `get`, `list`, `update`, `delete` with 404 guard), track link CRUD (`create_track_link`, `list_derived_tracks`, `list_source_tracks`); exports `UpsertTagSuggestion` + `UpsertEncodingProfile` + `UpsertArtProfile` |
 | `src/dal/postgres.rs` | `PgStore` — Postgres impl of `Store`; runs migrations; library + track queries |
 | `src/dal/sqlite.rs` | `SqliteStore` — SQLite impl of `Store`; runs migrations; library + track queries |
 | `src/organizer/mod.rs` | Organizer module root — re-exports `conditions`, `rules`, and `template` submodules |
@@ -53,14 +53,15 @@ docker compose logs -f app
 | `src/organizer/template.rs` | `render_template` — renders path templates from tag maps; supports `{field}`, `{field:02}` zero-pad, `{field\|fallback}`, `{discfolder}` synthetic token |
 | `src/cue/mod.rs` | `parse_cue` — line-by-line CUE sheet parser; returns `CueSheet` (`album_title`, `performer`, `date`, `genre`, `audio_file`, `tracks: Vec<CueTrack>`); `CueTrack` holds `number`, `title`, `performer`, `index_01_secs` (converted from MM:SS:FF); handles album-level and per-track TITLE/PERFORMER |
 | `src/tagger/mod.rs` | `read_tags` / `write_tags` — lofty-based tag read/write; returns `HashMap<String,String>` keyed by MusicBrainz field names + `AudioProperties` (includes `bit_depth: Option<i64>` from lofty `AudioFile::properties().bit_depth()`) |
-| `src/scanner/mod.rs` | `scan_library` — walks root with walkdir, SHA-256 hashes files, diffs against DB, upserts/removes tracks; enqueues `fingerprint` job for each newly inserted track; `AUDIO_EXTENSIONS` includes `wv`, `ape`, `tta` (Phase 4) |
-| `src/jobs/mod.rs` | `JobHandler` trait + `ScanPayload` + `OrganizePayload` + `FingerprintPayload` DTOs |
+| `src/scanner/mod.rs` | `scan_library` — two-pass: Pass 1 detects CUE+audio pairs, skips CUE-backed audio files; Pass 2 walks remaining audio, SHA-256 hashes, diffs against DB, upserts/removes tracks, enqueues `fingerprint` for new tracks; Pass 3 enqueues `cue_split` jobs for discovered CUE sheets; `AUDIO_EXTENSIONS` includes `wv`, `ape`, `tta` (Phase 4) |
+| `src/jobs/mod.rs` | `JobHandler` trait + `ScanPayload` + `OrganizePayload` + `FingerprintPayload` + `CueSplitPayload` DTOs |
+| `src/jobs/cue_split.rs` | `CueSplitJobHandler` — reads+parses CUE sheet, spawns `ffmpeg -c:a copy` for each track (with `-ss`/`-to`), writes tags via lofty `write_tags`, hashes output, upserts track to DB, enqueues `fingerprint`; idempotent (skips existing output files); `hash_file` + `sanitize_filename` helpers |
 | `src/jobs/scan.rs` | `ScanJobHandler` — runs `scan_library`, logs result, returns JSON summary |
 | `src/jobs/organize.rs` | `OrganizeJobHandler` — evaluates rules against a track, moves the file via `tokio::fs::rename`, updates `tracks.relative_path` in DB; supports `dry_run` mode |
 | `src/jobs/fingerprint.rs` | `FingerprintJobHandler` — spawns `fpcalc -json` as async subprocess, parses fingerprint + duration, calls `update_track_fingerprint` |
 | `src/jobs/freedb_lookup.rs` | `FreedBLookupJobHandler` — reads `DISCID` tag, calls `FreedBService::disc_lookup`, creates one `tag_suggestion` row with `confidence = 0.5`; skips cleanly if no DISCID |
 | `src/jobs/mb_lookup.rs` | `MbLookupJobHandler` — AcoustID lookup via `MusicBrainzService`, creates `tag_suggestion` rows for results ≥ 0.8; enqueues `freedb_lookup` fallback if zero suggestions |
-| `src/scheduler/mod.rs` | `Scheduler` — Tokio poll loop; claims pending jobs, semaphore-caps concurrency per type, retries on failure; takes `Arc<MusicBrainzService>` + `Arc<FreedBService>` to construct handlers |
+| `src/scheduler/mod.rs` | `Scheduler` — Tokio poll loop; claims pending jobs, semaphore-caps concurrency per type, retries on failure; takes `Arc<MusicBrainzService>` + `Arc<FreedBService>` to construct handlers; `cue_split` registered with concurrency=2 |
 | `src/services/mod.rs` | Re-exports `auth`, `freedb`, `musicbrainz`, `tagging`, `totp`, `transcode_compat`, `webauthn` service modules |
 | `src/services/auth.rs` | `AuthService` — Argon2 hashing, JWT sign/verify, login flow with `LoginResult` enum, `2fa_pending` token issue/decode, `create_full_session` |
 | `src/services/freedb.rs` | `FreedBService` — gnudb.org CDDB disc-ID lookup (query + read, two HTTP calls), XMCD response parsing, `to_tag_map` (candidate → tag HashMap) |
@@ -108,12 +109,13 @@ docker compose logs -f app
 | `tests/mb_lookup_job.rs` | wiremock integration tests for `MbLookupJobHandler` — creates suggestion on ≥0.8 score, skips below threshold + enqueues freedb_lookup, errors on missing fingerprint |
 | `tests/freedb_service.rs` | wiremock tests for `FreedBService` — disc lookup (two-mock query+read), 202 no-match, read failure, `to_tag_map` field extraction |
 | `tests/freedb_lookup_job.rs` | wiremock integration tests for `FreedBLookupJobHandler` — creates suggestion for DISCID track, skips without DISCID, zero suggestions on no match, error on missing track |
-| `tests/common/mod.rs` | Shared test helpers: `make_db()`, `setup_store()` (alias for make_db), `setup_with_fingerprinted_track()`, `setup_with_discid_track()`, `setup_with_track()`, `setup_with_audio_track()` (FLAC with VORBISCOMMENT for tagging tests), `TAGGED_FLAC` bytes constant |
+| `tests/common/mod.rs` | Shared test helpers: `make_db()`, `setup_store()` (alias for make_db), `setup_with_fingerprinted_track()`, `setup_with_discid_track()`, `setup_with_track()`, `setup_with_audio_track()` (FLAC with VORBISCOMMENT for tagging tests), `setup_cue_library()` (temp dir with 3-track CUE + FLAC, in-memory DB+library), `TAGGED_FLAC` bytes constant |
 | `tests/encoding_profiles_dal.rs` | DAL tests for encoding_profiles CRUD — create, list, get, update, delete; full flow with `UpsertEncodingProfile` |
 | `tests/art_profiles_dal.rs` | DAL tests for art_profiles CRUD — create, list, get, update, delete; full flow with `UpsertArtProfile` |
 | `tests/track_links_dal.rs` | DAL tests for track_links — create link between two tracks, list_derived_tracks, list_source_tracks; verifies FK constraint satisfaction |
 | `tests/tagging_service.rs` | Integration tests for `apply_suggestion` — file + DB updated, indexed artist column correct, title preserved from merge, NotFound on missing track |
 | `tests/cue_parser.rs` | Unit tests for `parse_cue` — album-level fields, per-track fields, INDEX 01 time conversion (MM:SS:FF → seconds), 3-track parse, duration calc via next-track start |
+| `tests/cue_split_job.rs` | Integration tests for `CueSplitJobHandler` — creates 3 tracks from CUE+FLAC (skips gracefully if ffmpeg absent), idempotency (second run returns 0), scanner skips CUE-backed audio and enqueues cue_split job |
 | `tests/transcode_compat.rs` | Unit tests for `is_compatible` — 6 tests covering lossy→lossless rejection, lossless→lossy allowed, upsample rejection, bit-depth inflation rejection, bitrate upscale rejection, unknown-values pass-through |
 
 ## Migrations
@@ -135,6 +137,7 @@ docker compose logs -f app
 | `0011_encoding_profiles.sql` | `encoding_profiles` table (BIGSERIAL id, name, codec, bitrate, sample_rate, channels, bit_depth, advanced_args, created_at) |
 | `0012_art_profiles.sql` | `art_profiles` table (BIGSERIAL id, name, max_width_px, max_height_px, max_size_bytes, format CHECK jpeg/png, quality CHECK 1-100, apply_to_library_id FK, created_at) |
 | `0013_track_links.sql` | `track_links` table (composite PK source+derived, BIGINT FKs to tracks ON DELETE CASCADE, encoding_profile_id FK ON DELETE SET NULL, TIMESTAMPTZ created_at, two indexes) |
+| `0014_jobs_add_cue_split.sql` | Expands `job_type` CHECK constraint to include `cue_split` via ALTER TABLE DROP/ADD CONSTRAINT |
 | `0015_tracks_add_bit_depth.sql` | `ALTER TABLE tracks ADD COLUMN IF NOT EXISTS bit_depth INTEGER` |
 
 ### `migrations/sqlite/`
@@ -154,6 +157,7 @@ docker compose logs -f app
 | `0011_encoding_profiles.sql` | `encoding_profiles` table (INTEGER id AUTOINCREMENT, name, codec, bitrate, sample_rate, channels, bit_depth, advanced_args, created_at TEXT) |
 | `0012_art_profiles.sql` | `art_profiles` table (INTEGER id AUTOINCREMENT, name, max_width_px, max_height_px, max_size_bytes, format CHECK jpeg/png, quality CHECK 1-100, apply_to_library_id FK, created_at TEXT DEFAULT (datetime('now'))) |
 | `0013_track_links.sql` | `track_links` table (composite PK source+derived, INTEGER FKs to tracks ON DELETE CASCADE, encoding_profile_id FK ON DELETE SET NULL, TEXT created_at DEFAULT (datetime('now')), two indexes) |
+| `0014_jobs_add_cue_split.sql` | Recreates `jobs` table to add `cue_split` to the `job_type` CHECK constraint |
 | `0015_tracks_add_bit_depth.sql` | `ALTER TABLE tracks ADD COLUMN bit_depth INTEGER` |
 
 ## Directories

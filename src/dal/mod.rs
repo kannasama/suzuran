@@ -178,6 +178,12 @@ pub trait Store: Send + Sync {
     async fn cancel_job(&self, id: i64) -> Result<(), AppError>;
     async fn list_jobs(&self, status: Option<&str>, limit: i64) -> Result<Vec<Job>, AppError>;
     async fn get_job(&self, id: i64) -> Result<Option<Job>, AppError>;
+    async fn list_jobs_by_type_and_payload_key(
+        &self,
+        job_type: &str,
+        key: &str,
+        value: &str,
+    ) -> Result<Vec<Job>, AppError>;
 
     // ── organization rules ────────────────────────────────────────
     /// Returns all rules when library_id is None; when Some, returns global rules

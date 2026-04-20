@@ -182,6 +182,55 @@ pub async fn setup_with_audio_track() -> (Arc<dyn Store>, i64, TempDir) {
     (db, track.id, dir)
 }
 
+/// Set up an in-memory DB and a temp directory with a 3-track CUE sheet pointing
+/// to a minimal FLAC file (`album.flac`). The CUE timestamps are chosen so that
+/// all three tracks fall within the (very short) file duration:
+///   Track 1: 00:00:00 (0 s)
+///   Track 2: 00:00:01 (1 s) — ffmpeg -c:a copy will produce a zero/near-zero length segment
+///   Track 3: 00:00:02 (2 s)
+/// Returns `(store, library_id, TempDir)` — keep TempDir alive.
+pub async fn setup_cue_library() -> (Arc<dyn Store>, i64, TempDir) {
+    let dir = TempDir::new().unwrap();
+    let root = dir.path();
+
+    // Write the FLAC source file
+    let flac_path = root.join("album.flac");
+    tokio::fs::write(&flac_path, TAGGED_FLAC).await.unwrap();
+
+    // Write the CUE sheet
+    let cue_content = r#"TITLE "Test Album"
+PERFORMER "Test Artist"
+REM DATE 2024
+REM GENRE Rock
+FILE "album.flac" WAVE
+
+  TRACK 01 AUDIO
+    TITLE "Track One"
+    PERFORMER "Test Artist"
+    INDEX 01 00:00:00
+
+  TRACK 02 AUDIO
+    TITLE "Track Two"
+    PERFORMER "Test Artist"
+    INDEX 01 00:00:01
+
+  TRACK 03 AUDIO
+    TITLE "Track Three"
+    PERFORMER "Test Artist"
+    INDEX 01 00:00:02
+"#;
+    let cue_path = root.join("album.cue");
+    tokio::fs::write(&cue_path, cue_content).await.unwrap();
+
+    let db = make_db().await;
+    let lib = db
+        .create_library("CUE Test", root.to_str().unwrap(), "flac", None)
+        .await
+        .unwrap();
+
+    (db, lib.id, dir)
+}
+
 /// Set up an in-memory DB with a plain track (no fingerprint).
 /// Returns `(store, track_id)`.
 pub async fn setup_with_track() -> (Arc<dyn Store>, i64) {

@@ -1,4 +1,3 @@
-// stub — full implementation in Task 7
 use std::{
     collections::{HashMap, HashSet},
     path::{Path, PathBuf},
@@ -9,6 +8,7 @@ use sha2::{Digest, Sha256};
 use walkdir::WalkDir;
 
 use crate::{
+    cue::parse_cue,
     dal::{Store, UpsertTrack},
     error::AppError,
     tagger,
@@ -35,6 +35,25 @@ pub async fn scan_library(
 ) -> Result<ScanResult, AppError> {
     let mut result = ScanResult { inserted: 0, updated: 0, removed: 0, errors: vec![] };
 
+    // --- Pass 1: find CUE files and their paired audio ---
+    let mut cue_backed_audio: HashSet<PathBuf> = HashSet::new();
+    let mut cue_files: Vec<PathBuf> = Vec::new();
+
+    for entry in WalkDir::new(root_path).follow_links(true).into_iter().filter_map(|e| e.ok()) {
+        let p = entry.path().to_path_buf();
+        if p.extension().and_then(|e| e.to_str()) == Some("cue") {
+            if let Ok(content) = std::fs::read_to_string(&p) {
+                if let Ok(sheet) = parse_cue(&content) {
+                    let audio = p.parent().unwrap_or(root_path).join(&sheet.audio_file);
+                    if audio.exists() {
+                        cue_backed_audio.insert(audio);
+                        cue_files.push(p);
+                    }
+                }
+            }
+        }
+    }
+
     let existing: HashMap<String, (i64, String)> = db
         .list_track_paths_by_library(library_id)
         .await?
@@ -51,6 +70,12 @@ pub async fn scan_library(
         .filter(|e| e.file_type().is_file())
     {
         let abs_path = entry.path().to_path_buf();
+
+        // Skip audio files that are backed by a CUE sheet — they will be
+        // split into individual tracks by the cue_split job instead.
+        if cue_backed_audio.contains(&abs_path) {
+            continue;
+        }
         let ext = abs_path
             .extension()
             .and_then(|e| e.to_str())
@@ -153,6 +178,29 @@ pub async fn scan_library(
         if !seen_paths.contains(rel_path) {
             db.mark_track_removed(*id).await?;
             result.removed += 1;
+        }
+    }
+
+    // --- Pass 3: enqueue cue_split jobs for discovered CUE sheets ---
+    for cue_path in &cue_files {
+        let cue_str = cue_path.to_string_lossy().to_string();
+        let existing_jobs = db
+            .list_jobs_by_type_and_payload_key("cue_split", "cue_path", &cue_str)
+            .await?;
+        // Only enqueue if there is no pending/running/completed job for this CUE file.
+        let active = existing_jobs
+            .iter()
+            .any(|j| j.status == "pending" || j.status == "running" || j.status == "completed");
+        if !active {
+            db.enqueue_job(
+                "cue_split",
+                serde_json::json!({
+                    "cue_path": cue_str,
+                    "library_id": library_id,
+                }),
+                6,
+            )
+            .await?;
         }
     }
 
