@@ -144,9 +144,9 @@ docker compose logs -f app
 
 | Directory | Owns |
 |-----------|------|
-| `docs/plans/` | Implementation plans — date-prefixed kebab-case filenames |
-| `migrations/postgres/` | Postgres SQL migrations (0001–0007, Phase 1 schema) |
-| `migrations/sqlite/` | SQLite SQL migrations (0001–0007, Phase 1 schema) |
+| `docs/plans/` | Implementation plans — date-prefixed kebab-case filenames; latest: `2026-04-20-phase4-transcoding-art.md` |
+| `migrations/postgres/` | Postgres SQL migrations (0001–0010, through Phase 3) |
+| `migrations/sqlite/` | SQLite SQL migrations (0001–0010, through Phase 3) |
 | `resources/` | App assets (logos, icons, etc.) |
 | `scripts/` | Developer tooling scripts |
 | `secrets/` | Local secret files (gitignored except README) |
