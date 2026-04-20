@@ -10,7 +10,7 @@ use suzuran_server::{
     config::Config,
     dal::{postgres::PgStore, sqlite::SqliteStore},
     scheduler::Scheduler,
-    services::musicbrainz::MusicBrainzService,
+    services::{freedb::FreedBService, musicbrainz::MusicBrainzService},
     state::AppState,
 };
 
@@ -55,11 +55,12 @@ async fn main() -> anyhow::Result<()> {
         tracing::warn!("ACOUSTID_KEY is not set — AcoustID lookups will fail; set this in settings after first boot");
     }
     let mb_service = Arc::new(MusicBrainzService::new(acoustid_key));
+    let freedb_service = Arc::new(FreedBService::new());
 
-    let state = AppState::new(db.clone(), config.clone(), webauthn, mb_service.clone());
+    let state = AppState::new(db.clone(), config.clone(), webauthn, mb_service.clone(), freedb_service.clone());
 
     // Spawn job scheduler
-    let scheduler = Arc::new(Scheduler::new(db, mb_service.clone()));
+    let scheduler = Arc::new(Scheduler::new(db, mb_service.clone(), freedb_service.clone()));
     tokio::spawn({
         let s = scheduler.clone();
         async move { s.run().await }

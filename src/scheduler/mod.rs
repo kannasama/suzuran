@@ -6,12 +6,13 @@ use crate::{
     dal::Store,
     jobs::{
         fingerprint::FingerprintJobHandler,
+        freedb_lookup::FreedBLookupJobHandler,
         mb_lookup::MbLookupJobHandler,
         organize::OrganizeJobHandler,
         scan::ScanJobHandler,
         JobHandler,
     },
-    services::musicbrainz::MusicBrainzService,
+    services::{freedb::FreedBService, musicbrainz::MusicBrainzService},
 };
 
 const DEFAULT_SCAN_CONCURRENCY: usize = 2;
@@ -25,20 +26,22 @@ pub struct Scheduler {
 }
 
 impl Scheduler {
-    pub fn new(db: Arc<dyn Store>, mb_service: Arc<MusicBrainzService>) -> Self {
+    pub fn new(db: Arc<dyn Store>, mb_service: Arc<MusicBrainzService>, freedb_service: Arc<FreedBService>) -> Self {
         let mut handlers: HashMap<&'static str, Arc<dyn JobHandler>> = HashMap::new();
         handlers.insert("scan", Arc::new(ScanJobHandler));
         handlers.insert("fingerprint", Arc::new(FingerprintJobHandler));
         handlers.insert("organize", Arc::new(OrganizeJobHandler));
         handlers.insert("mb_lookup", Arc::new(MbLookupJobHandler::new(mb_service)));
+        handlers.insert("freedb_lookup", Arc::new(FreedBLookupJobHandler::new(freedb_service)));
 
         let mut semaphores: HashMap<&'static str, Arc<Semaphore>> = HashMap::new();
-        semaphores.insert("scan",        Arc::new(Semaphore::new(DEFAULT_SCAN_CONCURRENCY)));
-        semaphores.insert("fingerprint", Arc::new(Semaphore::new(DEFAULT_OTHER_CONCURRENCY)));
-        semaphores.insert("mb_lookup",   Arc::new(Semaphore::new(DEFAULT_OTHER_CONCURRENCY)));
-        semaphores.insert("transcode",   Arc::new(Semaphore::new(2)));
-        semaphores.insert("art_process", Arc::new(Semaphore::new(DEFAULT_OTHER_CONCURRENCY)));
-        semaphores.insert("organize",    Arc::new(Semaphore::new(DEFAULT_OTHER_CONCURRENCY)));
+        semaphores.insert("scan",          Arc::new(Semaphore::new(DEFAULT_SCAN_CONCURRENCY)));
+        semaphores.insert("fingerprint",   Arc::new(Semaphore::new(DEFAULT_OTHER_CONCURRENCY)));
+        semaphores.insert("mb_lookup",     Arc::new(Semaphore::new(DEFAULT_OTHER_CONCURRENCY)));
+        semaphores.insert("freedb_lookup", Arc::new(Semaphore::new(DEFAULT_OTHER_CONCURRENCY)));
+        semaphores.insert("transcode",     Arc::new(Semaphore::new(2)));
+        semaphores.insert("art_process",   Arc::new(Semaphore::new(DEFAULT_OTHER_CONCURRENCY)));
+        semaphores.insert("organize",      Arc::new(Semaphore::new(DEFAULT_OTHER_CONCURRENCY)));
 
         Self { db, handlers, semaphores }
     }

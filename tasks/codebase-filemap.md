@@ -42,7 +42,7 @@ docker compose logs -f app
 | `src/app.rs` | Axum router — `GET /health` + mounts `/api/v1` + `ServeDir("ui/dist")` SPA fallback |
 | `src/config.rs` | `Config` struct — `from_env()` reads `DATABASE_URL`, `JWT_SECRET`, `PORT`, `LOG_LEVEL`, `RP_ID`, `RP_ORIGIN` |
 | `src/error.rs` | `AppError` enum — `IntoResponse` impl; maps DB/internal errors to JSON |
-| `src/state.rs` | `AppState` — holds `Arc<dyn Store>`, `Arc<Config>`, `Arc<Webauthn>`, `Arc<MusicBrainzService>`, shared via Axum `State` extractor |
+| `src/state.rs` | `AppState` — holds `Arc<dyn Store>`, `Arc<Config>`, `Arc<Webauthn>`, `Arc<MusicBrainzService>`, `Arc<FreedBService>`, shared via Axum `State` extractor |
 | `src/models/mod.rs` | `User`, `Session`, `TotpEntry`, `WebauthnCredential`, `WebauthnChallenge`, `Setting`, `Theme`, `Library`, `Track`, `Job`, `OrganizationRule`, `TagSuggestion`, `UpsertTagSuggestion` with `sqlx::FromRow` and `serde` derives |
 | `src/dal/mod.rs` | `Store` trait + `UpsertTrack` DTO — health check, user/session CRUD, TOTP CRUD, WebAuthn credential/challenge CRUD, settings/themes CRUD, library/track CRUD (incl. `update_track_path`, `update_track_fingerprint`), job queue CRUD, organization rule CRUD, tag suggestion CRUD (5 methods) |
 | `src/dal/postgres.rs` | `PgStore` — Postgres impl of `Store`; runs migrations; library + track queries |
@@ -57,10 +57,12 @@ docker compose logs -f app
 | `src/jobs/scan.rs` | `ScanJobHandler` — runs `scan_library`, logs result, returns JSON summary |
 | `src/jobs/organize.rs` | `OrganizeJobHandler` — evaluates rules against a track, moves the file via `tokio::fs::rename`, updates `tracks.relative_path` in DB; supports `dry_run` mode |
 | `src/jobs/fingerprint.rs` | `FingerprintJobHandler` — spawns `fpcalc -json` as async subprocess, parses fingerprint + duration, calls `update_track_fingerprint` |
+| `src/jobs/freedb_lookup.rs` | `FreedBLookupJobHandler` — reads `DISCID` tag, calls `FreedBService::disc_lookup`, creates one `tag_suggestion` row with `confidence = 0.5`; skips cleanly if no DISCID |
 | `src/jobs/mb_lookup.rs` | `MbLookupJobHandler` — AcoustID lookup via `MusicBrainzService`, creates `tag_suggestion` rows for results ≥ 0.8; enqueues `freedb_lookup` fallback if zero suggestions |
-| `src/scheduler/mod.rs` | `Scheduler` — Tokio poll loop; claims pending jobs, semaphore-caps concurrency per type, retries on failure; now takes `Arc<MusicBrainzService>` to construct `MbLookupJobHandler` |
-| `src/services/mod.rs` | Re-exports `auth`, `musicbrainz`, `totp`, `webauthn` service modules |
+| `src/scheduler/mod.rs` | `Scheduler` — Tokio poll loop; claims pending jobs, semaphore-caps concurrency per type, retries on failure; takes `Arc<MusicBrainzService>` + `Arc<FreedBService>` to construct handlers |
+| `src/services/mod.rs` | Re-exports `auth`, `freedb`, `musicbrainz`, `totp`, `webauthn` service modules |
 | `src/services/auth.rs` | `AuthService` — Argon2 hashing, JWT sign/verify, login flow with `LoginResult` enum, `2fa_pending` token issue/decode, `create_full_session` |
+| `src/services/freedb.rs` | `FreedBService` — gnudb.org CDDB disc-ID lookup (query + read, two HTTP calls), XMCD response parsing, `to_tag_map` (candidate → tag HashMap) |
 | `src/services/musicbrainz.rs` | `MusicBrainzService` — AcoustID fingerprint lookup, MusicBrainz recording fetch (with 1.1s rate limit), `to_tag_map` (recording+release → tag HashMap), `caa_url` (Cover Art Archive URL) |
 | `src/services/totp.rs` | `TotpService` — TOTP secret generation, otpauth URI, code verification |
 | `src/services/webauthn.rs` | `WebauthnService` — passkey registration/authentication start+finish flows |
@@ -98,7 +100,9 @@ docker compose logs -f app
 | `tests/fingerprint_job.rs` | Tests for `FingerprintJobHandler` — DAL fingerprint update (with tag merge + duration), error cases (missing/nonexistent track_id), scan auto-enqueue; fpcalc integration test skips gracefully when fpcalc not on PATH |
 | `tests/musicbrainz_service.rs` | wiremock tests for `MusicBrainzService` — AcoustID lookup (scored results, empty results), MB recording fetch, `to_tag_map` field extraction |
 | `tests/mb_lookup_job.rs` | wiremock integration tests for `MbLookupJobHandler` — creates suggestion on ≥0.8 score, skips below threshold + enqueues freedb_lookup, errors on missing fingerprint |
-| `tests/common/mod.rs` | Shared test helpers: `make_db()`, `setup_with_fingerprinted_track()`, `setup_with_track()` |
+| `tests/freedb_service.rs` | wiremock tests for `FreedBService` — disc lookup (two-mock query+read), 202 no-match, read failure, `to_tag_map` field extraction |
+| `tests/freedb_lookup_job.rs` | wiremock integration tests for `FreedBLookupJobHandler` — creates suggestion for DISCID track, skips without DISCID, zero suggestions on no match, error on missing track |
+| `tests/common/mod.rs` | Shared test helpers: `make_db()`, `setup_with_fingerprinted_track()`, `setup_with_discid_track()`, `setup_with_track()` |
 
 ## Migrations
 

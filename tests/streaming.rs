@@ -4,7 +4,7 @@ use webauthn_rs::WebauthnBuilder;
 use suzuran_server::{
     build_router, config::Config,
     dal::{sqlite::SqliteStore, Store, UpsertTrack},
-    services::musicbrainz::MusicBrainzService,
+    services::{freedb::FreedBService, musicbrainz::MusicBrainzService},
     state::AppState,
 };
 
@@ -26,7 +26,8 @@ async fn spawn_test_server() -> (String, reqwest::Client) {
     };
 
     let mb_service = Arc::new(MusicBrainzService::new(String::new()));
-    let state = AppState::new(store.clone() as Arc<dyn Store>, config, webauthn, mb_service);
+    let freedb_service = Arc::new(FreedBService::new());
+    let state = AppState::new(store.clone() as Arc<dyn Store>, config, webauthn, mb_service, freedb_service);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     tokio::spawn(async move { axum::serve(listener, build_router(state)).await.unwrap() });

@@ -2,7 +2,11 @@ use std::sync::Arc;
 
 use webauthn_rs::Webauthn;
 
-use crate::{config::Config, dal::Store, services::musicbrainz::MusicBrainzService};
+use crate::{
+    config::Config,
+    dal::Store,
+    services::{freedb::FreedBService, musicbrainz::MusicBrainzService},
+};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -10,6 +14,7 @@ pub struct AppState {
     pub config: Arc<Config>,
     pub webauthn: Arc<Webauthn>,
     pub mb_service: Arc<MusicBrainzService>,
+    pub freedb_service: Arc<FreedBService>,
 }
 
 impl AppState {
@@ -18,12 +23,14 @@ impl AppState {
         config: Config,
         webauthn: Webauthn,
         mb_service: Arc<MusicBrainzService>,
+        freedb_service: Arc<FreedBService>,
     ) -> Self {
         Self {
             db,
             config: Arc::new(config),
             webauthn: Arc::new(webauthn),
             mb_service,
+            freedb_service,
         }
     }
 }

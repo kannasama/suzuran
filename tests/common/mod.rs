@@ -53,6 +53,49 @@ pub async fn setup_with_fingerprinted_track() -> (Arc<dyn Store>, i64) {
     (db, track.id)
 }
 
+/// Set up an in-memory DB with a track that has a DISCID tag and a track number.
+/// Returns `(store, track_id)`.
+pub async fn setup_with_discid_track(disc_id: &str, track_number: u32) -> (Arc<dyn Store>, i64) {
+    let db = make_db().await;
+    let lib = db
+        .create_library("Test", "/music", "flac", None)
+        .await
+        .unwrap();
+
+    let track = db
+        .upsert_track(UpsertTrack {
+            library_id: lib.id,
+            relative_path: "discid_track.flac".into(),
+            file_hash: format!("discid_hash_{disc_id}"),
+            title: Some("DISCID Track".into()),
+            artist: Some("Test Artist".into()),
+            albumartist: None,
+            album: None,
+            tracknumber: Some(track_number.to_string()),
+            discnumber: None,
+            totaldiscs: None,
+            totaltracks: None,
+            date: None,
+            genre: None,
+            composer: None,
+            label: None,
+            catalognumber: None,
+            tags: serde_json::json!({
+                "DISCID": disc_id,
+                "tracknumber": track_number.to_string()
+            }),
+            duration_secs: Some(200.0),
+            bitrate: None,
+            sample_rate: None,
+            channels: None,
+            has_embedded_art: false,
+        })
+        .await
+        .unwrap();
+
+    (db, track.id)
+}
+
 /// Set up an in-memory DB with a plain track (no fingerprint).
 /// Returns `(store, track_id)`.
 pub async fn setup_with_track() -> (Arc<dyn Store>, i64) {

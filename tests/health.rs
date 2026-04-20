@@ -6,7 +6,7 @@ use suzuran_server::{
     build_router,
     config::Config,
     dal::sqlite::SqliteStore,
-    services::musicbrainz::MusicBrainzService,
+    services::{freedb::FreedBService, musicbrainz::MusicBrainzService},
     state::AppState,
 };
 
@@ -35,7 +35,8 @@ async fn test_app() -> axum::Router {
     };
 
     let mb_service = Arc::new(MusicBrainzService::new(String::new()));
-    let state = AppState::new(Arc::new(store), config, test_webauthn(), mb_service);
+    let freedb_service = Arc::new(FreedBService::new());
+    let state = AppState::new(Arc::new(store), config, test_webauthn(), mb_service, freedb_service);
     build_router(state)
 }
 
