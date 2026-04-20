@@ -77,6 +77,7 @@ A virtual library is a directory populated with symlinks or hardlinks pointing a
 | Task 15 | Virtual libraries creatable via API |
 | Task 16 | `virtual_sync` job populates symlinks in virtual library root |
 | Task 17 | Virtual libraries manageable in Settings UI |
+| Task 18 | Background images uploadable in theme editor; faint bg visible on themed page |
 
 ---
 
@@ -2199,7 +2200,8 @@ git tag v0.4.0
 | 14 | Normalize-on-ingest — `normalize` job, library flag, source deletion | `feat(4.14)` |
 | 15 | Virtual libraries — DB + DAL (migrations, models) | `feat(4.15)` |
 | 16 | Virtual sync job handler — identity matching, symlink/hardlink | `feat(4.16)` |
-| 17 | Virtual libraries API + Settings UI + release | `feat(4.17)` |
+| 17 | Virtual libraries API + Settings UI | `feat(4.17)` |
+| 18 | Theme background image uploads + release | `feat(4.18)` |
 
 ---
 
@@ -3226,6 +3228,358 @@ Append to the v0.4.0 entry (or create one if not yet written):
 ```bash
 git add src/api/virtual_libraries.rs src/api/mod.rs ui/src/types/virtualLibrary.ts ui/src/api/virtualLibraries.ts ui/src/components/VirtualLibraryForm.tsx ui/src/components/SourcePriorityList.tsx ui/src/pages/SettingsPage.tsx CHANGELOG.md tasks/codebase-filemap.md
 git commit -m "feat(4.17): virtual libraries API + Settings UI + CHANGELOG"
+```
+
+---
+
+## Task 18: Theme background image uploads
+
+**Files:**
+- Create: `src/api/uploads.rs`
+- Modify: `src/api/mod.rs` — mount uploads router + `ServeDir` for `/uploads`
+- Modify: `src/config.rs` — add `uploads_dir: PathBuf`
+- Create: `ui/src/components/ImageUpload.tsx`
+- Modify: `ui/src/theme/ThemeProvider.tsx` — apply `background_url` as CSS variable
+- Modify: `ui/src/index.css` — `.has-theme-bg::before` backdrop rule
+- Modify: `ui/src/pages/SettingsPage.tsx` — swap plain text input for `ImageUpload`
+- Modify: `Dockerfile` — create `/app/uploads` directory
+- Modify: `docker-compose.yml` — mount `./uploads:/app/uploads`
+- Modify: `CHANGELOG.md` — v0.4.0 entry addition
+- Create: `tests/uploads_api.rs`
+- Create: `tests/fixtures/1x1.png` (binary — 1×1 pixel PNG)
+
+**Background:** The `themes.background_url` column exists but the UI only accepts a typed URL. This task adds local file upload: images are stored under `UPLOADS_DIR` (default `/app/uploads`) and served at `/uploads/…`, so operators can supply background images without a separate CDN or static hosting.
+
+**Step 1: Write the failing tests**
+
+```rust
+// tests/uploads_api.rs
+mod common;
+use common::TestApp;
+
+#[tokio::test]
+async fn test_image_upload_and_serve() {
+    let app = TestApp::spawn().await;
+    let token = app.seed_admin_user().await;
+
+    // Upload a 1×1 PNG fixture (valid minimal PNG)
+    let png = include_bytes!("fixtures/1x1.png");
+    let form = reqwest::multipart::Form::new()
+        .part("file", reqwest::multipart::Part::bytes(png.to_vec())
+            .file_name("bg.png")
+            .mime_str("image/png").unwrap());
+
+    let resp = app.authed_multipart(&token, "/api/v1/uploads/images", form).await;
+    assert_eq!(resp.status(), 201);
+
+    let body: serde_json::Value = resp.json().await.unwrap();
+    let url = body["url"].as_str().unwrap();
+    assert!(url.starts_with("/uploads/"), "URL must be a local path, got: {url}");
+    assert!(url.ends_with(".png"));
+
+    // File must be serveable via GET
+    let serve_resp = app.get(url).await;
+    assert_eq!(serve_resp.status(), 200);
+    assert_eq!(
+        serve_resp.headers().get("content-type").unwrap(),
+        "image/png"
+    );
+}
+
+#[tokio::test]
+async fn test_upload_rejects_non_image_mime() {
+    let app = TestApp::spawn().await;
+    let token = app.seed_admin_user().await;
+
+    let form = reqwest::multipart::Form::new()
+        .part("file", reqwest::multipart::Part::bytes(b"not an image".to_vec())
+            .file_name("evil.exe")
+            .mime_str("application/octet-stream").unwrap());
+
+    let resp = app.authed_multipart(&token, "/api/v1/uploads/images", form).await;
+    assert_eq!(resp.status(), 400);
+}
+```
+
+Add fixture: generate `tests/fixtures/1x1.png` once with:
+```bash
+docker run --rm -v "$(pwd)/tests/fixtures":/out \
+    alpine sh -c "apk add -q imagemagick && convert -size 1x1 xc:white /out/1x1.png"
+```
+Commit the resulting binary file. Check `tests/fixtures/` for other patterns and follow the same approach.
+
+Add `authed_multipart` helper to `tests/common/mod.rs`:
+```rust
+pub async fn authed_multipart(
+    &self, token: &str, path: &str, form: reqwest::multipart::Form
+) -> reqwest::Response {
+    self.client.post(format!("{}{path}", self.addr))
+        .bearer_auth(token)
+        .multipart(form)
+        .send().await.unwrap()
+}
+```
+
+**Step 2: Verify fail**
+
+**Step 3: Add `uploads_dir` to `AppConfig`**
+
+In `src/config.rs`:
+```rust
+pub struct AppConfig {
+    // ... existing fields ...
+    pub uploads_dir: std::path::PathBuf,
+}
+
+impl AppConfig {
+    pub fn from_env() -> Result<Self, AppError> {
+        Ok(Self {
+            // ... existing ...
+            uploads_dir: std::env::var("UPLOADS_DIR")
+                .unwrap_or_else(|_| "/app/uploads".into())
+                .into(),
+        })
+    }
+}
+```
+
+Update `Dockerfile` final stage:
+```dockerfile
+RUN mkdir -p /app/uploads
+VOLUME ["/app/uploads"]
+```
+
+Update `docker-compose.yml`:
+```yaml
+services:
+  app:
+    volumes:
+      # ... existing music library volumes ...
+      - ./uploads:/app/uploads
+```
+
+**Step 4: Implement `src/api/uploads.rs`**
+
+```rust
+use axum::{extract::{Multipart, State}, http::StatusCode, response::IntoResponse, Json, Router};
+use std::sync::Arc;
+use uuid::Uuid;
+use crate::{config::AppConfig, error::AppError};
+
+const ALLOWED_MIME: &[&str] = &["image/jpeg", "image/png", "image/webp", "image/gif"];
+const MAX_BYTES: usize = 10 * 1024 * 1024; // 10 MiB
+
+pub fn router() -> Router<Arc<AppConfig>> {
+    Router::new().route("/images", axum::routing::post(upload_image))
+}
+
+async fn upload_image(
+    State(config): State<Arc<AppConfig>>,
+    mut multipart: Multipart,
+) -> Result<impl IntoResponse, AppError> {
+    while let Some(field) = multipart.next_field().await
+        .map_err(|e| AppError::BadRequest(e.to_string()))?
+    {
+        let ct = field.content_type().unwrap_or("application/octet-stream").to_string();
+        if !ALLOWED_MIME.contains(&ct.as_str()) {
+            return Err(AppError::BadRequest(
+                format!("unsupported type: {ct}; allowed: jpeg, png, webp, gif")
+            ));
+        }
+        let ext = match ct.as_str() {
+            "image/jpeg" => "jpg",
+            "image/png"  => "png",
+            "image/webp" => "webp",
+            "image/gif"  => "gif",
+            _            => "bin",
+        };
+        let bytes = field.bytes().await.map_err(|e| AppError::BadRequest(e.to_string()))?;
+        if bytes.len() > MAX_BYTES {
+            return Err(AppError::BadRequest(format!(
+                "file too large ({} bytes, max {MAX_BYTES})", bytes.len()
+            )));
+        }
+        let filename = format!("{}.{ext}", Uuid::new_v4());
+        tokio::fs::create_dir_all(&config.uploads_dir).await
+            .map_err(|e| AppError::Internal(format!("create uploads dir: {e}")))?;
+        tokio::fs::write(config.uploads_dir.join(&filename), &bytes).await
+            .map_err(|e| AppError::Internal(format!("write: {e}")))?;
+        return Ok((
+            StatusCode::CREATED,
+            Json(serde_json::json!({ "url": format!("/uploads/{filename}") })),
+        ));
+    }
+    Err(AppError::BadRequest("no file field in multipart body".into()))
+}
+```
+
+Ensure `uuid = { version = "1", features = ["v4"] }` is in `Cargo.toml`. Add if absent.
+
+**Step 5: Mount in `src/api/mod.rs`**
+
+```rust
+use tower_http::services::ServeDir;
+
+// In build_router():
+Router::new()
+    // ... existing routes under /api/v1/... ...
+    .nest("/api/v1/uploads", uploads::router().with_state(config.clone()))
+    .nest_service("/uploads", ServeDir::new(&config.uploads_dir))
+```
+
+`tower-http` is already a dependency; verify `features` includes `"fs"`. Add it if not present:
+```toml
+tower-http = { version = "...", features = ["cors", "trace", "fs"] }
+```
+
+**Step 6: Enhance `ThemeProvider` to apply `background_url`**
+
+In `ui/src/theme/ThemeProvider.tsx`, add an effect alongside the existing CSS-variable effect:
+```tsx
+useEffect(() => {
+  const root = document.documentElement;
+  if (activeTheme?.background_url) {
+    root.style.setProperty('--theme-bg-image', `url('${activeTheme.background_url}')`);
+    root.classList.add('has-theme-bg');
+  } else {
+    root.style.removeProperty('--theme-bg-image');
+    root.classList.remove('has-theme-bg');
+  }
+}, [activeTheme?.background_url]);
+```
+
+The variable `activeTheme` must match whatever the existing provider calls the current custom theme object. Read the file to confirm the exact variable name before editing.
+
+In `ui/src/index.css` (or the Tailwind `@layer base` block):
+```css
+.has-theme-bg::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-image: var(--theme-bg-image);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  opacity: 0.15;
+}
+```
+
+The `0.15` opacity keeps it subtle and avoids washing out the dense tabular UI. If the existing theme CSS already defines `::before` on the root, merge rather than add a second rule.
+
+**Step 7: Implement `ui/src/components/ImageUpload.tsx`**
+
+```tsx
+import { useState } from 'react';
+
+interface Props {
+  value: string;
+  onChange: (url: string) => void;
+}
+
+export function ImageUpload({ value, onChange }: Props) {
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    setError(null);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const resp = await fetch('/api/v1/uploads/images', {
+        method: 'POST', body: form, credentials: 'include',
+      });
+      if (!resp.ok) throw new Error(await resp.text());
+      const { url } = await resp.json();
+      onChange(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'upload failed');
+    } finally {
+      setUploading(false);
+      e.target.value = '';
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      <label className="block text-xs text-muted-foreground">Background image</label>
+      <div className="flex gap-2 items-center">
+        <input
+          type="text"
+          placeholder="https://… or upload a file"
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          className="flex-1 text-sm bg-input border border-border rounded px-2 py-1"
+        />
+        {value && (
+          <button onClick={() => onChange('')}
+                  className="text-xs text-muted-foreground hover:text-destructive">
+            Clear
+          </button>
+        )}
+      </div>
+      <div className="flex items-center gap-3">
+        <label className="cursor-pointer text-xs text-primary hover:underline">
+          {uploading ? 'Uploading…' : 'Upload file…'}
+          <input type="file" accept="image/jpeg,image/png,image/webp,image/gif"
+                 className="sr-only" onChange={handleFile} disabled={uploading} />
+        </label>
+        {value && (
+          <img src={value} alt="preview"
+               className="h-8 w-8 rounded object-cover border border-border"
+               onError={e => (e.currentTarget.style.display = 'none')} />
+        )}
+      </div>
+      {error && <p className="text-xs text-destructive">{error}</p>}
+    </div>
+  );
+}
+```
+
+**Step 8: Wire `ImageUpload` into the theme editor in `SettingsPage`**
+
+Read `ui/src/pages/SettingsPage.tsx` to find the theme editor form. Replace the existing `background_url` `<input type="text" …>` with:
+```tsx
+<ImageUpload
+  value={editingTheme.background_url ?? ''}
+  onChange={url => setEditingTheme(t => ({ ...t, background_url: url }))}
+/>
+```
+
+The exact state variable name may differ — match what the file uses.
+
+**Step 9: Build and verify in browser**
+
+```bash
+docker compose up --build -d
+# Settings → Themes → create or edit a theme
+# Upload a JPEG → thumbnail preview appears → URL field populated as /uploads/…
+# Save → apply theme → verify faint background visible on page
+# Try uploading .exe → expect 400 error displayed
+```
+
+**Step 10: Update `CHANGELOG.md`**
+
+Append to the v0.4.0 entry:
+```markdown
+- Theme background image upload — `POST /api/v1/uploads/images` stores files under
+  `UPLOADS_DIR` (default `/app/uploads`); files served at `/uploads/…`; mount as Docker volume
+```
+
+**Step 11: Update codebase filemap**
+
+**Step 12: Commit**
+```bash
+git add src/api/uploads.rs src/api/mod.rs src/config.rs \
+    ui/src/components/ImageUpload.tsx ui/src/theme/ThemeProvider.tsx \
+    ui/src/index.css ui/src/pages/SettingsPage.tsx \
+    Dockerfile docker-compose.yml \
+    tests/uploads_api.rs tests/fixtures/1x1.png \
+    CHANGELOG.md tasks/codebase-filemap.md
+git commit -m "feat(4.18): theme background image upload — local file storage + ThemeProvider apply"
 ```
 
 **Step 13: Tag the release**
