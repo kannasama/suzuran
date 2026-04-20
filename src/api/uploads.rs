@@ -25,6 +25,9 @@ async fn upload_image(
         .await
         .map_err(|e| AppError::BadRequest(e.to_string()))?
     {
+        if field.name() != Some("file") {
+            continue;
+        }
         let ct = field
             .content_type()
             .unwrap_or("application/octet-stream")

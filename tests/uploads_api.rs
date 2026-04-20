@@ -71,6 +71,32 @@ async fn test_upload_rejects_non_image_mime() {
 }
 
 #[tokio::test]
+async fn test_upload_rejects_oversized_file() {
+    let app = TestApp::spawn().await;
+    let token = app.seed_admin_user().await;
+
+    // 11 MiB of zeros with valid MIME type
+    let big = vec![0u8; 11 * 1024 * 1024];
+    let form = reqwest::multipart::Form::new()
+        .part("file", reqwest::multipart::Part::bytes(big)
+            .file_name("big.png")
+            .mime_str("image/png").unwrap());
+
+    let resp = app.authed_multipart(&token, "/api/v1/uploads/images", form).await;
+    assert_eq!(resp.status(), 400);
+    let body = resp.text().await.unwrap();
+    // The rejection may come from our handler ("file too large") or from the
+    // multer layer ("Error parsing `multipart/form-data` request") if the
+    // framework enforces its own body-size limit first.
+    assert!(
+        body.contains("file too large")
+            || body.contains("too large")
+            || body.contains("multipart"),
+        "expected size-limit rejection, got: {body}"
+    );
+}
+
+#[tokio::test]
 async fn test_upload_requires_auth() {
     let app = TestApp::spawn().await;
     let anon = reqwest::Client::new();
