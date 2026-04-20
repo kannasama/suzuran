@@ -151,7 +151,7 @@ impl MusicBrainzService {
         let mut tags = HashMap::new();
 
         tags.insert("title".into(), rec.title.clone());
-        tags.insert("musicbrainz_recordingid".into(), rec.id.clone());
+        tags.insert("musicbrainz_trackid".into(), rec.id.clone());
         tags.insert("musicbrainz_releaseid".into(), release.id.clone());
         tags.insert("album".into(), release.title.clone());
 

@@ -115,6 +115,6 @@ async fn test_to_tag_map_extracts_fields() {
     assert_eq!(tags.get("album").map(String::as_str), Some("The Wall"));
     assert_eq!(tags.get("artist").map(String::as_str), Some("Pink Floyd"));
     assert_eq!(tags.get("date").map(String::as_str), Some("1979"));
-    assert_eq!(tags.get("musicbrainz_recordingid").map(String::as_str), Some("rec-1"));
+    assert_eq!(tags.get("musicbrainz_trackid").map(String::as_str), Some("rec-1"));
     assert_eq!(tags.get("musicbrainz_releaseid").map(String::as_str), Some("rel-1"));
 }
