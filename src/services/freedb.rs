@@ -102,6 +102,12 @@ impl FreedBService {
     }
 }
 
+impl Default for FreedBService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 fn parse_query_first_result(text: &str) -> Option<(String, String)> {
     // After the status line, result lines look like: "rock a50e1d13 Artist / Album"
     let line = text
@@ -114,7 +120,7 @@ fn parse_query_first_result(text: &str) -> Option<(String, String)> {
     Some((category, disc_id))
 }
 
-fn parse_xmcd(text: &str) -> FreedBCandidate {
+pub fn parse_xmcd(text: &str) -> FreedBCandidate {
     let mut artist = String::new();
     let mut album = String::new();
     let mut year = None;
@@ -142,7 +148,11 @@ fn parse_xmcd(text: &str) -> FreedBCandidate {
             if let Some(eq) = line.find('=') {
                 let idx_str = &line[6..eq];
                 if let Ok(idx) = idx_str.parse::<usize>() {
-                    tracks.insert(idx, line[eq + 1..].trim().into());
+                    let part = line[eq + 1..].trim();
+                    tracks
+                        .entry(idx)
+                        .and_modify(|e| e.push_str(part))
+                        .or_insert_with(|| part.to_string());
                 }
             }
         }

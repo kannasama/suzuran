@@ -1,4 +1,4 @@
-use suzuran_server::services::freedb::{FreedBCandidate, FreedBService};
+use suzuran_server::services::freedb::{parse_xmcd, FreedBCandidate, FreedBService};
 use wiremock::matchers::{method, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -113,4 +113,23 @@ async fn test_to_tag_map_no_optional_fields() {
     assert!(!tags.contains_key("date"));
     assert!(!tags.contains_key("genre"));
     assert_eq!(tags["totaltracks"], "1");
+}
+
+#[test]
+fn test_parse_xmcd_multiline_ttitle() {
+    // CDDB spec allows a field to span multiple lines by repeating the key.
+    // The continuation parts should be appended (no separator) to the first segment.
+    let xmcd = "200 OK\n\
+        DTITLE=Test Artist / Test Album\n\
+        DYEAR=2000\n\
+        DGENRE=Jazz\n\
+        TTITLE0=Long track\n\
+        TTITLE0= title continuation\n\
+        TTITLE1=Short track\n\
+        .\n";
+
+    let candidate = parse_xmcd(xmcd);
+    assert_eq!(candidate.tracks.len(), 2);
+    assert_eq!(candidate.tracks[0], "Long tracktitle continuation");
+    assert_eq!(candidate.tracks[1], "Short track");
 }
