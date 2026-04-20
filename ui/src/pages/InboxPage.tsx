@@ -1,8 +1,8 @@
-import { Fragment } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { tagSuggestionsApi } from '../api/tagSuggestions';
 import type { TagSuggestion } from '../types/tagSuggestion';
 import { TopNav } from '../components/TopNav';
+import { TagDiffTable } from '../components/TagDiffTable';
 
 export default function InboxPage() {
   const qc = useQueryClient();
@@ -144,15 +144,10 @@ function SuggestionCard({
           />
         )}
         <div className="flex-1 min-w-0">
-          {/* Tag list (no diff yet — diff added in Task 9) */}
-          <dl className="grid grid-cols-[8rem_1fr] gap-x-2 gap-y-0.5 text-sm">
-            {Object.entries(suggestion.suggested_tags).map(([k, v]) => (
-              <Fragment key={k}>
-                <dt className="text-text-muted font-mono text-xs truncate">{k}</dt>
-                <dd className="truncate">{v}</dd>
-              </Fragment>
-            ))}
-          </dl>
+          <TagDiffTable
+            trackId={suggestion.track_id}
+            suggestedTags={suggestion.suggested_tags}
+          />
         </div>
       </div>
 

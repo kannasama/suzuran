@@ -6,17 +6,30 @@ use axum::{
     http::{header, HeaderMap, StatusCode},
     response::Response,
     routing::get,
-    Router,
+    Json, Router,
 };
 use tokio::io::AsyncSeekExt;
 
-use crate::{api::middleware::auth::AuthUser, error::AppError, state::AppState};
+use crate::{api::middleware::auth::AuthUser, error::AppError, models::Track, state::AppState};
 
 pub fn router() -> Router<AppState> {
     // Axum automatically handles HEAD requests from GET routes, stripping the body
     // but preserving all headers (including Content-Length and X-* metadata).
     Router::new()
+        .route("/:id", get(get_track_meta))
         .route("/:id/stream", get(stream))
+}
+
+async fn get_track_meta(
+    _user: AuthUser,
+    Path(id): Path<i64>,
+    State(state): State<AppState>,
+) -> Result<Json<Track>, AppError> {
+    state.db
+        .get_track(id)
+        .await?
+        .map(Json)
+        .ok_or_else(|| AppError::NotFound(format!("track {id}")))
 }
 
 async fn resolve_track_path(

@@ -74,7 +74,7 @@ docker compose logs -f app
 | `src/api/webauthn.rs` | Handlers: register/authenticate challenge+complete, `GET /credentials`, `DELETE /credentials/:id` |
 | `src/api/settings.rs` | Handlers: `GET /` (list), `GET /:key`, `PUT /:key` (admin-only write) |
 | `src/api/themes.rs` | Handlers: `GET /`, `POST /` (admin), `GET /:id`, `PUT /:id` (admin), `DELETE /:id` (admin) |
-| `src/api/tracks.rs` | `GET/HEAD /:id/stream` — byte-range streaming with `Content-Range`, `Accept-Ranges`, `X-File-Size`, `X-Duration-Secs`, `X-Bitrate`, `X-Sample-Rate` headers |
+| `src/api/tracks.rs` | `GET /:id` (auth, returns `Track` JSON, 404 if missing); `GET/HEAD /:id/stream` — byte-range streaming with `Content-Range`, `Accept-Ranges`, `X-File-Size`, `X-Duration-Secs`, `X-Bitrate`, `X-Sample-Rate` headers |
 | `src/api/organization_rules.rs` | Handlers: `GET /` (list, optional `?library_id=N`), `POST /` (admin, create → 201), `GET /:id`, `PUT /:id` (admin), `DELETE /:id` (admin → 204), `POST /preview` (admin, dry-run path proposals), `POST /apply` (admin, enqueue organize jobs) |
 | `src/api/tag_suggestions.rs` | Handlers: `GET /` (list pending, optional `?track_id=N`, auth), `GET /count` (public nav badge), `GET /:id` (auth, 404 if missing), `POST /:id/accept` (auth, calls tagging stub + sets status), `POST /:id/reject` (auth), `POST /batch-accept` (auth, body `{min_confidence}`) |
 | `src/services/tagging.rs` | `apply_suggestion` — merges existing track tags with suggestion tags, writes to audio file via `tagger::write_tags`, updates DB via `update_track_tags` |
@@ -152,8 +152,8 @@ docker compose logs -f app
 | `secrets/` | Local secret files (gitignored except README) |
 | `ui/` | React + Vite + Tailwind SPA — `npm run build` → `ui/dist/` |
 | `ui/src/theme/` | `tokens.ts` (dark/light CSS vars) + `ThemeProvider.tsx` (context + `applyTokens`) |
-| `ui/src/types/` | `tagSuggestion.ts` — `TagSuggestion` interface (id, track_id, source, suggested_tags, confidence, mb IDs, cover_art_url, status, created_at) |
-| `ui/src/api/` | `client.ts` (Axios), `auth.ts` (login/register/logout/me), `libraries.ts` (list, create, update, delete), `organizationRules.ts` (list, create, update, delete org rules), `tagSuggestions.ts` (listPending, count, accept, reject, batchAccept) |
+| `ui/src/types/` | `tagSuggestion.ts` — `TagSuggestion` interface (id, track_id, source, suggested_tags, confidence, mb IDs, cover_art_url, status, created_at); `track.ts` — `Track` interface (id, library_id, relative_path, indexed tag fields, tags JSON) |
+| `ui/src/api/` | `client.ts` (Axios), `auth.ts` (login/register/logout/me), `libraries.ts` (list, create, update, delete), `organizationRules.ts` (list, create, update, delete org rules), `tagSuggestions.ts` (listPending, count, accept, reject, batchAccept), `tracks.ts` (getTrack by id) |
 | `ui/src/contexts/` | `AuthContext.tsx` — current user context, `useAuth` hook |
 | `ui/src/pages/` | `LoginPage.tsx`, `RegisterPage.tsx`, `LibraryPage.tsx` (two-pane layout; wires `useAuth` → `isAdmin` + `selectedLibraryId` → `LibraryTree`), `OrganizationPage.tsx` (organization rules management, admin only), `InboxPage.tsx` (tag suggestion review — list, accept/reject per item, batch-accept ≥80%) |
-| `ui/src/components/` | `TopNav.tsx` (nav bar), `LibraryTree.tsx` (real data, hierarchy, admin create/edit/delete), `LibraryFormModal.tsx` (create/edit modal with TanStack Query mutations), `RuleEditor.tsx` (modal for create/edit organization rules), `TemplatePreview.tsx` (client-side template renderer for live preview) |
+| `ui/src/components/` | `TopNav.tsx` (nav bar), `LibraryTree.tsx` (real data, hierarchy, admin create/edit/delete), `LibraryFormModal.tsx` (create/edit modal with TanStack Query mutations), `RuleEditor.tsx` (modal for create/edit organization rules), `TemplatePreview.tsx` (client-side template renderer for live preview), `TagDiffTable.tsx` (side-by-side current vs suggested tag diff; fetches track via TanStack Query; highlights changed rows) |
