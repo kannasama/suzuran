@@ -51,6 +51,7 @@ docker compose logs -f app
 | `src/organizer/conditions.rs` | `Condition` enum + `eval_condition` — serde-tagged condition tree evaluator; supports comparison (eq/ne/contains/starts_with/ends_with), and/or/not, empty/nonempty; all comparisons case-insensitive |
 | `src/organizer/rules.rs` | `match_rule` / `apply_rules` — evaluates a priority-ordered rule list against a tag map; returns first matching rendered path template |
 | `src/organizer/template.rs` | `render_template` — renders path templates from tag maps; supports `{field}`, `{field:02}` zero-pad, `{field\|fallback}`, `{discfolder}` synthetic token |
+| `src/cue/mod.rs` | `parse_cue` — line-by-line CUE sheet parser; returns `CueSheet` (`album_title`, `performer`, `date`, `genre`, `audio_file`, `tracks: Vec<CueTrack>`); `CueTrack` holds `number`, `title`, `performer`, `index_01_secs` (converted from MM:SS:FF); handles album-level and per-track TITLE/PERFORMER |
 | `src/tagger/mod.rs` | `read_tags` / `write_tags` — lofty-based tag read/write; returns `HashMap<String,String>` keyed by MusicBrainz field names + `AudioProperties` (includes `bit_depth: Option<i64>` from lofty `AudioFile::properties().bit_depth()`) |
 | `src/scanner/mod.rs` | `scan_library` — walks root with walkdir, SHA-256 hashes files, diffs against DB, upserts/removes tracks; enqueues `fingerprint` job for each newly inserted track; `AUDIO_EXTENSIONS` includes `wv`, `ape`, `tta` (Phase 4) |
 | `src/jobs/mod.rs` | `JobHandler` trait + `ScanPayload` + `OrganizePayload` + `FingerprintPayload` DTOs |
@@ -111,6 +112,7 @@ docker compose logs -f app
 | `tests/art_profiles_dal.rs` | DAL tests for art_profiles CRUD — create, list, get, update, delete; full flow with `UpsertArtProfile` |
 | `tests/track_links_dal.rs` | DAL tests for track_links — create link between two tracks, list_derived_tracks, list_source_tracks; verifies FK constraint satisfaction |
 | `tests/tagging_service.rs` | Integration tests for `apply_suggestion` — file + DB updated, indexed artist column correct, title preserved from merge, NotFound on missing track |
+| `tests/cue_parser.rs` | Unit tests for `parse_cue` — album-level fields, per-track fields, INDEX 01 time conversion (MM:SS:FF → seconds), 3-track parse, duration calc via next-track start |
 
 ## Migrations
 
