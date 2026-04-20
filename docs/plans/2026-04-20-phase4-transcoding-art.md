@@ -2,9 +2,9 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Add ffmpeg-based transcode pipeline, album art standardization, CUE+audio sheet splitting (any format), and extended lossless ingest format support (WavPack, APE, TrueAudio).
+**Goal:** Add ffmpeg-based transcode pipeline with smart quality matching, in-place format normalization with source removal, album art standardization, CUE+audio sheet splitting (any format), extended lossless ingest format support (WavPack, APE, TrueAudio), and virtual libraries (symlink/hardlink views of best-available tracks across multiple libraries).
 
-**Architecture:** Three new job handlers (`transcode`, `art_process`, `cue_split`) plus two new config tables (`encoding_profiles`, `art_profiles`) and a `track_links` relationship table. Transcode jobs build ffmpeg commands from encoding profiles and write derived `track_links` records. Art-process jobs use `lofty` for embed/extract and the `image` crate for resize/recompress. CUE+audio pairs are detected during scan for any format the scanner recognises (FLAC, WAV, APE, WavPack, etc.), deferred from normal ingestion, and split into individual tracks via `ffmpeg -c copy`; output files preserve the source format's extension. Extended formats (WavPack `.wv`, APE `.ape`, TrueAudio `.tta`) are already tag-readable by lofty's default features — only the scanner's extension list needs updating.
+**Architecture:** Five new job handlers (`transcode`, `art_process`, `cue_split`, `normalize`, `virtual_sync`) plus three new config tables (`encoding_profiles`, `art_profiles`, `virtual_libraries`) and supporting tables (`track_links`, `virtual_library_sources`, `virtual_library_tracks`). Transcode jobs enforce a quality compatibility check — no upsampling, no bit-depth inflation, no lossy→lossless upconversion. A new `normalize` job handles in-place format conversion for files ingested into a library in the wrong format, then deletes the source once the transcoded file is verified. Virtual libraries use hardlinks or symlinks to materialize a priority-ordered "best version" view across source libraries. Art-process jobs use `lofty` for embed/extract and the `image` crate for resize/recompress. CUE+audio pairs are detected during scan for any format the scanner recognises (FLAC, WAV, APE, WavPack, etc.) and split in-place via `ffmpeg -c copy`, preserving the source format's extension.
 
 **Tech Stack:** Rust/Axum + `lofty 0.21` (existing) + `ffmpeg` subprocess + `image = "0.25"` (new) + React/TanStack Query (existing).
 
@@ -27,17 +27,56 @@ The split is idempotent: if output files already exist on disk, the job skips re
 
 `lofty 0.21` default features include `wavpack`, `ape`, and `riff` (WAV/AIFF). WavPack (`.wv`), Monkey's Audio (`.ape`), and TrueAudio (`.tta`) tag reading/writing work via `Probe::open` without any Cargo.toml changes. Musepack (`.mpc`) has limited lofty support and is excluded from this phase.
 
+### Smart transcode quality matching
+
+The compatibility check in `src/services/transcode_compat.rs` enforces four rules — a transcode is skipped (not failed) if any rule is violated:
+
+1. **No lossy → lossless upconversion.** A 192 kbps AAC will never become a FLAC.
+2. **No sample-rate upsampling.** A 44.1 kHz source won't be written to a 96 kHz profile.
+3. **No bit-depth inflation (lossless → lossless).** A 16-bit FLAC won't become a 24-bit FLAC.
+4. **No bitrate upscaling (lossy → lossy).** A 128 kbps MP3 won't become a 320 kbps MP3.
+
+Whether a codec is lossless is derived from the codec/extension name: `flac`, `alac`, `wavpack`/`wv`, `ape`, `tta`, `wav`, `aiff` are lossless; everything else is lossy. `m4a` is resolved by the library's `format` field since the container is ambiguous.
+
+The check is applied in two places: in `TranscodeJobHandler` before running ffmpeg (returns `status: "skipped"` for cross-library transcodes), and in `NormalizeJobHandler` for in-place normalization.
+
+### Normalize-on-ingest and source removal
+
+Libraries gain a `normalize_on_ingest: bool` flag. When set, any ingested file whose extension does not match the library's `encoding_profile` codec is converted in-place by the `normalize` job:
+
+1. Scanner ingests the file normally (upserts track, enqueues `fingerprint`)
+2. Fingerprint job completes; if `normalize_on_ingest` and file format ≠ profile codec → enqueues `normalize` instead of `mb_lookup`
+3. `NormalizeJobHandler` runs the compatibility check, transcodes to the library's encoding profile in the same directory, **deletes the source file**, updates `tracks.relative_path` and `tracks.file_hash`
+4. On success, enqueues `mb_lookup` to continue the normal pipeline
+
+Source deletion only happens after a verified successful transcode (ffmpeg exit 0 + output file exists and is non-empty).
+
+### Virtual libraries
+
+A virtual library is a directory populated with symlinks or hardlinks pointing at the "best available" version of each track across a priority-ordered set of source libraries. No files are transcoded; the virtual library is a read-only materialized view.
+
+**Priority order** is user-defined: the first source library in the list that contains a given track identity wins. A "best quality" virtual library lists FLAC first and AAC second; a "phone" virtual library lists AAC first and FLAC second.
+
+**Track identity** is resolved by `musicbrainz_recordingid` tag when present; otherwise by the normalized `(albumartist, album, discnumber, tracknumber)` tuple. Both keys are used consistently across the system.
+
+**`virtual_sync` job** walks source libraries in priority order, builds the identity→file map, clears the current `virtual_library_tracks` records and filesystem links for this virtual library, then re-materializes by creating symlinks or hardlinks for the winning file per identity.
+
+**Hardlink limitation:** hardlinks require source and virtual library root to be on the same filesystem/mount. The UI warns if the paths are on different mounts. Symlinks work across mounts but break if the source file is moved (the organization engine updates the path in DB but not any existing symlinks — a re-sync fixes this).
+
 ### Meaningful output checkpoints
 
 | After task | What you can see |
 |-----------|-----------------|
-| Task 1 | WavPack/APE files ingested by scanner and visible in library |
+| Task 1 | WavPack/APE files ingested by scanner; bit_depth populated in tracks |
 | Task 4 | Track links visible in DB after manual SQL query |
-| Task 6 | CUE+FLAC pairs split into individual tracks on next scan |
-| Task 7 | Transcode jobs complete and derived tracks appear in library |
-| Task 9 | Encoding/art profiles creatable via API (curl or Insomnia) |
-| Task 11 | Encoding/art profiles manageable in Settings UI |
-| Task 12 | Transcode + art actions wired into Library view |
+| Task 6 | CUE+audio pairs split into individual tracks on next scan |
+| Task 7 | Transcode jobs complete; incompatible sources silently skipped |
+| Task 9 | Encoding/art profiles creatable via API |
+| Task 13 | Compatibility check unit tests pass independently |
+| Task 14 | WavPack dropped into FLAC library → normalized to FLAC, source deleted |
+| Task 15 | Virtual libraries creatable via API |
+| Task 16 | `virtual_sync` job populates symlinks in virtual library root |
+| Task 17 | Virtual libraries manageable in Settings UI |
 
 ---
 
@@ -91,19 +130,62 @@ const AUDIO_EXTENSIONS: &[&str] = &[
 ];
 ```
 
-No other scanner changes needed — `tagger::read_tags` calls `lofty::probe::Probe::open(path)` which auto-detects format.
+No other scanner format-detection changes needed — `tagger::read_tags` calls `lofty::probe::Probe::open(path)` which auto-detects format.
 
-**Step 4: Verify pass**
+**Step 4: Add `bit_depth` to `AudioProperties` in `src/tagger/mod.rs`**
+
+lofty exposes `AudioProperties::bit_depth() -> Option<u8>`. Add it to the existing `AudioProperties` struct and populate it from `lofty::AudioFile::properties()`:
+
+```rust
+pub struct AudioProperties {
+    pub duration_secs: Option<f64>,
+    pub bitrate: Option<i64>,
+    pub sample_rate: Option<i64>,
+    pub channels: Option<i64>,
+    pub bit_depth: Option<i64>,   // new
+    pub has_embedded_art: bool,
+}
+```
+
+In the lofty read path where `AudioProperties` is populated:
+```rust
+bit_depth: props.bit_depth().map(|b| b as i64),
+```
+
+**Step 5: Add migration 0015 — `tracks.bit_depth`**
+
+`migrations/postgres/0015_tracks_add_bit_depth.sql`:
+```sql
+ALTER TABLE tracks ADD COLUMN IF NOT EXISTS bit_depth INTEGER;
+```
+
+`migrations/sqlite/0015_tracks_add_bit_depth.sql`:
+```sql
+ALTER TABLE tracks ADD COLUMN bit_depth INTEGER;
+```
+
+**Step 6: Add `bit_depth` to `UpsertTrack` in `src/dal/mod.rs`**
+
+```rust
+pub struct UpsertTrack {
+    // ... existing fields ...
+    pub bit_depth: Option<i64>,   // new
+}
+```
+
+Update the postgres `upsert_track` query to include `bit_depth` in both INSERT columns and UPDATE SET. SQLite likewise.
+
+**Step 7: Verify pass**
 ```bash
 docker buildx build --progress=plain -t suzuran:dev . 2>&1 | tail -20
 ```
 
-**Step 5: Update codebase filemap** — note extended AUDIO_EXTENSIONS; add test file entry.
+**Step 8: Update codebase filemap** — note extended AUDIO_EXTENSIONS, `bit_depth` in tagger and tracks, migration 0015.
 
-**Step 6: Commit**
+**Step 9: Commit**
 ```bash
-git add src/scanner/mod.rs tests/scanner_extended_formats.rs tests/fixtures/ tasks/codebase-filemap.md
-git commit -m "feat(4.1): extended ingest formats — WavPack, APE, TrueAudio"
+git add src/scanner/mod.rs src/tagger/mod.rs src/dal/ migrations/ tests/scanner_extended_formats.rs tests/fixtures/ tasks/codebase-filemap.md
+git commit -m "feat(4.1): extended ingest formats — WavPack, APE, TrueAudio; tracks.bit_depth"
 ```
 
 ---
@@ -177,6 +259,7 @@ CREATE TABLE encoding_profiles (
     bitrate       TEXT,
     sample_rate   INTEGER,
     channels      INTEGER,
+    bit_depth     INTEGER,   -- max acceptable source bit depth (lossless profiles; NULL = no limit)
     advanced_args TEXT,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -195,6 +278,7 @@ pub struct EncodingProfile {
     pub bitrate: Option<String>,   // "256k" — None for lossless codecs
     pub sample_rate: Option<i64>,  // None = preserve source
     pub channels: Option<i64>,     // None = preserve source
+    pub bit_depth: Option<i64>,    // max source bit depth for lossless profiles; None = no limit
     pub advanced_args: Option<String>,
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
@@ -205,6 +289,7 @@ pub struct UpsertEncodingProfile {
     pub bitrate: Option<String>,
     pub sample_rate: Option<i64>,
     pub channels: Option<i64>,
+    pub bit_depth: Option<i64>,
     pub advanced_args: Option<String>,
 }
 ```
@@ -962,6 +1047,36 @@ async fn test_transcode_fails_without_encoding_profile() {
     })).await;
     assert!(result.is_err(), "should fail when target library has no encoding profile");
 }
+
+#[tokio::test]
+async fn test_transcode_skips_lossy_to_lossless() {
+    // AAC source → FLAC profile: should skip, not fail
+    let (store, aac_track_id, flac_lib_id) =
+        common::setup_transcode_lossy_to_lossless_scenario().await;
+    let handler = TranscodeJobHandler::new(store.clone());
+    let result = handler.handle(serde_json::json!({
+        "source_track_id": aac_track_id,
+        "target_library_id": flac_lib_id,
+    })).await.unwrap();
+    assert_eq!(result["status"].as_str(), Some("skipped"));
+    assert!(result["reason"].as_str().is_some());
+    // No derived track should have been created
+    let links = store.list_derived_tracks(aac_track_id).await.unwrap();
+    assert!(links.is_empty());
+}
+
+#[tokio::test]
+async fn test_transcode_skips_upsample() {
+    // 44.1 kHz FLAC source → 96 kHz FLAC profile: should skip
+    let (store, track_id, hires_lib_id) =
+        common::setup_transcode_upsample_scenario().await; // track.sample_rate=44100, profile.sample_rate=96000
+    let handler = TranscodeJobHandler::new(store.clone());
+    let result = handler.handle(serde_json::json!({
+        "source_track_id": track_id,
+        "target_library_id": hires_lib_id,
+    })).await.unwrap();
+    assert_eq!(result["status"].as_str(), Some("skipped"));
+}
 ```
 
 **Step 2: Verify fail**
@@ -1019,6 +1134,24 @@ impl super::JobHandler for TranscodeJobHandler {
         let ep_id = tgt_lib.encoding_profile_id
             .ok_or_else(|| AppError::BadRequest("target library has no encoding_profile_id".into()))?;
         let profile = self.store.get_encoding_profile(ep_id).await?;
+
+        // Quality compatibility check — skip (not fail) if source doesn't meet profile requirements
+        let src_ext = std::path::Path::new(&src_track.relative_path)
+            .extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+        let src_format = if src_ext.is_empty() { src_lib.format.as_str() } else { &src_ext };
+        if !crate::services::transcode_compat::is_compatible(
+            src_format,
+            src_track.sample_rate,
+            src_track.bit_depth,
+            src_track.bitrate,
+            &profile,
+        ) {
+            return Ok(serde_json::json!({
+                "status": "skipped",
+                "reason": "source quality does not meet target profile requirements",
+                "source_track_id": src_track_id,
+            }));
+        }
 
         let src_path = format!("{}/{}", src_lib.root_path.trim_end_matches('/'),
                                          src_track.relative_path.trim_start_matches('/'));
@@ -1662,16 +1795,31 @@ All return `202 Accepted` with `{ "enqueued": N }`.
 
 **Step 5: Auto-transcode on ingest**
 
-In `src/scanner/mod.rs`, after successfully upserting a new track (where `is_new` is true), check if any child libraries of this library have `auto_transcode_on_ingest = true`:
+In `src/scanner/mod.rs`, after successfully upserting a new track (where `is_new` is true), check if any child libraries of this library have `auto_transcode_on_ingest = true`. Apply a pre-filter using the compatibility check to avoid queuing jobs that would only be skipped later:
 
 ```rust
 if is_new {
     result.inserted += 1;
+    // Note: fingerprint job is NOT enqueued here when normalize_on_ingest is set —
+    // the fingerprint job itself determines whether to chain normalize or mb_lookup.
+    // Fingerprint is always enqueued; it checks the library flag at execution time.
     db.enqueue_job("fingerprint", serde_json::json!({"track_id": track.id}), 5).await?;
 
-    // Auto-transcode to child libraries
+    // Auto-transcode to child libraries (pre-filter by compatibility to avoid wasted jobs)
     let children = db.list_child_libraries(library_id).await?;
     for child in children.iter().filter(|c| c.auto_transcode_on_ingest) {
+        if let Some(ep_id) = child.encoding_profile_id {
+            if let Ok(profile) = db.get_encoding_profile(ep_id).await {
+                let src_ext = std::path::Path::new(&track.relative_path)
+                    .extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+                let src_fmt = if src_ext.is_empty() { library.format.as_str() } else { &src_ext };
+                if !crate::services::transcode_compat::is_compatible(
+                    src_fmt, track.sample_rate, track.bit_depth, track.bitrate, &profile,
+                ) {
+                    continue;  // skip this child — compatibility check will also skip at job time
+                }
+            }
+        }
         db.enqueue_job("transcode", serde_json::json!({
             "source_track_id": track.id,
             "target_library_id": child.id,
@@ -2035,15 +2183,1052 @@ git tag v0.4.0
 
 | Task | Output | Commit |
 |------|--------|--------|
-| 1 | Extended ingest formats (WavPack, APE, TrueAudio) | `feat(4.1)` |
-| 2 | Encoding profiles — migration, model, DAL | `feat(4.2)` |
+| 1 | Extended ingest formats (WavPack, APE, TrueAudio); `tracks.bit_depth` | `feat(4.1)` |
+| 2 | Encoding profiles — migration (+ `bit_depth`), model, DAL | `feat(4.2)` |
 | 3 | Art profiles — migration, model, DAL | `feat(4.3)` |
 | 4 | Track links — migration, model, DAL | `feat(4.4)` |
 | 5 | CUE sheet parser | `feat(4.5)` |
 | 6 | CUE split — scanner detection + job handler | `feat(4.6)` |
-| 7 | Transcode job — ffmpeg pipeline + track_links | `feat(4.7)` |
+| 7 | Transcode job — ffmpeg pipeline, quality compat check, track_links | `feat(4.7)` |
 | 8 | Art process job — embed/extract/standardize + auto-embed | `feat(4.8)` |
 | 9 | Encoding profiles + art profiles REST API | `feat(4.9)` |
-| 10 | Transcode + art APIs + auto-transcode wiring | `feat(4.10)` |
+| 10 | Transcode + art APIs + auto-transcode wiring (compat pre-filter) | `feat(4.10)` |
 | 11 | Settings UI — encoding + art profile management | `feat(4.11)` |
-| 12 | Library UI — transcode + art actions + release | `feat(4.12)` |
+| 12 | Library UI — transcode + art actions | `feat(4.12)` |
+| 13 | Transcode compatibility module (`transcode_compat.rs`) | `feat(4.13)` |
+| 14 | Normalize-on-ingest — `normalize` job, library flag, source deletion | `feat(4.14)` |
+| 15 | Virtual libraries — DB + DAL (migrations, models) | `feat(4.15)` |
+| 16 | Virtual sync job handler — identity matching, symlink/hardlink | `feat(4.16)` |
+| 17 | Virtual libraries API + Settings UI + release | `feat(4.17)` |
+
+---
+
+## Task 13: Transcode compatibility module
+
+**Files:**
+- Create: `src/services/transcode_compat.rs`
+- Modify: `src/services/mod.rs` — export module
+- Create: `tests/transcode_compat.rs`
+
+**Step 1: Write the failing tests**
+
+```rust
+// tests/transcode_compat.rs
+use suzuran_server::services::transcode_compat::is_compatible;
+use suzuran_server::models::EncodingProfile;
+
+fn profile(codec: &str, sample_rate: Option<i64>, bit_depth: Option<i64>, bitrate: Option<&str>) -> EncodingProfile {
+    EncodingProfile {
+        id: 1, name: "test".into(), codec: codec.into(),
+        bitrate: bitrate.map(str::to_string),
+        sample_rate, channels: None, bit_depth,
+        advanced_args: None,
+        created_at: chrono::Utc::now(),
+    }
+}
+
+#[test]
+fn test_lossy_to_lossless_rejected() {
+    // 192 kbps AAC → FLAC: always rejected
+    assert!(!is_compatible("aac",  None, None, Some(192), &profile("flac", None, None, None)));
+    assert!(!is_compatible("mp3",  None, None, Some(320), &profile("flac", None, None, None)));
+    assert!(!is_compatible("opus", None, None, Some(128), &profile("flac", None, None, None)));
+}
+
+#[test]
+fn test_lossless_to_lossy_allowed() {
+    // Any lossless → lossy is always allowed
+    assert!(is_compatible("flac", Some(44100), Some(16), None, &profile("aac",  None, None, Some("256k"))));
+    assert!(is_compatible("wv",   Some(96000), Some(24), None, &profile("mp3",  None, None, Some("320k"))));
+}
+
+#[test]
+fn test_upsample_rejected() {
+    // 44.1 kHz source, 96 kHz profile: rejected
+    assert!(!is_compatible("flac", Some(44100), Some(16), None, &profile("flac", Some(96000), Some(24), None)));
+    // Same sample rate: allowed
+    assert!(is_compatible("flac", Some(96000), Some(24), None, &profile("flac", Some(96000), Some(24), None)));
+    // Downscale: allowed
+    assert!(is_compatible("flac", Some(96000), Some(24), None, &profile("flac", Some(44100), Some(16), None)));
+}
+
+#[test]
+fn test_bit_depth_inflation_rejected() {
+    // 16-bit FLAC → 24-bit FLAC: rejected
+    assert!(!is_compatible("flac", Some(44100), Some(16), None, &profile("flac", Some(44100), Some(24), None)));
+    // 24-bit → 16-bit: allowed (downscale)
+    assert!(is_compatible("flac", Some(44100), Some(24), None, &profile("flac", Some(44100), Some(16), None)));
+}
+
+#[test]
+fn test_bitrate_upscale_rejected() {
+    // 128 kbps MP3 → 320 kbps MP3: rejected
+    assert!(!is_compatible("mp3", None, None, Some(128), &profile("mp3", None, None, Some("320k"))));
+    // 320 kbps → 128 kbps: allowed
+    assert!(is_compatible("mp3", None, None, Some(320), &profile("mp3", None, None, Some("128k"))));
+}
+
+#[test]
+fn test_unknown_values_pass_through() {
+    // If sample_rate or bit_depth are None, skip that check
+    assert!(is_compatible("flac", None, None, None, &profile("flac", Some(96000), Some(24), None)));
+}
+```
+
+**Step 2: Verify fail**
+
+**Step 3: Implement `src/services/transcode_compat.rs`**
+
+```rust
+use crate::models::EncodingProfile;
+
+/// Returns true if transcoding a source with the given properties into `profile` is acceptable.
+/// Any rule violation returns false — the job should be skipped, not failed.
+pub fn is_compatible(
+    src_format: &str,           // file extension or library.format ("flac", "aac", "wv", …)
+    src_sample_rate: Option<i64>,
+    src_bit_depth: Option<i64>,
+    src_bitrate: Option<i64>,   // kbps as stored in tracks.bitrate
+    profile: &EncodingProfile,
+) -> bool {
+    let src_lossless  = is_lossless(src_format);
+    let dst_lossless  = is_lossless(&profile.codec);
+
+    // Rule 1: no lossy → lossless upconversion
+    if !src_lossless && dst_lossless {
+        return false;
+    }
+
+    // Rule 2: no sample-rate upsampling
+    if let (Some(src_sr), Some(prof_sr)) = (src_sample_rate, profile.sample_rate) {
+        if src_sr < prof_sr {
+            return false;
+        }
+    }
+
+    // Rule 3 (lossless → lossless): no bit-depth inflation
+    if src_lossless && dst_lossless {
+        if let (Some(src_bd), Some(prof_bd)) = (src_bit_depth, profile.bit_depth) {
+            if src_bd < prof_bd {
+                return false;
+            }
+        }
+    }
+
+    // Rule 4 (lossy → lossy): no bitrate upscaling
+    if !src_lossless && !dst_lossless {
+        if let (Some(src_br), Some(prof_br)) =
+            (src_bitrate, profile.bitrate.as_deref().and_then(parse_bitrate_kbps))
+        {
+            if src_br < prof_br {
+                return false;
+            }
+        }
+    }
+
+    true
+}
+
+pub fn is_lossless(format_or_codec: &str) -> bool {
+    matches!(
+        format_or_codec.to_lowercase().trim_start_matches('.'),
+        "flac" | "alac" | "wavpack" | "wv" | "ape" | "tta" | "wav" | "aiff" | "aif"
+    )
+}
+
+/// Parse "256k", "1.5M", or bare "256" → kbps as i64.
+fn parse_bitrate_kbps(s: &str) -> Option<i64> {
+    let s = s.trim().to_lowercase();
+    if let Some(rest) = s.strip_suffix('k') {
+        rest.parse().ok()
+    } else if let Some(rest) = s.strip_suffix('m') {
+        rest.parse::<f64>().ok().map(|v| (v * 1000.0) as i64)
+    } else {
+        s.parse().ok()
+    }
+}
+```
+
+Export: `pub mod transcode_compat;` in `src/services/mod.rs`.
+
+**Step 4: Verify pass**
+
+**Step 5: Update codebase filemap**
+
+**Step 6: Commit**
+```bash
+git add src/services/transcode_compat.rs src/services/mod.rs tests/transcode_compat.rs tasks/codebase-filemap.md
+git commit -m "feat(4.13): transcode compatibility module — quality matching rules"
+```
+
+---
+
+## Task 14: Normalize-on-ingest job
+
+**Files:**
+- Create: `migrations/postgres/0016_libraries_normalize_on_ingest.sql`
+- Create: `migrations/sqlite/0016_libraries_normalize_on_ingest.sql`
+- Create: `migrations/postgres/0017_jobs_add_normalize.sql`
+- Create: `migrations/sqlite/0017_jobs_add_normalize.sql`
+- Modify: `src/models/mod.rs` — add `normalize_on_ingest` to `Library`
+- Modify: `src/dal/mod.rs` — add `update_track_path` to Store trait
+- Modify: `src/dal/postgres.rs`, `src/dal/sqlite.rs` — implement
+- Modify: `src/jobs/fingerprint.rs` — chain to `normalize` instead of `mb_lookup` when needed
+- Create: `src/jobs/normalize.rs`
+- Modify: `src/jobs/mod.rs` — export; expose `build_ffmpeg_args` as `pub`
+- Modify: `src/scheduler/mod.rs` — register handler
+- Create: `tests/normalize_job.rs`
+
+**Step 1: Write the failing tests**
+
+```rust
+// tests/normalize_job.rs
+use suzuran_server::jobs::normalize::NormalizeJobHandler;
+use suzuran_server::jobs::JobHandler;
+mod common;
+
+#[tokio::test]
+async fn test_normalize_converts_and_deletes_source() {
+    // Setup: FLAC library with normalize_on_ingest=true and FLAC encoding profile,
+    // containing a 1-second silence WavPack track
+    let (store, library_id, track_id, root) =
+        common::setup_normalize_scenario("silence.wv", "flac").await;
+
+    let handler = NormalizeJobHandler::new(store.clone());
+    let result = handler.handle(serde_json::json!({"track_id": track_id})).await.unwrap();
+
+    assert_eq!(result["status"].as_str(), Some("completed"));
+
+    // Source .wv file must no longer exist
+    let old_path = root.join("silence.wv");
+    assert!(!old_path.exists(), "source WavPack should be deleted after normalize");
+
+    // .flac file must exist
+    let new_path = root.join("silence.flac");
+    assert!(new_path.exists(), "normalized FLAC should exist");
+
+    // DB record updated
+    let track = store.get_track(track_id).await.unwrap();
+    assert!(track.relative_path.ends_with(".flac"));
+
+    // mb_lookup enqueued as next step
+    let jobs = store.list_jobs(None, Some("pending")).await.unwrap();
+    assert!(jobs.iter().any(|j| j.job_type == "mb_lookup" &&
+        j.payload["track_id"].as_i64() == Some(track_id)));
+}
+
+#[tokio::test]
+async fn test_normalize_skips_already_correct_format() {
+    // FLAC file in a FLAC library — no conversion needed
+    let (store, _, track_id, _) =
+        common::setup_normalize_scenario("silence.flac", "flac").await;
+    let handler = NormalizeJobHandler::new(store.clone());
+    let result = handler.handle(serde_json::json!({"track_id": track_id})).await.unwrap();
+    assert_eq!(result["status"].as_str(), Some("skipped"));
+}
+
+#[tokio::test]
+async fn test_normalize_skips_incompatible_quality() {
+    // 192 kbps AAC dropped into a FLAC library — quality check rejects it
+    let (store, _, track_id, _) =
+        common::setup_normalize_scenario_lossy("silence.m4a", "flac").await;
+    let handler = NormalizeJobHandler::new(store.clone());
+    let result = handler.handle(serde_json::json!({"track_id": track_id})).await.unwrap();
+    assert_eq!(result["status"].as_str(), Some("skipped"));
+    // Source file must NOT be deleted when we skip
+    // (verified by common helper checking file still exists)
+}
+
+#[tokio::test]
+async fn test_fingerprint_chains_to_normalize_when_flag_set() {
+    use suzuran_server::jobs::fingerprint::FingerprintJobHandler;
+    let (store, track_id, _root) =
+        common::setup_with_audio_track_in_normalize_library("silence.wv").await;
+    let handler = FingerprintJobHandler::new(store.clone());
+    handler.handle(serde_json::json!({"track_id": track_id})).await.unwrap();
+
+    let jobs = store.list_jobs(None, Some("pending")).await.unwrap();
+    assert!(jobs.iter().any(|j| j.job_type == "normalize"), "normalize should be enqueued");
+    assert!(!jobs.iter().any(|j| j.job_type == "mb_lookup"), "mb_lookup not yet — normalize runs first");
+}
+```
+
+**Step 2: Verify fail**
+
+**Step 3: Write migrations**
+
+`migrations/postgres/0016_libraries_normalize_on_ingest.sql`:
+```sql
+ALTER TABLE libraries ADD COLUMN IF NOT EXISTS normalize_on_ingest BOOLEAN NOT NULL DEFAULT FALSE;
+```
+
+`migrations/sqlite/0016_libraries_normalize_on_ingest.sql`:
+```sql
+ALTER TABLE libraries ADD COLUMN normalize_on_ingest INTEGER NOT NULL DEFAULT 0;
+```
+
+`migrations/postgres/0017_jobs_add_normalize.sql`:
+```sql
+ALTER TABLE jobs DROP CONSTRAINT IF EXISTS jobs_job_type_check;
+ALTER TABLE jobs ADD CONSTRAINT jobs_job_type_check CHECK (job_type IN (
+    'scan', 'fingerprint', 'mb_lookup', 'freedb_lookup',
+    'transcode', 'art_process', 'organize', 'cue_split', 'normalize'
+));
+```
+
+SQLite: same pattern as migration 0014.
+
+**Step 4: Add `normalize_on_ingest` to `Library` model in `src/models/mod.rs`**
+
+```rust
+pub struct Library {
+    // ... existing fields ...
+    pub normalize_on_ingest: bool,
+}
+```
+
+**Step 5: Add `update_track_path` to `Store` trait**
+
+```rust
+async fn update_track_path(&self, track_id: i64, new_path: &str, new_hash: &str) -> Result<(), AppError>;
+```
+
+Postgres:
+```rust
+sqlx::query!(
+    "UPDATE tracks SET relative_path = $1, file_hash = $2 WHERE id = $3",
+    new_path, new_hash, track_id
+).execute(&self.pool).await.map_err(AppError::from)?;
+Ok(())
+```
+
+SQLite: same with `?` placeholders.
+
+**Step 6: Modify `src/jobs/fingerprint.rs`** — after storing the fingerprint, check if the library needs normalization:
+
+```rust
+// After self.store.update_track_fingerprint(track_id, fingerprint, duration).await?;
+let track   = self.store.get_track(track_id).await?;
+let library = self.store.get_library(track.library_id).await?;
+
+let src_ext = std::path::Path::new(&track.relative_path)
+    .extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+let dst_codec = library.encoding_profile_id
+    .and_then(|ep_id| self.store.get_encoding_profile_blocking(ep_id).ok())  // or use async
+    .map(|ep| ep.codec);
+
+let needs_normalize = library.normalize_on_ingest
+    && library.encoding_profile_id.is_some()
+    && dst_codec.as_deref().map(crate::jobs::transcode::codec_extension)
+       != Some(src_ext.as_str());
+
+if needs_normalize {
+    self.store.enqueue_job("normalize", serde_json::json!({"track_id": track_id}), 4).await?;
+} else {
+    self.store.enqueue_job("mb_lookup", serde_json::json!({"track_id": track_id}), 4).await?;
+}
+```
+
+Note: `codec_extension` must be made `pub` in `src/jobs/transcode.rs`. The async call to `get_encoding_profile` in a sync context can be avoided by fetching the profile before the blocking step or restructuring as a separate async call in the fingerprint handler.
+
+**Step 7: Implement `src/jobs/normalize.rs`**
+
+```rust
+pub struct NormalizeJobHandler { store: Arc<dyn Store> }
+
+impl NormalizeJobHandler {
+    pub fn new(store: Arc<dyn Store>) -> Self { Self { store } }
+}
+
+#[async_trait::async_trait]
+impl super::JobHandler for NormalizeJobHandler {
+    async fn handle(&self, payload: serde_json::Value) -> Result<serde_json::Value, AppError> {
+        let track_id = payload["track_id"].as_i64()
+            .ok_or_else(|| AppError::BadRequest("missing track_id".into()))?;
+
+        let track   = self.store.get_track(track_id).await?;
+        let library = self.store.get_library(track.library_id).await?;
+
+        if !library.normalize_on_ingest {
+            // Enqueue mb_lookup since fingerprint skipped it
+            self.store.enqueue_job("mb_lookup", serde_json::json!({"track_id": track_id}), 4).await?;
+            return Ok(serde_json::json!({"status": "skipped", "reason": "normalize_on_ingest not set"}));
+        }
+
+        let ep_id = library.encoding_profile_id
+            .ok_or_else(|| AppError::BadRequest("library has no encoding_profile_id for normalize".into()))?;
+        let profile = self.store.get_encoding_profile(ep_id).await?;
+
+        let src_ext = std::path::Path::new(&track.relative_path)
+            .extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+        let dst_ext = super::transcode::codec_extension(&profile.codec);
+
+        // Already in target format
+        if src_ext == dst_ext {
+            self.store.enqueue_job("mb_lookup", serde_json::json!({"track_id": track_id}), 4).await?;
+            return Ok(serde_json::json!({"status": "skipped", "reason": "already in target format"}));
+        }
+
+        // Quality compatibility check — if incompatible, do NOT delete source
+        if !crate::services::transcode_compat::is_compatible(
+            &src_ext, track.sample_rate, track.bit_depth, track.bitrate, &profile,
+        ) {
+            return Ok(serde_json::json!({
+                "status": "skipped",
+                "reason": "source quality incompatible with target profile — source preserved",
+            }));
+        }
+
+        // Paths
+        let src_path = format!("{}/{}", library.root_path.trim_end_matches('/'),
+                                         track.relative_path.trim_start_matches('/'));
+        let out_rel  = std::path::Path::new(&track.relative_path)
+            .with_extension(dst_ext).to_string_lossy().to_string();
+        let out_path = format!("{}/{}", library.root_path.trim_end_matches('/'),
+                                        out_rel.trim_start_matches('/'));
+
+        // Transcode
+        let mut args: Vec<String> = vec!["-i".to_string(), src_path.clone()];
+        args.extend(super::transcode::build_ffmpeg_args(&profile));
+        args.extend(["-y".to_string(), out_path.clone()]);
+
+        let status = tokio::process::Command::new("ffmpeg")
+            .args(&args)
+            .stderr(std::process::Stdio::null())
+            .status().await
+            .map_err(|e| AppError::Internal(format!("ffmpeg: {e}")))?;
+
+        if !status.success() {
+            return Err(AppError::Internal("ffmpeg normalize failed — source preserved".into()));
+        }
+
+        // Verify output exists and is non-empty before deleting source
+        let meta = tokio::fs::metadata(&out_path).await
+            .map_err(|e| AppError::Internal(format!("output not found: {e}")))?;
+        if meta.len() == 0 {
+            return Err(AppError::Internal("ffmpeg produced empty output — source preserved".into()));
+        }
+
+        // Delete source (only after verified output)
+        tokio::fs::remove_file(&src_path).await
+            .map_err(|e| AppError::Internal(format!("delete source: {e}")))?;
+
+        // Hash new file + update DB
+        let hash = super::cue_split::hash_file(std::path::Path::new(&out_path)).await
+            .map_err(|e| AppError::Internal(format!("hash: {e}")))?;
+        self.store.update_track_path(track_id, &out_rel, &hash).await?;
+
+        // Continue pipeline: enqueue mb_lookup
+        self.store.enqueue_job("mb_lookup", serde_json::json!({"track_id": track_id}), 4).await?;
+
+        Ok(serde_json::json!({
+            "status": "completed",
+            "track_id": track_id,
+            "old_path": track.relative_path,
+            "new_path": out_rel,
+        }))
+    }
+}
+```
+
+**Step 8: Register in `src/scheduler/mod.rs`**
+
+```rust
+"normalize" => NormalizeJobHandler::new(state.store.clone()).handle(payload).await,
+```
+
+Add semaphore slot for `normalize` (2 concurrent — runs ffmpeg).
+
+**Step 9: Verify pass**
+
+**Step 10: Update `src/api/libraries.rs`** — ensure `normalize_on_ingest` is included in create/update request body deserialization and passed through to the store. Follow the existing pattern for `auto_transcode_on_ingest`.
+
+**Step 11: Update codebase filemap**
+
+**Step 12: Commit**
+```bash
+git add migrations/ src/models/mod.rs src/dal/ src/jobs/normalize.rs src/jobs/fingerprint.rs src/jobs/mod.rs src/jobs/transcode.rs src/scheduler/mod.rs src/api/libraries.rs tests/normalize_job.rs tasks/codebase-filemap.md
+git commit -m "feat(4.14): normalize-on-ingest — format conversion, source deletion, fingerprint chaining"
+```
+
+---
+
+## Task 15: Virtual libraries — DB + DAL
+
+**Files:**
+- Create: `migrations/postgres/0018_virtual_libraries.sql`
+- Create: `migrations/sqlite/0018_virtual_libraries.sql`
+- Create: `migrations/postgres/0019_jobs_add_virtual_sync.sql`
+- Create: `migrations/sqlite/0019_jobs_add_virtual_sync.sql`
+- Modify: `src/models/mod.rs` — add `VirtualLibrary`, `VirtualLibrarySource`, `VirtualLibraryTrack`
+- Modify: `src/dal/mod.rs` — add Store trait methods
+- Modify: `src/dal/postgres.rs`, `src/dal/sqlite.rs`
+- Create: `tests/virtual_libraries_dal.rs`
+
+**Step 1: Write the failing test**
+
+```rust
+// tests/virtual_libraries_dal.rs
+mod common;
+use suzuran_server::dal::{UpsertVirtualLibrary};
+
+#[tokio::test]
+async fn test_virtual_library_crud_and_sources() {
+    let store = common::setup_store().await;
+
+    // Create two regular libraries as sources
+    let lib_flac = common::create_library(&store, "FLAC", "flac").await;
+    let lib_aac  = common::create_library(&store, "AAC",  "aac").await;
+
+    // Create virtual library
+    let vlib = store.create_virtual_library(UpsertVirtualLibrary {
+        name: "Best Quality".into(),
+        root_path: "/tmp/vlib".into(),
+        link_type: "symlink".into(),
+    }).await.unwrap();
+    assert_eq!(vlib.link_type, "symlink");
+
+    // Set source priority: FLAC first (priority 1), AAC second (priority 2)
+    store.set_virtual_library_sources(vlib.id, &[
+        (lib_flac.id, 1),
+        (lib_aac.id,  2),
+    ]).await.unwrap();
+
+    let sources = store.list_virtual_library_sources(vlib.id).await.unwrap();
+    assert_eq!(sources.len(), 2);
+    assert_eq!(sources[0].library_id, lib_flac.id);
+    assert_eq!(sources[0].priority, 1);
+
+    // List all virtual libraries
+    let all = store.list_virtual_libraries().await.unwrap();
+    assert_eq!(all.len(), 1);
+
+    // Delete
+    store.delete_virtual_library(vlib.id).await.unwrap();
+    assert!(store.list_virtual_libraries().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn test_virtual_library_tracks() {
+    let (store, vlib_id, track_id) = common::setup_virtual_library_with_track().await;
+
+    store.upsert_virtual_library_track(vlib_id, track_id, "artist/album/01 - track.flac").await.unwrap();
+
+    let tracks = store.list_virtual_library_tracks(vlib_id).await.unwrap();
+    assert_eq!(tracks.len(), 1);
+    assert_eq!(tracks[0].source_track_id, track_id);
+
+    store.clear_virtual_library_tracks(vlib_id).await.unwrap();
+    assert!(store.list_virtual_library_tracks(vlib_id).await.unwrap().is_empty());
+}
+```
+
+**Step 2: Verify fail**
+
+**Step 3: Write migrations**
+
+`migrations/postgres/0018_virtual_libraries.sql`:
+```sql
+CREATE TABLE virtual_libraries (
+    id          BIGSERIAL PRIMARY KEY,
+    name        TEXT NOT NULL,
+    root_path   TEXT NOT NULL,
+    link_type   TEXT NOT NULL DEFAULT 'symlink'
+                    CHECK (link_type IN ('symlink', 'hardlink')),
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE virtual_library_sources (
+    virtual_library_id  BIGINT NOT NULL REFERENCES virtual_libraries(id) ON DELETE CASCADE,
+    library_id          BIGINT NOT NULL REFERENCES libraries(id) ON DELETE CASCADE,
+    priority            INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (virtual_library_id, library_id)
+);
+
+CREATE INDEX idx_vls_priority ON virtual_library_sources(virtual_library_id, priority);
+
+-- Tracks currently materialized in the virtual library (cleared and rebuilt on each sync)
+CREATE TABLE virtual_library_tracks (
+    virtual_library_id  BIGINT NOT NULL REFERENCES virtual_libraries(id) ON DELETE CASCADE,
+    source_track_id     BIGINT NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+    link_path           TEXT NOT NULL,   -- relative path within virtual library root
+    PRIMARY KEY (virtual_library_id, source_track_id)
+);
+```
+
+`migrations/postgres/0019_jobs_add_virtual_sync.sql`:
+```sql
+ALTER TABLE jobs DROP CONSTRAINT IF EXISTS jobs_job_type_check;
+ALTER TABLE jobs ADD CONSTRAINT jobs_job_type_check CHECK (job_type IN (
+    'scan', 'fingerprint', 'mb_lookup', 'freedb_lookup',
+    'transcode', 'art_process', 'organize', 'cue_split', 'normalize', 'virtual_sync'
+));
+```
+
+SQLite: same patterns as previous migrations.
+
+**Step 4: Add models to `src/models/mod.rs`**
+
+```rust
+#[derive(Debug, Clone, sqlx::FromRow, serde::Serialize, serde::Deserialize)]
+pub struct VirtualLibrary {
+    pub id: i64,
+    pub name: String,
+    pub root_path: String,
+    pub link_type: String,   // "symlink" | "hardlink"
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+pub struct UpsertVirtualLibrary {
+    pub name: String,
+    pub root_path: String,
+    pub link_type: String,
+}
+
+#[derive(Debug, Clone, sqlx::FromRow, serde::Serialize, serde::Deserialize)]
+pub struct VirtualLibrarySource {
+    pub virtual_library_id: i64,
+    pub library_id: i64,
+    pub priority: i64,
+}
+
+#[derive(Debug, Clone, sqlx::FromRow, serde::Serialize, serde::Deserialize)]
+pub struct VirtualLibraryTrack {
+    pub virtual_library_id: i64,
+    pub source_track_id: i64,
+    pub link_path: String,
+}
+```
+
+**Step 5: Add to `Store` trait**
+
+```rust
+async fn create_virtual_library(&self, dto: UpsertVirtualLibrary) -> Result<VirtualLibrary, AppError>;
+async fn get_virtual_library(&self, id: i64) -> Result<VirtualLibrary, AppError>;
+async fn list_virtual_libraries(&self) -> Result<Vec<VirtualLibrary>, AppError>;
+async fn update_virtual_library(&self, id: i64, dto: UpsertVirtualLibrary) -> Result<VirtualLibrary, AppError>;
+async fn delete_virtual_library(&self, id: i64) -> Result<(), AppError>;
+
+/// Replace the full source list for a virtual library (atomic — delete old + insert new).
+async fn set_virtual_library_sources(&self, id: i64, sources: &[(i64, i64)]) -> Result<(), AppError>;
+async fn list_virtual_library_sources(&self, id: i64) -> Result<Vec<VirtualLibrarySource>, AppError>;
+
+async fn upsert_virtual_library_track(&self, vlib_id: i64, track_id: i64, link_path: &str) -> Result<(), AppError>;
+async fn list_virtual_library_tracks(&self, vlib_id: i64) -> Result<Vec<VirtualLibraryTrack>, AppError>;
+async fn clear_virtual_library_tracks(&self, vlib_id: i64) -> Result<(), AppError>;
+```
+
+For `set_virtual_library_sources`: run `DELETE FROM virtual_library_sources WHERE virtual_library_id = $1`, then batch-insert the new list. Wrap in a transaction.
+
+**Step 6–7: Implement in PgStore + SqliteStore** — standard patterns, same as previous DAL tasks.
+
+**Step 8: Verify pass**
+
+**Step 9: Update codebase filemap**
+
+**Step 10: Commit**
+```bash
+git add migrations/ src/models/mod.rs src/dal/ tests/virtual_libraries_dal.rs tasks/codebase-filemap.md
+git commit -m "feat(4.15): virtual libraries — migrations, models, DAL"
+```
+
+---
+
+## Task 16: Virtual sync job handler
+
+**Files:**
+- Create: `src/jobs/virtual_sync.rs`
+- Modify: `src/jobs/mod.rs` — add `VirtualSyncPayload`; export module
+- Modify: `src/scheduler/mod.rs` — register handler
+- Create: `tests/virtual_sync_job.rs`
+
+**Step 1: Write the failing test**
+
+```rust
+// tests/virtual_sync_job.rs
+use suzuran_server::jobs::virtual_sync::VirtualSyncJobHandler;
+use suzuran_server::jobs::JobHandler;
+mod common;
+
+#[tokio::test]
+async fn test_virtual_sync_creates_symlinks_priority_order() {
+    // Setup: FLAC library (priority 1) and AAC library (priority 2)
+    // Both contain a track with the same MB recording ID
+    // Virtual library uses symlinks
+    let (store, vlib_id, root) =
+        common::setup_virtual_sync_scenario_same_track().await;
+
+    let handler = VirtualSyncJobHandler::new(store.clone());
+    let result = handler.handle(serde_json::json!({
+        "virtual_library_id": vlib_id
+    })).await.unwrap();
+
+    assert_eq!(result["status"].as_str(), Some("completed"));
+    assert_eq!(result["tracks_linked"].as_i64(), Some(1));
+
+    // The link should point to the FLAC version (priority 1), not AAC (priority 2)
+    let vlib_tracks = store.list_virtual_library_tracks(vlib_id).await.unwrap();
+    assert_eq!(vlib_tracks.len(), 1);
+    assert!(vlib_tracks[0].link_path.ends_with(".flac"));
+
+    // Symlink should exist on disk
+    let link = std::path::Path::new(&root).join(&vlib_tracks[0].link_path);
+    assert!(link.exists() || link.is_symlink(), "symlink should exist");
+}
+
+#[tokio::test]
+async fn test_virtual_sync_falls_back_when_preferred_missing() {
+    // FLAC library (priority 1) does NOT have a track that AAC library (priority 2) has
+    let (store, vlib_id, root) =
+        common::setup_virtual_sync_scenario_flac_missing().await;
+    let handler = VirtualSyncJobHandler::new(store.clone());
+    handler.handle(serde_json::json!({"virtual_library_id": vlib_id})).await.unwrap();
+
+    let vlib_tracks = store.list_virtual_library_tracks(vlib_id).await.unwrap();
+    assert_eq!(vlib_tracks.len(), 1, "AAC fallback should be linked");
+    assert!(vlib_tracks[0].link_path.ends_with(".m4a") || vlib_tracks[0].link_path.ends_with(".aac"));
+}
+
+#[tokio::test]
+async fn test_virtual_sync_is_idempotent() {
+    let (store, vlib_id, _root) = common::setup_virtual_sync_scenario_same_track().await;
+    let handler = VirtualSyncJobHandler::new(store.clone());
+    handler.handle(serde_json::json!({"virtual_library_id": vlib_id})).await.unwrap();
+    handler.handle(serde_json::json!({"virtual_library_id": vlib_id})).await.unwrap();
+
+    let vlib_tracks = store.list_virtual_library_tracks(vlib_id).await.unwrap();
+    assert_eq!(vlib_tracks.len(), 1, "no duplicate links on re-sync");
+}
+```
+
+**Step 2: Verify fail**
+
+**Step 3: Implement `src/jobs/virtual_sync.rs`**
+
+```rust
+pub struct VirtualSyncJobHandler { store: Arc<dyn Store> }
+
+impl VirtualSyncJobHandler {
+    pub fn new(store: Arc<dyn Store>) -> Self { Self { store } }
+}
+
+/// Canonical identity for matching "same track" across libraries.
+/// Prefers musicbrainz_recordingid; falls back to normalized tag tuple.
+fn track_identity(track: &crate::models::Track) -> String {
+    if let Some(mb) = track.tags.get("musicbrainz_recordingid")
+        .and_then(|v| v.as_str()).filter(|s| !s.is_empty())
+    {
+        return format!("mb:{mb}");
+    }
+    let aa = track.albumartist.as_deref().or(track.artist.as_deref())
+        .unwrap_or("").to_lowercase();
+    let al = track.album.as_deref().unwrap_or("").to_lowercase();
+    let dn = track.discnumber.as_deref().unwrap_or("1");
+    let tn = track.tracknumber.as_deref().unwrap_or("0")
+        .split('/').next().unwrap_or("0").trim();
+    format!("tag:{aa}\x00{al}\x00{dn}\x00{tn}")
+}
+
+#[async_trait::async_trait]
+impl super::JobHandler for VirtualSyncJobHandler {
+    async fn handle(&self, payload: serde_json::Value) -> Result<serde_json::Value, AppError> {
+        let vlib_id = payload["virtual_library_id"].as_i64()
+            .ok_or_else(|| AppError::BadRequest("missing virtual_library_id".into()))?;
+
+        let vlib    = self.store.get_virtual_library(vlib_id).await?;
+        let sources = self.store.list_virtual_library_sources(vlib_id).await?;
+        // sources is already ordered by priority ASC from the DAL
+
+        // Build identity → (library, track) map — first source library wins for each identity
+        let mut identity_map: std::collections::HashMap<String, (crate::models::Library, crate::models::Track)> = std::collections::HashMap::new();
+
+        for source in &sources {
+            let lib    = self.store.get_library(source.library_id).await?;
+            let tracks = self.store.list_tracks_by_library(source.library_id).await?;
+            for track in tracks {
+                let id = track_identity(&track);
+                identity_map.entry(id).or_insert((lib.clone(), track));
+            }
+        }
+
+        // Clear existing links (remove files listed in virtual_library_tracks, then clear DB rows)
+        let existing = self.store.list_virtual_library_tracks(vlib_id).await?;
+        for vt in &existing {
+            let link = std::path::Path::new(&vlib.root_path).join(&vt.link_path);
+            let _ = tokio::fs::remove_file(&link).await; // ignore errors (file may already be gone)
+        }
+        self.store.clear_virtual_library_tracks(vlib_id).await?;
+
+        // Create new links
+        let mut linked: usize = 0;
+        for (_, (src_lib, track)) in &identity_map {
+            let src_path = format!("{}/{}", src_lib.root_path.trim_end_matches('/'),
+                                             track.relative_path.trim_start_matches('/'));
+            let link_rel = &track.relative_path;
+            let link_abs = std::path::Path::new(&vlib.root_path)
+                .join(link_rel.trim_start_matches('/'));
+
+            // Ensure parent directory exists
+            if let Some(parent) = link_abs.parent() {
+                tokio::fs::create_dir_all(parent).await
+                    .map_err(|e| AppError::Internal(format!("mkdir: {e}")))?;
+            }
+
+            // Remove stale link if exists
+            let _ = tokio::fs::remove_file(&link_abs).await;
+
+            match vlib.link_type.as_str() {
+                "symlink" => {
+                    tokio::fs::symlink(&src_path, &link_abs).await
+                        .map_err(|e| AppError::Internal(format!("symlink: {e}")))?;
+                }
+                "hardlink" => {
+                    tokio::fs::hard_link(&src_path, &link_abs).await
+                        .map_err(|e| AppError::Internal(format!(
+                            "hardlink (ensure src and dst are on same filesystem): {e}"
+                        )))?;
+                }
+                other => return Err(AppError::Internal(format!("unknown link_type: {other}"))),
+            }
+
+            self.store.upsert_virtual_library_track(vlib_id, track.id, link_rel).await?;
+            linked += 1;
+        }
+
+        Ok(serde_json::json!({
+            "status": "completed",
+            "virtual_library_id": vlib_id,
+            "tracks_linked": linked,
+        }))
+    }
+}
+```
+
+Add `pub struct VirtualSyncPayload { pub virtual_library_id: i64 }` and `pub mod virtual_sync;` to `src/jobs/mod.rs`.
+
+**Step 4: Register in scheduler**
+
+```rust
+"virtual_sync" => VirtualSyncJobHandler::new(state.store.clone()).handle(payload).await,
+```
+
+Add semaphore for `virtual_sync` (1 concurrent — touches filesystem broadly).
+
+**Step 5: Verify pass**
+
+**Step 6: Update codebase filemap**
+
+**Step 7: Commit**
+```bash
+git add src/jobs/virtual_sync.rs src/jobs/mod.rs src/scheduler/mod.rs tests/virtual_sync_job.rs tasks/codebase-filemap.md
+git commit -m "feat(4.16): virtual_sync job — identity matching, symlink/hardlink materialization"
+```
+
+---
+
+## Task 17: Virtual libraries API + Settings UI + phase complete
+
+**Files:**
+- Create: `src/api/virtual_libraries.rs`
+- Modify: `src/api/mod.rs` — mount router
+- Create: `ui/src/types/virtualLibrary.ts`
+- Create: `ui/src/api/virtualLibraries.ts`
+- Create: `ui/src/components/VirtualLibraryForm.tsx`
+- Create: `ui/src/components/SourcePriorityList.tsx`
+- Modify: `ui/src/pages/SettingsPage.tsx` — add Virtual Libraries section
+- Modify: `CHANGELOG.md` — v0.4.0 entry
+
+**Step 1: Write the failing test**
+
+```rust
+// tests/virtual_libraries_api.rs
+mod common;
+use common::TestApp;
+
+#[tokio::test]
+async fn test_virtual_library_crud() {
+    let app = TestApp::spawn().await;
+    let token = app.seed_admin_user().await;
+
+    let resp = app.authed_post(&token, "/api/v1/virtual-libraries", serde_json::json!({
+        "name": "Best Quality",
+        "root_path": "/mnt/vlib",
+        "link_type": "symlink"
+    })).await;
+    assert_eq!(resp.status(), 201);
+    let vlib: serde_json::Value = resp.json().await.unwrap();
+    let vlib_id = vlib["id"].as_i64().unwrap();
+
+    let resp = app.authed_get(&token, "/api/v1/virtual-libraries").await;
+    let list: Vec<serde_json::Value> = resp.json().await.unwrap();
+    assert_eq!(list.len(), 1);
+
+    // Set sources
+    let lib_id = app.seed_library_with_format("flac").await;
+    let resp = app.authed_put(&token,
+        &format!("/api/v1/virtual-libraries/{vlib_id}/sources"),
+        serde_json::json!([{"library_id": lib_id, "priority": 1}]),
+    ).await;
+    assert_eq!(resp.status(), 200);
+
+    // Trigger sync
+    let resp = app.authed_post(&token,
+        &format!("/api/v1/virtual-libraries/{vlib_id}/sync"),
+        serde_json::json!({}),
+    ).await;
+    assert_eq!(resp.status(), 202);
+}
+```
+
+**Step 2: Verify fail**
+
+**Step 3: Implement `src/api/virtual_libraries.rs`**
+
+Endpoints:
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/` | required | List virtual libraries |
+| `POST` | `/` | admin | Create virtual library |
+| `GET` | `/:id` | required | Get single |
+| `PUT` | `/:id` | admin | Update |
+| `DELETE` | `/:id` | admin | Delete |
+| `GET` | `/:id/sources` | required | Get ordered source list |
+| `PUT` | `/:id/sources` | admin | Replace source list |
+| `POST` | `/:id/sync` | required | Enqueue `virtual_sync` job → 202 |
+
+Request body for create/update: `{ name, root_path, link_type }`.  
+Request body for `PUT /:id/sources`: `[{ library_id, priority }, …]` — array replaces the entire list atomically.
+
+**Step 4: Mount in `src/api/mod.rs`**
+
+```rust
+.nest("/virtual-libraries", virtual_libraries::router())
+```
+
+**Step 5: Add UI types and API client**
+
+`ui/src/types/virtualLibrary.ts`:
+```typescript
+export interface VirtualLibrary {
+  id: number;
+  name: string;
+  root_path: string;
+  link_type: 'symlink' | 'hardlink';
+  created_at: string;
+}
+
+export interface VirtualLibrarySource {
+  virtual_library_id: number;
+  library_id: number;
+  priority: number;
+  library_name?: string;  // joined for display
+}
+```
+
+`ui/src/api/virtualLibraries.ts` — standard CRUD client + `getSources(id)`, `setSources(id, sources)`, `triggerSync(id)`. Follow `ui/src/api/tagSuggestions.ts` pattern.
+
+**Step 6: Implement `SourcePriorityList` component**
+
+A draggable ordered list of source libraries with up/down buttons (no drag library needed — simple array splice on button click):
+
+```tsx
+// ui/src/components/SourcePriorityList.tsx
+interface Props {
+  sources: Array<{ library_id: number; priority: number; library_name: string }>;
+  allLibraries: Library[];
+  onChange: (updated: Array<{ library_id: number; priority: number }>) => void;
+}
+
+export function SourcePriorityList({ sources, allLibraries, onChange }: Props) {
+  const sorted = [...sources].sort((a, b) => a.priority - b.priority);
+
+  const move = (index: number, dir: -1 | 1) => {
+    const next = [...sorted];
+    const swap = index + dir;
+    if (swap < 0 || swap >= next.length) return;
+    [next[index], next[swap]] = [next[swap], next[index]];
+    onChange(next.map((s, i) => ({ library_id: s.library_id, priority: i + 1 })));
+  };
+
+  const remove = (library_id: number) =>
+    onChange(sorted.filter(s => s.library_id !== library_id)
+      .map((s, i) => ({ library_id: s.library_id, priority: i + 1 })));
+
+  const addableLibs = allLibraries.filter(l => !sorted.some(s => s.library_id === l.id));
+
+  return (
+    <div className="space-y-1">
+      {sorted.map((s, i) => (
+        <div key={s.library_id}
+             className="flex items-center gap-2 px-2 py-1 bg-muted/30 rounded text-sm">
+          <span className="text-muted-foreground font-mono w-4">{i + 1}</span>
+          <span className="flex-1">{s.library_name}</span>
+          <button onClick={() => move(i, -1)} disabled={i === 0}
+                  className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-30">▲</button>
+          <button onClick={() => move(i,  1)} disabled={i === sorted.length - 1}
+                  className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-30">▼</button>
+          <button onClick={() => remove(s.library_id)}
+                  className="text-xs text-muted-foreground hover:text-destructive">✕</button>
+        </div>
+      ))}
+      {addableLibs.length > 0 && (
+        <select className="text-xs bg-input border border-border rounded px-2 py-1 w-full"
+                onChange={e => {
+                  const lib_id = Number(e.target.value);
+                  if (!lib_id) return;
+                  onChange([...sorted, { library_id: lib_id, priority: sorted.length + 1 }]
+                    .map((s, i) => ({ library_id: s.library_id, priority: i + 1 })));
+                  e.target.value = '';
+                }}>
+          <option value="">+ Add source library…</option>
+          {addableLibs.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+        </select>
+      )}
+    </div>
+  );
+}
+```
+
+**Step 7: Implement `VirtualLibraryForm`**
+
+A form with name, root_path, link_type (symlink/hardlink radio), and the `SourcePriorityList` for source libraries. On save: create/update the virtual library, then call `setSources` with the current priority list.
+
+**Step 8: Add Virtual Libraries section to SettingsPage**
+
+Similar to the encoding/art profiles sections: a list of existing virtual libraries (name, link_type, source count) with Edit/Delete/Sync buttons, plus a "New Virtual Library" button that expands the form.
+
+The Sync button calls `virtualLibraries.triggerSync(id)` and on success navigates to `/jobs` or shows a toast.
+
+**Step 9: Build and verify in browser**
+```bash
+docker compose up --build -d
+# Navigate to /settings → Virtual Libraries
+# Create a virtual library "Best Quality" with symlinks
+# Add FLAC and AAC libraries as sources (FLAC priority 1, AAC priority 2)
+# Click Sync → navigate to /jobs → virtual_sync job appears
+# After completion: check the virtual library root_path for symlinks
+```
+
+**Step 10: Update `CHANGELOG.md`**
+
+Append to the v0.4.0 entry (or create one if not yet written):
+```markdown
+- Bit depth tracking: `tracks.bit_depth` populated from lofty; `encoding_profiles.bit_depth` sets ceiling
+- Transcode quality compatibility — no lossy→lossless, no upsampling, no bit-depth inflation, no bitrate upscaling; incompatible jobs skip cleanly
+- Normalize-on-ingest — `libraries.normalize_on_ingest` flag: ingested files in wrong format are converted in-place to the library's encoding profile, source deleted after verified transcode; incompatible sources (lossy into lossless) are preserved, not deleted
+- Virtual libraries — symlink or hardlink views of best-available tracks across priority-ordered source libraries; `virtual_sync` job materializes the view; identity matched by MB recording ID or (albumartist, album, disc, track) tuple
+```
+
+**Step 11: Update codebase filemap**
+
+**Step 12: Commit**
+```bash
+git add src/api/virtual_libraries.rs src/api/mod.rs ui/src/types/virtualLibrary.ts ui/src/api/virtualLibraries.ts ui/src/components/VirtualLibraryForm.tsx ui/src/components/SourcePriorityList.tsx ui/src/pages/SettingsPage.tsx CHANGELOG.md tasks/codebase-filemap.md
+git commit -m "feat(4.17): virtual libraries API + Settings UI + CHANGELOG"
+```
+
+**Step 13: Tag the release**
+```bash
+git tag v0.4.0
+```
