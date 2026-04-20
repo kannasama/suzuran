@@ -418,14 +418,17 @@ impl Store for PgStore {
     async fn update_library(
         &self, id: i64, name: &str, scan_enabled: bool, scan_interval_secs: i64,
         auto_transcode_on_ingest: bool, auto_organize_on_ingest: bool,
+        normalize_on_ingest: bool,
     ) -> Result<Option<Library>, AppError> {
         sqlx::query_as::<_, Library>(
             "UPDATE libraries SET name=$1, scan_enabled=$2, scan_interval_secs=$3,
-             auto_transcode_on_ingest=$4, auto_organize_on_ingest=$5
-             WHERE id=$6 RETURNING *",
+             auto_transcode_on_ingest=$4, auto_organize_on_ingest=$5,
+             normalize_on_ingest=$6
+             WHERE id=$7 RETURNING *",
         )
         .bind(name).bind(scan_enabled).bind(scan_interval_secs)
-        .bind(auto_transcode_on_ingest).bind(auto_organize_on_ingest).bind(id)
+        .bind(auto_transcode_on_ingest).bind(auto_organize_on_ingest)
+        .bind(normalize_on_ingest).bind(id)
         .fetch_optional(&self.pool).await.map_err(AppError::Database)
     }
 
@@ -602,9 +605,10 @@ impl Store for PgStore {
         .bind(library_id).fetch_all(&self.pool).await.map_err(AppError::Database)
     }
 
-    async fn update_track_path(&self, id: i64, relative_path: &str) -> Result<(), AppError> {
-        sqlx::query("UPDATE tracks SET relative_path = $1 WHERE id = $2")
+    async fn update_track_path(&self, id: i64, relative_path: &str, file_hash: &str) -> Result<(), AppError> {
+        sqlx::query("UPDATE tracks SET relative_path = $1, file_hash = $2 WHERE id = $3")
             .bind(relative_path)
+            .bind(file_hash)
             .bind(id)
             .execute(&self.pool)
             .await

@@ -163,6 +163,7 @@ pub trait Store: Send + Sync {
         scan_interval_secs: i64,
         auto_transcode_on_ingest: bool,
         auto_organize_on_ingest: bool,
+        normalize_on_ingest: bool,
     ) -> Result<Option<Library>, AppError>;
     async fn delete_library(&self, id: i64) -> Result<(), AppError>;
     async fn set_library_encoding_profile(
@@ -230,7 +231,7 @@ pub trait Store: Send + Sync {
         &self,
         library_id: i64,
     ) -> Result<Vec<(i64, String, String)>, AppError>;
-    async fn update_track_path(&self, id: i64, relative_path: &str) -> Result<(), AppError>;
+    async fn update_track_path(&self, id: i64, relative_path: &str, file_hash: &str) -> Result<(), AppError>;
     async fn update_track_fingerprint(
         &self,
         track_id: i64,

@@ -2,6 +2,16 @@ use std::sync::Arc;
 use tempfile::TempDir;
 use suzuran_server::dal::{sqlite::SqliteStore, Store, UpsertEncodingProfile, UpsertTrack};
 
+/// Returns true if `ffmpeg` is available on PATH.
+#[allow(dead_code)]
+pub fn ffmpeg_available() -> bool {
+    std::process::Command::new("ffmpeg")
+        .arg("-version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
 pub async fn make_db() -> Arc<dyn Store> {
     let store = SqliteStore::new("sqlite::memory:").await.unwrap();
     store.migrate().await.unwrap();

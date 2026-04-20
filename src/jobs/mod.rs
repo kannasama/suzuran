@@ -3,6 +3,7 @@ pub mod cue_split;
 pub mod fingerprint;
 pub mod freedb_lookup;
 pub mod mb_lookup;
+pub mod normalize;
 pub mod organize;
 pub mod scan;
 pub mod transcode;
@@ -49,6 +50,12 @@ pub struct CueSplitPayload {
 pub struct TranscodePayload {
     pub source_track_id: i64,
     pub target_library_id: i64,
+}
+
+/// Payload for the `normalize` job type.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct NormalizePayload {
+    pub track_id: i64,
 }
 
 /// Payload for the `art_process` job type.

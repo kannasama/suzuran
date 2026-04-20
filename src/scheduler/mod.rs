@@ -10,6 +10,7 @@ use crate::{
         fingerprint::FingerprintJobHandler,
         freedb_lookup::FreedBLookupJobHandler,
         mb_lookup::MbLookupJobHandler,
+        normalize::NormalizeJobHandler,
         organize::OrganizeJobHandler,
         scan::ScanJobHandler,
         transcode::TranscodeJobHandler,
@@ -39,6 +40,7 @@ impl Scheduler {
         handlers.insert("cue_split", Arc::new(CueSplitJobHandler::new(db.clone())));
         handlers.insert("transcode", Arc::new(TranscodeJobHandler::new(db.clone())));
         handlers.insert("art_process", Arc::new(ArtProcessJobHandler::new(db.clone())));
+        handlers.insert("normalize", Arc::new(NormalizeJobHandler::new(db.clone())));
 
         let mut semaphores: HashMap<&'static str, Arc<Semaphore>> = HashMap::new();
         semaphores.insert("scan",          Arc::new(Semaphore::new(DEFAULT_SCAN_CONCURRENCY)));
@@ -49,6 +51,7 @@ impl Scheduler {
         semaphores.insert("art_process",   Arc::new(Semaphore::new(DEFAULT_OTHER_CONCURRENCY)));
         semaphores.insert("organize",      Arc::new(Semaphore::new(DEFAULT_OTHER_CONCURRENCY)));
         semaphores.insert("cue_split",     Arc::new(Semaphore::new(2)));
+        semaphores.insert("normalize",     Arc::new(Semaphore::new(2)));
 
         Self { db, handlers, semaphores }
     }

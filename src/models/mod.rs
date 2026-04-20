@@ -70,6 +70,7 @@ pub struct Library {
     pub scan_interval_secs: i64,
     pub auto_transcode_on_ingest: bool,
     pub auto_organize_on_ingest: bool,
+    pub normalize_on_ingest: bool,
     pub created_at: DateTime<Utc>,
 }
 

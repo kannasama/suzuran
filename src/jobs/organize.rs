@@ -55,7 +55,7 @@ impl JobHandler for OrganizeJobHandler {
         }
         fs::rename(&old_abs, &new_abs).await.map_err(|e| AppError::Internal(e.into()))?;
 
-        db.update_track_path(track.id, &new_relative).await?;
+        db.update_track_path(track.id, &new_relative, &track.file_hash).await?;
 
         Ok(serde_json::json!({
             "moved": true,

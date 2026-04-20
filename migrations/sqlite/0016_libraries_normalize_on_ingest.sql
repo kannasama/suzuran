@@ -1,0 +1,1 @@
+ALTER TABLE libraries ADD COLUMN normalize_on_ingest INTEGER NOT NULL DEFAULT 0;
