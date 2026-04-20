@@ -6,6 +6,7 @@ import { LoginPage } from './pages/LoginPage'
 import { RegisterPage } from './pages/RegisterPage'
 import { LibraryPage } from './pages/LibraryPage'
 import OrganizationPage from './pages/OrganizationPage'
+import InboxPage from './pages/InboxPage'
 
 function useSetupStatus() {
   return useQuery({
@@ -42,6 +43,10 @@ function AppRoutes() {
       <Route
         path="/organization"
         element={user ? <OrganizationPage /> : <Navigate to="/login" replace />}
+      />
+      <Route
+        path="/inbox"
+        element={user ? <InboxPage /> : <Navigate to="/login" replace />}
       />
       <Route
         path="/*"

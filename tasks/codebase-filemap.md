@@ -152,7 +152,8 @@ docker compose logs -f app
 | `secrets/` | Local secret files (gitignored except README) |
 | `ui/` | React + Vite + Tailwind SPA — `npm run build` → `ui/dist/` |
 | `ui/src/theme/` | `tokens.ts` (dark/light CSS vars) + `ThemeProvider.tsx` (context + `applyTokens`) |
-| `ui/src/api/` | `client.ts` (Axios), `auth.ts` (login/register/logout/me), `libraries.ts` (list, create, update, delete), `organizationRules.ts` (list, create, update, delete org rules) |
+| `ui/src/types/` | `tagSuggestion.ts` — `TagSuggestion` interface (id, track_id, source, suggested_tags, confidence, mb IDs, cover_art_url, status, created_at) |
+| `ui/src/api/` | `client.ts` (Axios), `auth.ts` (login/register/logout/me), `libraries.ts` (list, create, update, delete), `organizationRules.ts` (list, create, update, delete org rules), `tagSuggestions.ts` (listPending, count, accept, reject, batchAccept) |
 | `ui/src/contexts/` | `AuthContext.tsx` — current user context, `useAuth` hook |
-| `ui/src/pages/` | `LoginPage.tsx`, `RegisterPage.tsx`, `LibraryPage.tsx` (two-pane layout; wires `useAuth` → `isAdmin` + `selectedLibraryId` → `LibraryTree`), `OrganizationPage.tsx` (organization rules management, admin only) |
+| `ui/src/pages/` | `LoginPage.tsx`, `RegisterPage.tsx`, `LibraryPage.tsx` (two-pane layout; wires `useAuth` → `isAdmin` + `selectedLibraryId` → `LibraryTree`), `OrganizationPage.tsx` (organization rules management, admin only), `InboxPage.tsx` (tag suggestion review — list, accept/reject per item, batch-accept ≥80%) |
 | `ui/src/components/` | `TopNav.tsx` (nav bar), `LibraryTree.tsx` (real data, hierarchy, admin create/edit/delete), `LibraryFormModal.tsx` (create/edit modal with TanStack Query mutations), `RuleEditor.tsx` (modal for create/edit organization rules), `TemplatePreview.tsx` (client-side template renderer for live preview) |
