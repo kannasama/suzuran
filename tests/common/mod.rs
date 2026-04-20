@@ -1,6 +1,142 @@
 use std::sync::Arc;
 use tempfile::TempDir;
-use suzuran_server::dal::{sqlite::SqliteStore, Store, UpsertEncodingProfile, UpsertTrack};
+use url::Url;
+use webauthn_rs::WebauthnBuilder;
+use suzuran_server::{
+    build_router,
+    config::Config,
+    dal::{sqlite::SqliteStore, Store, UpsertEncodingProfile, UpsertTrack},
+    services::{freedb::FreedBService, musicbrainz::MusicBrainzService},
+    state::AppState,
+};
+
+// ── TestApp ───────────────────────────────────────────────────────────────────
+
+/// Shared test server harness. Spawn once per test via `TestApp::spawn().await`.
+#[allow(dead_code)]
+pub struct TestApp {
+    /// Base URL of the running test server, e.g. `http://127.0.0.1:54321`
+    pub addr: String,
+    /// Authenticated reqwest client (cookie store enabled — session cookie is
+    /// stored automatically after `seed_admin_user()` is called).
+    pub client: reqwest::Client,
+    // Keep the temp dir alive for the duration of the test.
+    _uploads_tmp: TempDir,
+}
+
+#[allow(dead_code)]
+impl TestApp {
+    pub async fn spawn() -> Self {
+        let uploads_tmp = TempDir::new().unwrap();
+        let uploads_path = uploads_tmp.path().to_path_buf();
+
+        let store = SqliteStore::new("sqlite::memory:").await.expect("SQLite failed");
+        store.migrate().await.expect("migrations failed");
+
+        let config = Config {
+            database_url: "sqlite::memory:".into(),
+            jwt_secret: "test-secret-32-chars-minimum-xxxx".into(),
+            port: 0,
+            log_level: "error".into(),
+            rp_id: "localhost".into(),
+            rp_origin: "http://localhost:3000".into(),
+            uploads_dir: uploads_path,
+        };
+
+        let origin = Url::parse("http://localhost:3000").unwrap();
+        let webauthn = WebauthnBuilder::new("localhost", &origin)
+            .unwrap()
+            .rp_name("suzuran-test")
+            .build()
+            .unwrap();
+
+        let mb_service = Arc::new(MusicBrainzService::new(String::new()));
+        let freedb_service = Arc::new(FreedBService::new());
+        let state = AppState::new(Arc::new(store), config, webauthn, mb_service, freedb_service);
+        let app = build_router(state);
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let client = reqwest::Client::builder()
+            .cookie_store(true)
+            .build()
+            .unwrap();
+
+        TestApp {
+            addr: format!("http://{addr}"),
+            client,
+            _uploads_tmp: uploads_tmp,
+        }
+    }
+
+    /// Register + log in as the first admin user. Returns the raw session JWT
+    /// string (extracted from the `Set-Cookie` response header).
+    ///
+    /// After this call the internal `client`'s cookie store also holds the
+    /// session cookie, so subsequent requests via `self.client` are already
+    /// authenticated without needing the token string.
+    pub async fn seed_admin_user(&self) -> String {
+        self.client
+            .post(format!("{}/api/v1/auth/register", self.addr))
+            .json(&serde_json::json!({
+                "username": "admin",
+                "email": "admin@test.com",
+                "password": "password123"
+            }))
+            .send()
+            .await
+            .unwrap();
+
+        let login_resp = self.client
+            .post(format!("{}/api/v1/auth/login", self.addr))
+            .json(&serde_json::json!({
+                "username": "admin",
+                "password": "password123"
+            }))
+            .send()
+            .await
+            .unwrap();
+
+        // Extract the session JWT from the Set-Cookie header so callers can
+        // pass it explicitly to authed_* helpers that set it manually.
+        let set_cookie = login_resp
+            .headers()
+            .get("set-cookie")
+            .expect("login must set a session cookie")
+            .to_str()
+            .unwrap();
+
+        // Header looks like: session=<jwt>; HttpOnly; ...
+        let token = set_cookie
+            .split(';')
+            .next()
+            .unwrap()
+            .trim_start_matches("session=")
+            .to_string();
+
+        token
+    }
+
+    /// POST multipart form to `path` authenticated as `token` (session cookie).
+    pub async fn authed_multipart(
+        &self,
+        token: &str,
+        path: &str,
+        form: reqwest::multipart::Form,
+    ) -> reqwest::Response {
+        self.client
+            .post(format!("{}{path}", self.addr))
+            .header("cookie", format!("session={token}"))
+            .multipart(form)
+            .send()
+            .await
+            .unwrap()
+    }
+}
 
 /// Returns true if `ffmpeg` is available on PATH.
 #[allow(dead_code)]
