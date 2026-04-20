@@ -12,6 +12,7 @@ pub mod themes;
 pub mod totp;
 pub mod transcode;
 pub mod tracks;
+pub mod virtual_libraries;
 pub mod webauthn;
 
 use axum::Router;
@@ -31,6 +32,7 @@ pub fn api_router(_state: AppState) -> Router<AppState> {
         .nest("/tag-suggestions", tag_suggestions::router())
         .nest("/encoding-profiles", encoding_profiles::router())
         .nest("/art-profiles", art_profiles::router())
+        .nest("/virtual-libraries", virtual_libraries::router())
         .merge(transcode::router())
         .merge(art::router())
 }
