@@ -13,9 +13,9 @@ ALTER TABLE virtual_library_sources DROP CONSTRAINT virtual_library_sources_pkey
 ALTER TABLE virtual_library_sources ADD PRIMARY KEY (id);
 
 DROP INDEX IF EXISTS idx_vls_priority;
-CREATE UNIQUE INDEX idx_vls_unique
+CREATE UNIQUE INDEX IF NOT EXISTS idx_vls_unique
     ON virtual_library_sources(virtual_library_id, library_id, library_profile_id);
-CREATE INDEX idx_vls_priority
+CREATE INDEX IF NOT EXISTS idx_vls_priority
     ON virtual_library_sources(virtual_library_id, priority);
 
 -- 3. jobs: add process_staged to CHECK (follow pattern from prior jobs migrations)

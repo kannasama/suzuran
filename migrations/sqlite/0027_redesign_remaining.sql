@@ -50,7 +50,8 @@ CREATE TABLE jobs_new (
     started_at   TEXT,
     completed_at TEXT
 );
-INSERT INTO jobs_new SELECT * FROM jobs;
+INSERT INTO jobs_new (id, job_type, status, payload, result, priority, attempts, error, created_at, started_at, completed_at)
+    SELECT id, job_type, status, payload, result, priority, attempts, error, created_at, started_at, completed_at FROM jobs;
 DROP TABLE jobs;
 ALTER TABLE jobs_new RENAME TO jobs;
 CREATE INDEX jobs_status_priority_idx ON jobs(status, priority DESC, created_at ASC);
