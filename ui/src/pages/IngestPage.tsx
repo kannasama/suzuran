@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { TopNav } from '../components/TopNav'
 import { TagDiffTable } from '../components/TagDiffTable'
@@ -362,6 +362,8 @@ function TrackEditPanel({
       }
       await tagSuggestionsApi.create({
         track_id: track.id,
+        // 'mb_search' is used as the closest valid source for manually-entered tags
+        // (no 'manual' source exists in the backend schema)
         source: 'mb_search',
         suggested_tags: tags,
         confidence: 1.0,
@@ -446,17 +448,22 @@ function SubmitDialog({
 
   // Pre-select profiles per spec: include_on_submit AND (auto_include_above_hz is null OR track.sample_rate >= auto_include_above_hz)
   const firstTrack = tracks[0]
-  const defaultSelected = new Set(
-    profiles
-      .filter((p: LibraryProfile) =>
-        p.include_on_submit &&
-        (p.auto_include_above_hz == null ||
-          (firstTrack.sample_rate != null && firstTrack.sample_rate >= p.auto_include_above_hz))
-      )
-      .map((p: LibraryProfile) => p.id),
-  )
+  const sampleRate = firstTrack.sample_rate ?? null
 
-  const [selectedProfiles, setSelectedProfiles] = useState<Set<number>>(defaultSelected)
+  const [selectedProfiles, setSelectedProfiles] = useState<Set<number>>(new Set())
+
+  useEffect(() => {
+    if (profiles.length === 0) return
+    const defaults = new Set(
+      profiles
+        .filter((p: LibraryProfile) =>
+          p.include_on_submit &&
+          (p.auto_include_above_hz == null || (sampleRate != null && sampleRate >= p.auto_include_above_hz))
+        )
+        .map((p: LibraryProfile) => p.id)
+    )
+    setSelectedProfiles(defaults)
+  }, [profiles])
   const [queued, setQueued] = useState(0)
   const [submitting, setSubmitting] = useState(false)
   // Gap 4: uploaded art URL (overrides suggestion art when set)

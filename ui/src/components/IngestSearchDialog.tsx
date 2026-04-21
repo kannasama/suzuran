@@ -36,6 +36,7 @@ export function IngestSearchDialog({ track, onClose }: Props) {
   const [mbLoading, setMbLoading] = useState(false)
   const [mbError, setMbError] = useState<string | null>(null)
   const [mbSelecting, setMbSelecting] = useState<number | null>(null)
+  const [mbSearched, setMbSearched] = useState(false)
 
   // FreeDB tab state
   const [fdbDiscId, setFdbDiscId] = useState(
@@ -47,6 +48,7 @@ export function IngestSearchDialog({ track, onClose }: Props) {
   const [fdbLoading, setFdbLoading] = useState(false)
   const [fdbError, setFdbError] = useState<string | null>(null)
   const [fdbSelecting, setFdbSelecting] = useState<number | null>(null)
+  const [fdbSearched, setFdbSearched] = useState(false)
 
   async function handleMbSearch() {
     setMbLoading(true)
@@ -59,6 +61,7 @@ export function IngestSearchDialog({ track, onClose }: Props) {
       setMbError(e instanceof Error ? e.message : 'Search failed.')
     } finally {
       setMbLoading(false)
+      setMbSearched(true)
     }
   }
 
@@ -95,6 +98,7 @@ export function IngestSearchDialog({ track, onClose }: Props) {
       setFdbError(e instanceof Error ? e.message : 'Search failed.')
     } finally {
       setFdbLoading(false)
+      setFdbSearched(true)
     }
   }
 
@@ -242,7 +246,9 @@ export function IngestSearchDialog({ track, onClose }: Props) {
               )}
 
               {mbResults.length === 0 && !mbLoading && !mbError && (
-                <p className="text-text-muted text-xs italic">Enter search terms above and click Search.</p>
+                <p className="text-text-muted text-xs italic">
+                  {mbSearched ? 'No results found.' : 'Enter search terms above and click Search.'}
+                </p>
               )}
             </>
           )}
@@ -314,7 +320,9 @@ export function IngestSearchDialog({ track, onClose }: Props) {
               )}
 
               {fdbResults.length === 0 && !fdbLoading && !fdbError && (
-                <p className="text-text-muted text-xs italic">Enter a Disc ID or artist/album and click Search.</p>
+                <p className="text-text-muted text-xs italic">
+                  {fdbSearched ? 'No results found.' : 'Enter a Disc ID or artist/album and click Search.'}
+                </p>
               )}
             </>
           )}
