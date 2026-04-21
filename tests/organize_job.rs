@@ -50,6 +50,7 @@ async fn organize_moves_file_and_updates_path() {
         }),
         duration_secs: None, bitrate: None, sample_rate: None, channels: None,
         bit_depth: None, has_embedded_art: false,
+        status: "active".into(), library_profile_id: None,
     }).await.unwrap();
 
     let rule = db.create_organization_rule(
@@ -99,6 +100,7 @@ async fn organize_dry_run_does_not_move() {
         label: None, catalognumber: None,
         duration_secs: None, bitrate: None, sample_rate: None, channels: None,
         bit_depth: None, has_embedded_art: false,
+        status: "active".into(), library_profile_id: None,
     }).await.unwrap();
 
     let rule = db.create_organization_rule("Default", None, 0, None, "{albumartist}/{date}/{title}", true).await.unwrap();

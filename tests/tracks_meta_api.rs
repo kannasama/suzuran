@@ -107,6 +107,8 @@ async fn seed_track(store: &Arc<dyn Store>) -> i64 {
             channels: None,
             bit_depth: None,
             has_embedded_art: false,
+            status: "active".into(),
+            library_profile_id: None,
         })
         .await
         .unwrap();

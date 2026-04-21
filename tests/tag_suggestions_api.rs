@@ -115,6 +115,8 @@ async fn seed_track(store: &Arc<dyn Store>) -> (i64, TempDir) {
             channels: None,
             bit_depth: None,
             has_embedded_art: false,
+            status: "active".into(),
+            library_profile_id: None,
         })
         .await
         .unwrap();
@@ -268,6 +270,8 @@ async fn test_list_filtered_by_track_id() {
             channels: None,
             bit_depth: None,
             has_embedded_art: false,
+            status: "active".into(),
+            library_profile_id: None,
         })
         .await
         .unwrap();

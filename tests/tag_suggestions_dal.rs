@@ -34,6 +34,8 @@ async fn make_db_with_track() -> (Arc<dyn Store>, i64) {
         channels: None,
         bit_depth: None,
         has_embedded_art: false,
+        status: "active".into(),
+        library_profile_id: None,
     }).await.unwrap();
     (db, track.id)
 }

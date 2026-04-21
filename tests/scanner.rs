@@ -56,7 +56,7 @@ async fn scanner_staged_track_in_ingest() {
     assert_eq!(result.inserted, 1, "should insert 1 staged file from ingest/");
     assert_eq!(result.removed, 0);
 
-    let tracks = db.list_tracks_by_library(lib.id).await.unwrap();
+    let tracks = db.list_tracks_by_status(lib.id, "staged").await.unwrap();
     assert_eq!(tracks.len(), 1);
     assert_eq!(tracks[0].status, "staged", "ingest/ track should have status=staged");
     assert!(

@@ -56,9 +56,11 @@ async fn scan_job_enqueues_and_completes() {
     let base = spawn_test_server().await;
     let client = admin_client(&base).await;
 
-    // Create a temp library root with one fake audio file
+    // Create a temp library root with one fake audio file in source/
     let dir = tempfile::TempDir::new().unwrap();
-    tokio::fs::write(dir.path().join("song.flac"), b"").await.unwrap();
+    let source_dir = dir.path().join("source");
+    tokio::fs::create_dir_all(&source_dir).await.unwrap();
+    tokio::fs::write(source_dir.join("song.flac"), b"").await.unwrap();
 
     // Create library (no trailing slash)
     let lib_res = client.post(format!("{base}/api/v1/libraries"))

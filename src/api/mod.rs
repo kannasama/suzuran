@@ -2,10 +2,13 @@ pub mod art;
 pub mod art_profiles;
 pub mod auth;
 pub mod encoding_profiles;
+pub mod ingest;
 pub mod jobs;
 pub mod libraries;
+pub mod library_profiles;
 pub mod middleware;
 pub mod organization_rules;
+pub mod search;
 pub mod settings;
 pub mod tag_suggestions;
 pub mod themes;
@@ -35,6 +38,9 @@ pub fn api_router(_state: AppState) -> Router<AppState> {
         .nest("/art-profiles", art_profiles::router())
         .nest("/virtual-libraries", virtual_libraries::router())
         .nest("/uploads", uploads::router())
+        .nest("/library-profiles", library_profiles::router())
+        .nest("/ingest", ingest::router())
+        .nest("/search", search::router())
         .merge(transcode::router())
         .merge(art::router())
 }

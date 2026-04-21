@@ -67,6 +67,8 @@ async fn spawn_test_server() -> (String, reqwest::Client) {
         channels: Some(2),
         bit_depth: None,
         has_embedded_art: false,
+        status: "active".into(),
+        library_profile_id: None,
     }).await.unwrap();
 
     // Keep dir alive for the duration of the test process

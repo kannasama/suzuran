@@ -278,7 +278,7 @@ async fn transcode_library_sync_skips_already_linked() {
         .await
         .unwrap();
     store
-        .create_track_link(t1.id, derived.id, None)
+        .create_track_link(t1.id, derived.id)
         .await
         .unwrap();
 

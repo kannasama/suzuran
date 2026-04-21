@@ -187,7 +187,11 @@ pub async fn setup_with_fingerprinted_track() -> (Arc<dyn Store>, i64) {
             composer: None,
             label: None,
             catalognumber: None,
-            tags: serde_json::json!({"acoustid_fingerprint": "AQADtNmybFIAAA"}),
+            tags: serde_json::json!({
+                "acoustid_fingerprint": "AQADtNmybFIAAA",
+                "title": "Test Song",
+                "artist": "Test Artist"
+            }),
             duration_secs: Some(210.0),
             bitrate: None,
             sample_rate: None,
@@ -344,12 +348,14 @@ pub async fn setup_with_audio_track() -> (Arc<dyn Store>, i64, TempDir) {
 pub async fn setup_cue_library() -> (Arc<dyn Store>, i64, TempDir) {
     let dir = TempDir::new().unwrap();
     let root = dir.path();
+    let ingest_dir = root.join("ingest");
+    tokio::fs::create_dir_all(&ingest_dir).await.unwrap();
 
-    // Write the FLAC source file
-    let flac_path = root.join("album.flac");
+    // Write the FLAC source file into ingest/
+    let flac_path = ingest_dir.join("album.flac");
     tokio::fs::write(&flac_path, TAGGED_FLAC).await.unwrap();
 
-    // Write the CUE sheet
+    // Write the CUE sheet into ingest/
     let cue_content = r#"TITLE "Test Album"
 PERFORMER "Test Artist"
 REM DATE 2024
@@ -371,7 +377,7 @@ FILE "album.flac" WAVE
     PERFORMER "Test Artist"
     INDEX 01 00:00:02
 "#;
-    let cue_path = root.join("album.cue");
+    let cue_path = ingest_dir.join("album.cue");
     tokio::fs::write(&cue_path, cue_content).await.unwrap();
 
     let db = make_db().await;

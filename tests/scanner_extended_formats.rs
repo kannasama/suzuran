@@ -23,12 +23,14 @@ async fn make_db() -> Arc<dyn Store> {
     Arc::new(store)
 }
 
-/// Returns a temp dir containing a single file with the given filename and real audio bytes.
+/// Returns a temp dir containing a single file in source/ with the given filename and real audio bytes.
 /// Writes real fixture bytes so lofty actually parses the file headers.
 async fn make_temp_library_with_file(filename: &str, content: &[u8]) -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::TempDir::new().unwrap();
     let root = dir.path().to_path_buf();
-    fs::write(root.join(filename), content).await.unwrap();
+    let source_dir = root.join("source");
+    fs::create_dir_all(&source_dir).await.unwrap();
+    fs::write(source_dir.join(filename), content).await.unwrap();
     (dir, root)
 }
 

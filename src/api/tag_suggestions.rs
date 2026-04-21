@@ -7,6 +7,7 @@ use axum::{
 };
 use std::collections::HashMap;
 use crate::{
+    dal::UpsertTagSuggestion,
     state::AppState,
     api::middleware::auth::AuthUser,
     error::AppError,
@@ -15,7 +16,7 @@ use crate::{
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/",             get(list))
+        .route("/",             get(list).post(create))
         .route("/count",        get(count))
         .route("/batch-accept", post(batch_accept))
         .route("/:id",          get(get_one))
@@ -89,4 +90,33 @@ async fn batch_accept(
         accepted += 1;
     }
     Ok(Json(serde_json::json!({"accepted": accepted})))
+}
+
+#[derive(serde::Deserialize)]
+struct CreateTagSuggestionBody {
+    track_id: i64,
+    source: String,
+    suggested_tags: serde_json::Value,
+    confidence: f64,
+    cover_art_url: Option<String>,
+    musicbrainz_recording_id: Option<String>,
+    musicbrainz_release_id: Option<String>,
+}
+
+async fn create(
+    _user: AuthUser,
+    State(state): State<AppState>,
+    Json(body): Json<CreateTagSuggestionBody>,
+) -> Result<(StatusCode, Json<TagSuggestion>), AppError> {
+    let dto = UpsertTagSuggestion {
+        track_id: body.track_id,
+        source: body.source,
+        suggested_tags: body.suggested_tags,
+        confidence: body.confidence as f32,
+        mb_recording_id: body.musicbrainz_recording_id,
+        mb_release_id: body.musicbrainz_release_id,
+        cover_art_url: body.cover_art_url,
+    };
+    let suggestion = state.db.create_tag_suggestion(dto).await?;
+    Ok((StatusCode::CREATED, Json(suggestion)))
 }

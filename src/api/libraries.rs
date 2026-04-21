@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     routing::get,
     Json, Router,
@@ -42,9 +42,7 @@ struct CreateLibraryRequest {
     name: String,
     root_path: String,
     format: String,
-    parent_library_id: Option<i64>,
     ingest_dir: Option<String>,
-    encoding_profile_id: Option<i64>,
     organization_rule_id: Option<i64>,
 }
 
@@ -54,14 +52,12 @@ async fn create_library(
     Json(body): Json<CreateLibraryRequest>,
 ) -> Result<(StatusCode, Json<Library>), AppError> {
     let lib = state.db
-        .create_library(&body.name, &body.root_path, &body.format, body.parent_library_id)
+        .create_library(&body.name, &body.root_path, &body.format)
         .await?;
     state.db.set_library_ingest_dir(lib.id, body.ingest_dir.as_deref()).await?;
-    state.db.set_library_encoding_profile(lib.id, body.encoding_profile_id).await?;
     state.db.set_library_org_rule(lib.id, body.organization_rule_id).await?;
     Ok((StatusCode::CREATED, Json(Library {
         ingest_dir: body.ingest_dir,
-        encoding_profile_id: body.encoding_profile_id,
         organization_rule_id: body.organization_rule_id,
         ..lib
     })))
@@ -72,14 +68,10 @@ struct UpdateLibraryRequest {
     name: String,
     scan_enabled: bool,
     scan_interval_secs: i64,
-    auto_transcode_on_ingest: bool,
     auto_organize_on_ingest: bool,
-    #[serde(default)]
-    normalize_on_ingest: bool,
     #[serde(default = "default_utf8")]
     tag_encoding: String,
     ingest_dir: Option<String>,
-    encoding_profile_id: Option<i64>,
     organization_rule_id: Option<i64>,
 }
 
@@ -93,16 +85,13 @@ async fn update_library(
 ) -> Result<Json<Library>, AppError> {
     let lib = state.db
         .update_library(id, &body.name, body.scan_enabled, body.scan_interval_secs,
-            body.auto_transcode_on_ingest, body.auto_organize_on_ingest,
-            body.normalize_on_ingest, &body.tag_encoding)
+            body.auto_organize_on_ingest, &body.tag_encoding)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("library {id} not found")))?;
     state.db.set_library_ingest_dir(id, body.ingest_dir.as_deref()).await?;
-    state.db.set_library_encoding_profile(id, body.encoding_profile_id).await?;
     state.db.set_library_org_rule(id, body.organization_rule_id).await?;
     Ok(Json(Library {
         ingest_dir: body.ingest_dir,
-        encoding_profile_id: body.encoding_profile_id,
         organization_rule_id: body.organization_rule_id,
         ..lib
     }))
@@ -117,10 +106,17 @@ async fn delete_library(
     Ok(StatusCode::NO_CONTENT)
 }
 
+#[derive(Deserialize)]
+struct TrackListQuery {
+    status: Option<String>,
+}
+
 async fn list_tracks(
     State(state): State<AppState>,
     _auth: AuthUser,
     Path(id): Path<i64>,
+    Query(q): Query<TrackListQuery>,
 ) -> Result<Json<Vec<Track>>, AppError> {
-    Ok(Json(state.db.list_tracks_by_library(id).await?))
+    let status = q.status.unwrap_or_else(|| "active".into());
+    Ok(Json(state.db.list_tracks_by_status(id, &status).await?))
 }
