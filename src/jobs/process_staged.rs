@@ -110,10 +110,25 @@ async fn handle_process_staged(
             .map_err(|e| AppError::Internal(anyhow::anyhow!("art bytes: {e}")))?
             .to_vec();
 
-        let mime = if art_url.ends_with(".png") {
-            MimeType::Png
-        } else {
-            MimeType::Jpeg
+        // Determine MIME type: prefer the active art profile's format field over URL-suffix heuristic
+        let mime = {
+            let profiles = store.list_art_profiles().await?;
+            let profile_format = profiles
+                .iter()
+                .find(|p| p.apply_to_library_id == Some(library.id))
+                .map(|p| p.format.as_str());
+            match profile_format {
+                Some("png") => MimeType::Png,
+                Some(_) => MimeType::Jpeg, // "jpeg" or any other value → JPEG
+                None => {
+                    // Fall back to URL-suffix detection
+                    if art_url.ends_with(".png") {
+                        MimeType::Png
+                    } else {
+                        MimeType::Jpeg
+                    }
+                }
+            }
         };
 
         // Embed art into the ingest file
