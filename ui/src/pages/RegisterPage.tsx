@@ -59,6 +59,7 @@ export function RegisterPage({ setupMode = false }: RegisterPageProps) {
               value={username}
               onChange={e => setUsername(e.target.value)}
               required
+              autoComplete="username"
               className="w-full bg-bg-panel border border-border text-text-primary text-sm px-3 py-2 rounded focus:outline-none focus:border-accent"
             />
           </div>
@@ -71,6 +72,7 @@ export function RegisterPage({ setupMode = false }: RegisterPageProps) {
               value={email}
               onChange={e => setEmail(e.target.value)}
               required
+              autoComplete="email"
               className="w-full bg-bg-panel border border-border text-text-primary text-sm px-3 py-2 rounded focus:outline-none focus:border-accent"
             />
           </div>
@@ -84,6 +86,7 @@ export function RegisterPage({ setupMode = false }: RegisterPageProps) {
               onChange={e => setPassword(e.target.value)}
               required
               minLength={8}
+              autoComplete="new-password"
               className="w-full bg-bg-panel border border-border text-text-primary text-sm px-3 py-2 rounded focus:outline-none focus:border-accent"
             />
           </div>
