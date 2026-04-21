@@ -49,7 +49,7 @@ export default function OrganizationPage() {
             </thead>
             <tbody>
               {rules.map(rule => (
-                <tr key={rule.id} className="border-b border-border-subtle hover:bg-bg-panel">
+                <tr key={rule.id} className="border-b border-border-subtle hover:bg-bg-row-hover">
                   <td className="py-1.5 pr-4 text-text-muted">{rule.priority}</td>
                   <td className="py-1.5 pr-4 text-text-primary font-medium">{rule.name}</td>
                   <td className="py-1.5 pr-4 text-text-muted">{rule.library_id == null ? 'Global' : `#${rule.library_id}`}</td>

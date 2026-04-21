@@ -150,7 +150,9 @@ impl AuthService {
         let has_totp = db.find_totp_entry(user.id).await?.map(|e| e.verified).unwrap_or(false);
         let has_webauthn = !db.list_webauthn_credentials(user.id).await?.is_empty();
 
-        if user.totp_required && has_totp || user.webauthn_required && has_webauthn {
+        // Trigger 2FA if the user has any verified second factor enrolled.
+        // The totp_required / webauthn_required flags are legacy — enrollment implies enforcement.
+        if has_totp || has_webauthn {
             let token = Self::issue_2fa_pending_token(user.id, jwt_secret)
                 .map_err(AppError::Internal)?;
             return Ok(LoginResult::TwoFactorRequired { token });

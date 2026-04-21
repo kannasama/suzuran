@@ -321,7 +321,7 @@ function EncodingProfilesSection() {
           </thead>
           <tbody>
             {profiles.map(p => (
-              <tr key={p.id} className="border-b border-border-subtle hover:bg-bg-panel">
+              <tr key={p.id} className="border-b border-border-subtle hover:bg-bg-row-hover">
                 <td className="py-1.5 pr-4 text-text-primary font-medium">{p.name}</td>
                 <td className="py-1.5 pr-4 text-text-muted font-mono">{p.codec}</td>
                 <td className="py-1.5 pr-4 text-text-muted">{p.bitrate ?? '—'}</td>
@@ -450,7 +450,7 @@ function ArtProfilesSection() {
           </thead>
           <tbody>
             {profiles.map(p => (
-              <tr key={p.id} className="border-b border-border-subtle hover:bg-bg-panel">
+              <tr key={p.id} className="border-b border-border-subtle hover:bg-bg-row-hover">
                 <td className="py-1.5 pr-4 text-text-primary font-medium">{p.name}</td>
                 <td className="py-1.5 pr-4 text-text-muted font-mono">{p.format}</td>
                 <td className="py-1.5 pr-4 text-text-muted">{p.quality}</td>
@@ -626,7 +626,7 @@ function VirtualLibraryRow({
   })
 
   return (
-    <tr className="border-b border-border-subtle hover:bg-bg-panel">
+    <tr className="border-b border-border-subtle hover:bg-bg-row-hover">
       <td className="py-1.5 pr-4 text-text-primary font-medium">{vlib.name}</td>
       <td className="py-1.5 pr-4 text-text-muted font-mono">{vlib.link_type}</td>
       <td className="py-1.5 pr-4 text-text-muted font-mono truncate max-w-[200px]">{vlib.root_path}</td>
@@ -720,6 +720,7 @@ function computeOverlayVars(accent: string, darkness: number, tb?: TextBrightnes
       '--bg-surface':     `rgba(${hslToRgbStr(h, 0.12, 0.08)}, ${(opacity - 0.05).toFixed(2)})`,
       '--bg-panel':       `rgba(${hslToRgbStr(h, 0.18, 0.04)}, ${Math.min(opacity + 0.07, 0.97).toFixed(2)})`,
       '--bg-elevated':    `rgba(${hslToRgbStr(h, 0.10, 0.10)}, ${(opacity - 0.10).toFixed(2)})`,
+      '--bg-row-hover':   'rgba(255, 255, 255, 0.06)',
       '--border':         `rgba(${hslToRgbStr(h, 0.10, 0.12)}, ${(opacity - 0.05).toFixed(2)})`,
       '--surface-border': `rgba(${hslToRgbStr(h, 0.10, 0.12)}, ${(opacity - 0.05).toFixed(2)})`,
       '--text-primary':   '#e8e8ec',
@@ -733,6 +734,7 @@ function computeOverlayVars(accent: string, darkness: number, tb?: TextBrightnes
       '--bg-surface':     `rgba(${hslToRgbStr(h, 0.08, 0.99)}, ${(opacity - 0.04).toFixed(2)})`,
       '--bg-panel':       `rgba(${hslToRgbStr(h, 0.12, 0.94)}, ${Math.min(opacity + 0.06, 0.98).toFixed(2)})`,
       '--bg-elevated':    `rgba(${hslToRgbStr(h, 0.07, 0.96)}, ${(opacity - 0.08).toFixed(2)})`,
+      '--bg-row-hover':   'rgba(0, 0, 0, 0.05)',
       '--border':         `rgba(${hslToRgbStr(h, 0.12, 0.88)}, ${(opacity - 0.04).toFixed(2)})`,
       '--surface-border': `rgba(${hslToRgbStr(h, 0.12, 0.88)}, ${(opacity - 0.04).toFixed(2)})`,
       '--text-primary':   '#0f0f18',
@@ -1138,7 +1140,7 @@ function ThemesSection() {
               return (
                 <tr
                   key={t.id}
-                  className={`border-b border-border-subtle hover:bg-bg-panel ${isActive ? 'bg-accent-muted' : ''}`}
+                  className={`border-b border-border-subtle hover:bg-bg-row-hover ${isActive ? 'bg-accent-muted' : ''}`}
                 >
                   <td className="py-1.5 pr-4 text-text-primary font-medium">
                     {isActive && (

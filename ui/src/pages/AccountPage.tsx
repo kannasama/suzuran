@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import QRCode from 'qrcode'
 import { TopNav } from '../components/TopNav'
 import {
   getTotpStatus,
@@ -35,6 +36,50 @@ export default function AccountPage() {
 // ---------------------------------------------------------------------------
 // TOTP section
 // ---------------------------------------------------------------------------
+
+function TotpQrCode({ uri }: { uri: string }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const [showSecret, setShowSecret] = useState(false)
+
+  // Extract the secret from the otpauth URI for manual entry fallback
+  const secret = (() => {
+    try {
+      const url = new URL(uri)
+      return url.searchParams.get('secret') ?? null
+    } catch { return null }
+  })()
+
+  useEffect(() => {
+    if (!canvasRef.current) return
+    QRCode.toCanvas(canvasRef.current, uri, {
+      width: 180,
+      margin: 2,
+      color: { dark: '#000000', light: '#ffffff' },
+    }).catch(() => {/* ignore render errors */})
+  }, [uri])
+
+  return (
+    <div className="space-y-2">
+      <canvas
+        ref={canvasRef}
+        className="rounded border border-border bg-white"
+        style={{ imageRendering: 'pixelated' }}
+      />
+      <button
+        type="button"
+        onClick={() => setShowSecret(v => !v)}
+        className="text-xs text-text-muted hover:text-text-secondary transition-colors"
+      >
+        {showSecret ? 'Hide secret' : 'Can\'t scan? Show secret key'}
+      </button>
+      {showSecret && secret && (
+        <code className="block bg-bg-panel border border-border rounded px-3 py-2 text-xs text-text-primary break-all font-mono tracking-wider">
+          {secret}
+        </code>
+      )}
+    </div>
+  )
+}
 
 function TotpSection() {
   const qc = useQueryClient()
@@ -111,11 +156,9 @@ function TotpSection() {
       {enrolling && otpauthUri && (
         <div className="space-y-3">
           <p className="text-text-secondary text-xs">
-            Scan this URI in your authenticator app, or paste it manually:
+            Scan the QR code with your authenticator app (e.g. Aegis, Google Authenticator):
           </p>
-          <code className="block bg-bg-panel border border-border rounded px-3 py-2 text-xs text-text-primary break-all font-mono">
-            {otpauthUri}
-          </code>
+          <TotpQrCode uri={otpauthUri} />
           <p className="text-text-secondary text-xs">
             Then enter the 6-digit code from your app to confirm:
           </p>
@@ -128,6 +171,7 @@ function TotpSection() {
               value={code}
               onChange={e => { setCode(e.target.value.replace(/\D/g, '')); setError(null) }}
               placeholder="000000"
+              autoFocus
               className="w-28 bg-bg-panel border border-border text-text-primary text-xs px-2 py-1.5 rounded focus:outline-none focus:border-accent font-mono tracking-widest"
             />
             <button
@@ -194,21 +238,23 @@ function PasskeysSection() {
     setError(null)
     setAdding(true)
     try {
-      const challengeOptions = await registrationChallenge()
-      // The server sends challenge as base64url string — decode it
-      const options = challengeOptions as unknown as Record<string, unknown>
-      if (options.challenge && typeof options.challenge === 'string') {
-        options.challenge = decodeBase64Url(options.challenge).buffer
+      // webauthn-rs returns { publicKey: { challenge, user, ... } }
+      // Decode the base64url fields within publicKey before handing to the browser.
+      const challengeResponse = await registrationChallenge()
+      const wrapper = challengeResponse as unknown as Record<string, unknown>
+      const pk = wrapper.publicKey as Record<string, unknown>
+      if (pk.challenge && typeof pk.challenge === 'string') {
+        pk.challenge = decodeBase64Url(pk.challenge).buffer
       }
-      if (options.user && typeof options.user === 'object') {
-        const u = options.user as Record<string, unknown>
+      if (pk.user && typeof pk.user === 'object') {
+        const u = pk.user as Record<string, unknown>
         if (u.id && typeof u.id === 'string') {
           u.id = decodeBase64Url(u.id).buffer
         }
       }
-      const cred = await navigator.credentials.create({
-        publicKey: options as unknown as PublicKeyCredentialCreationOptions,
-      }) as PublicKeyCredential
+      const cred = await navigator.credentials.create(
+        wrapper as unknown as CredentialCreationOptions
+      ) as PublicKeyCredential
       await completeRegistration(addingName.trim(), serializeCredential(cred))
       qc.invalidateQueries({ queryKey: ['webauthn-credentials'] })
       setAddingName('')

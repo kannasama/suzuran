@@ -58,7 +58,7 @@ export function SourcePriorityList({ sources, allLibraries, onChange }: Props) {
           {sources.map((src, i) => (
             <div
               key={src.library_id}
-              className="flex items-center gap-2 px-2 py-1.5 border-b border-border-subtle last:border-b-0 hover:bg-bg-panel"
+              className="flex items-center gap-2 px-2 py-1.5 border-b border-border-subtle last:border-b-0 hover:bg-bg-row-hover"
             >
               <span className="text-text-muted text-[9px] w-4 text-right shrink-0">{src.priority}</span>
               <span className="text-text-primary text-xs flex-1 truncate">

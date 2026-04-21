@@ -7,11 +7,12 @@ export default {
       colors: {
         // suzuran design tokens
         bg: {
-          base:     'var(--bg-base)',
-          surface:  'var(--bg-surface)',
-          panel:    'var(--bg-panel)',
-          elevated: 'var(--bg-elevated)',
-          hover:    'var(--bg-hover)',
+          base:      'var(--bg-base)',
+          surface:   'var(--bg-surface)',
+          panel:     'var(--bg-panel)',
+          elevated:  'var(--bg-elevated)',
+          hover:     'var(--bg-hover)',
+          'row-hover': 'var(--bg-row-hover)',
         },
         border: {
           DEFAULT: 'var(--border)',

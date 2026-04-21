@@ -44,20 +44,22 @@ export default function TwoFactorPage() {
     setError(null)
     setPasskeyLoading(true)
     try {
-      const challengeOptions = await authChallenge(token)
-      const options = challengeOptions as unknown as Record<string, unknown>
-      if (options.challenge && typeof options.challenge === 'string') {
-        options.challenge = decodeBase64Url(options.challenge).buffer
+      // webauthn-rs returns { publicKey: { challenge, allowCredentials, ... } }
+      const challengeResponse = await authChallenge(token)
+      const wrapper = challengeResponse as unknown as Record<string, unknown>
+      const pk = wrapper.publicKey as Record<string, unknown>
+      if (pk.challenge && typeof pk.challenge === 'string') {
+        pk.challenge = decodeBase64Url(pk.challenge).buffer
       }
-      if (Array.isArray(options.allowCredentials)) {
-        options.allowCredentials = (options.allowCredentials as Array<Record<string, unknown>>).map(c => ({
+      if (Array.isArray(pk.allowCredentials)) {
+        pk.allowCredentials = (pk.allowCredentials as Array<Record<string, unknown>>).map(c => ({
           ...c,
           id: typeof c.id === 'string' ? decodeBase64Url(c.id).buffer : c.id,
         }))
       }
-      const cred = await navigator.credentials.get({
-        publicKey: options as unknown as PublicKeyCredentialRequestOptions,
-      }) as PublicKeyCredential
+      const cred = await navigator.credentials.get(
+        wrapper as unknown as CredentialRequestOptions
+      ) as PublicKeyCredential
       await completeAuth(token, serializeCredential(cred))
       const me = await getMe()
       setUser(me)
