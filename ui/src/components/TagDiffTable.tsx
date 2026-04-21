@@ -36,7 +36,7 @@ export function TagDiffTable({ trackId, suggestedTags }: Props) {
   if (keys.length === 0) return null;
 
   return (
-    <table className="w-full text-xs border-collapse">
+    <table className="w-full text-xs border-collapse text-text-primary">
       <thead>
         <tr className="text-text-muted">
           <th className="text-left pb-1 pr-3 w-36 font-normal">Field</th>
