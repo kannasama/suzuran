@@ -385,6 +385,18 @@ feedback record travels with the repo and is available to all contributors and f
 - Commit the summary file immediately after writing — not deferred to end of session
 - If no summary exists yet for the topic, create one even if the only content is the feedback section
 
+## 2026-04-21 — Never reuse a previous phase branch number
+
+**Rule:** Phase branches use plain version numbers: `0.x` (e.g., `0.6`). Before creating a
+new phase branch, run `git branch -a` to find the highest existing `0.x` branch and use the
+next number. Never guess a low number like `0.3` if higher ones have already been used.
+
+**Why:** User corrected `0.3` → `0.6`, confirming phases 0.1–0.5 were already used. Reusing
+a number would collide with existing history.
+
+**How to apply:** `git branch -a | grep -E '^\s*(remotes/origin/)?0\.' | sort -V` — pick
+`max + 1`.
+
 ## 2026-04-21 — Write session summaries inline during work, not at end of session
 
 **Mistake:** Summary files were not written during the session. The user had to explicitly prompt
