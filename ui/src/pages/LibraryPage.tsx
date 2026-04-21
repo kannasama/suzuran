@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { TopNav } from '../components/TopNav'
 import { LibraryTree } from '../components/LibraryTree'
@@ -12,6 +12,36 @@ import { tagSuggestionsApi } from '../api/tagSuggestions'
 import client from '../api/client'
 import type { Track } from '../types/track'
 import type { TagSuggestion } from '../types/tagSuggestion'
+
+// ── Bulk-edit field definitions (mirrors TrackEditPanel) ─────────────────────
+interface TagField { key: string; label: string; fullWidth?: boolean }
+const BULK_EDIT_FIELDS: TagField[] = [
+  { key: 'title',                      label: 'Title' },
+  { key: 'artist',                     label: 'Artist' },
+  { key: 'albumartist',                label: 'Album Artist' },
+  { key: 'album',                      label: 'Album' },
+  { key: 'tracknumber',                label: 'Track #' },
+  { key: 'discnumber',                 label: 'Disc #' },
+  { key: 'date',                       label: 'Date' },
+  { key: 'genre',                      label: 'Genre' },
+  { key: 'albumartistsort',            label: 'Album Artist Sort' },
+  { key: 'artistsort',                 label: 'Artist Sort' },
+  { key: 'releasetype',                label: 'Release Type' },
+  { key: 'releasestatus',              label: 'Release Status' },
+  { key: 'releasecountry',             label: 'Release Country' },
+  { key: 'originalyear',              label: 'Original Year' },
+  { key: 'originaldate',              label: 'Original Release Date' },
+  { key: 'totaltracks',               label: 'Total Tracks' },
+  { key: 'totaldiscs',                label: 'Total Discs' },
+  { key: 'label',                      label: 'Record Label' },
+  { key: 'catalognumber',              label: 'Catalog #' },
+  { key: 'barcode',                    label: 'Barcode' },
+  { key: 'musicbrainz_artistid',       label: 'MB Artist ID',         fullWidth: true },
+  { key: 'musicbrainz_albumartistid',  label: 'MB Release Artist ID', fullWidth: true },
+  { key: 'musicbrainz_releasegroupid', label: 'MB Release Group ID',  fullWidth: true },
+  { key: 'musicbrainz_releaseid',      label: 'MB Release ID',        fullWidth: true },
+  { key: 'musicbrainz_trackid',        label: 'MB Recording ID',      fullWidth: true },
+]
 
 interface ColumnDef {
   key: string
@@ -79,6 +109,8 @@ export function LibraryPage() {
   const [expandedTrackId, setExpandedTrackId] = useState<number | null>(null)
   const [editingTagsTrackId, setEditingTagsTrackId] = useState<number | null>(null)
   const [searchTrack, setSearchTrack] = useState<Track | null>(null)
+  const [selectedTrackIds, setSelectedTrackIds] = useState<Set<number>>(new Set())
+  const lastSelectedIdRef = useRef<number | null>(null)
 
   useEffect(() => {
     if (!showColumnPicker) return
@@ -99,6 +131,38 @@ export function LibraryPage() {
       localStorage.setItem(LS_KEY, JSON.stringify([...next]))
       return next
     })
+  }
+
+  const toggleSelectTrack = useCallback((id: number, shift: boolean, trackList: Track[]) => {
+    if (shift && lastSelectedIdRef.current != null) {
+      const ids = trackList.map(t => t.id)
+      const a = ids.indexOf(lastSelectedIdRef.current)
+      const b = ids.indexOf(id)
+      if (a !== -1 && b !== -1) {
+        const [lo, hi] = [Math.min(a, b), Math.max(a, b)]
+        setSelectedTrackIds(prev => {
+          const next = new Set(prev)
+          ids.slice(lo, hi + 1).forEach(rid => next.add(rid))
+          return next
+        })
+        return
+      }
+    }
+    setSelectedTrackIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+    lastSelectedIdRef.current = id
+  }, [])
+
+  function toggleSelectAll() {
+    if (selectedTrackIds.size === tracks.length && tracks.length > 0) {
+      setSelectedTrackIds(new Set())
+    } else {
+      setSelectedTrackIds(new Set(tracks.map((t: Track) => t.id)))
+    }
   }
 
   const { data: selectedLibrary } = useQuery({
@@ -216,7 +280,16 @@ export function LibraryPage() {
 
           {/* Column headers */}
           <div className="flex items-center gap-0 px-2 py-1 bg-bg-panel border-b border-border text-text-muted text-[11px] uppercase tracking-wider flex-shrink-0">
-            <span className="w-5 shrink-0"></span>
+            <span className="w-5 shrink-0 flex items-center">
+              <input
+                type="checkbox"
+                checked={tracks.length > 0 && selectedTrackIds.size === tracks.length}
+                ref={el => { if (el) el.indeterminate = selectedTrackIds.size > 0 && selectedTrackIds.size < tracks.length }}
+                onChange={toggleSelectAll}
+                className="accent-[color:var(--accent)] cursor-pointer"
+                title="Select all"
+              />
+            </span>
             {COLUMNS.map(col => visibleColumns.has(col.key) && (
               <span key={col.key} className={col.className + ' shrink-0'}>
                 {col.headerLabel ?? col.label}
@@ -254,41 +327,52 @@ export function LibraryPage() {
             </div>
           </div>
 
-          {/* Track list area */}
-          <div className="flex-1 overflow-y-auto">
-            {selectedLibraryId == null && selectedVirtualLibraryId == null ? (
-              <div className="flex items-center justify-center h-32 text-text-muted text-xs">
-                Select a library from the tree to view tracks.
-              </div>
-            ) : tracksLoading ? (
-              <div className="flex items-center justify-center h-32 text-text-muted text-xs">
-                Loading tracks…
-              </div>
-            ) : tracks.length === 0 ? (
-              <div className="flex items-center justify-center h-32 text-text-muted text-xs">
-                No tracks in this library. Run a scan to discover files.
-              </div>
-            ) : (
-              tracks.map((track: Track) => (
-                <TrackRow
-                  key={track.id}
-                  track={track}
-                  visibleColumns={visibleColumns}
-                  suggestion={suggestionsByTrack[track.id]}
-                  isExpanded={expandedTrackId === track.id}
-                  isEditingTags={editingTagsTrackId === track.id}
-                  onToggleExpand={() => {
-                    setExpandedTrackId(prev => prev === track.id ? null : track.id)
-                    setEditingTagsTrackId(null)
-                  }}
-                  onSearch={() => setSearchTrack(track)}
-                  onLookup={() => lookupMutation.mutate(track.id)}
-                  onAccept={id => acceptMutation.mutate(id)}
-                  onReject={id => rejectMutation.mutate(id)}
-                  onEditTags={() => setEditingTagsTrackId(track.id)}
-                  onEditTagsClose={() => setEditingTagsTrackId(null)}
-                />
-              ))
+          {/* Track list area + bulk edit panel */}
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <div className="flex-1 overflow-y-auto">
+              {selectedLibraryId == null && selectedVirtualLibraryId == null ? (
+                <div className="flex items-center justify-center h-32 text-text-muted text-xs">
+                  Select a library from the tree to view tracks.
+                </div>
+              ) : tracksLoading ? (
+                <div className="flex items-center justify-center h-32 text-text-muted text-xs">
+                  Loading tracks…
+                </div>
+              ) : tracks.length === 0 ? (
+                <div className="flex items-center justify-center h-32 text-text-muted text-xs">
+                  No tracks in this library. Run a scan to discover files.
+                </div>
+              ) : (
+                tracks.map((track: Track) => (
+                  <TrackRow
+                    key={track.id}
+                    track={track}
+                    visibleColumns={visibleColumns}
+                    suggestion={suggestionsByTrack[track.id]}
+                    isExpanded={expandedTrackId === track.id}
+                    isEditingTags={editingTagsTrackId === track.id}
+                    isSelected={selectedTrackIds.has(track.id)}
+                    onToggleSelect={(shift) => toggleSelectTrack(track.id, shift, tracks)}
+                    onToggleExpand={() => {
+                      setExpandedTrackId(prev => prev === track.id ? null : track.id)
+                      setEditingTagsTrackId(null)
+                    }}
+                    onSearch={() => setSearchTrack(track)}
+                    onLookup={() => lookupMutation.mutate(track.id)}
+                    onAccept={id => acceptMutation.mutate(id)}
+                    onReject={id => rejectMutation.mutate(id)}
+                    onEditTags={() => setEditingTagsTrackId(track.id)}
+                    onEditTagsClose={() => setEditingTagsTrackId(null)}
+                  />
+                ))
+              )}
+            </div>
+
+            {selectedTrackIds.size > 0 && (
+              <BulkEditPanel
+                selectedTracks={tracks.filter((t: Track) => selectedTrackIds.has(t.id))}
+                onClose={() => setSelectedTrackIds(new Set())}
+              />
             )}
           </div>
         </main>
@@ -312,6 +396,8 @@ function TrackRow({
   suggestion,
   isExpanded,
   isEditingTags,
+  isSelected,
+  onToggleSelect,
   onToggleExpand,
   onSearch,
   onLookup,
@@ -325,6 +411,8 @@ function TrackRow({
   suggestion?: TagSuggestion
   isExpanded: boolean
   isEditingTags: boolean
+  isSelected: boolean
+  onToggleSelect: (shift: boolean) => void
   onToggleExpand: () => void
   onSearch: () => void
   onLookup: () => void
@@ -338,8 +426,16 @@ function TrackRow({
 
   return (
     <>
-      <div className={`flex items-center gap-0 px-2 py-0.5 border-b border-border-subtle text-xs hover:bg-bg-row-hover ${isExpanded ? 'bg-bg-surface' : ''}`}>
-        <span className="w-5 shrink-0 text-text-muted text-[10px]"></span>
+      <div className={`flex items-center gap-0 px-2 py-0.5 border-b border-border-subtle text-xs hover:bg-bg-row-hover ${isExpanded ? 'bg-bg-surface' : ''} ${isSelected ? 'bg-accent/10' : ''}`}>
+        <span className="w-5 shrink-0 flex items-center">
+          <input
+            type="checkbox"
+            checked={isSelected}
+            onChange={e => onToggleSelect(e.nativeEvent instanceof MouseEvent && (e.nativeEvent as MouseEvent).shiftKey)}
+            onClick={e => e.stopPropagation()}
+            className="accent-[color:var(--accent)] cursor-pointer"
+          />
+        </span>
         {visibleColumns.has('num') && (
           <span className="w-6 shrink-0 text-text-muted font-mono">{track.tracknumber ?? '—'}</span>
         )}
@@ -476,5 +572,116 @@ function TrackRow({
         </div>
       )}
     </>
+  )
+}
+
+// ── BulkEditPanel ─────────────────────────────────────────────────────────────
+
+function BulkEditPanel({
+  selectedTracks,
+  onClose,
+}: {
+  selectedTracks: Track[]
+  onClose: () => void
+}) {
+  const qc = useQueryClient()
+  const [fields, setFields] = useState<Record<string, string>>(
+    () => Object.fromEntries(BULK_EDIT_FIELDS.map(f => [f.key, '']))
+  )
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [savedCount, setSavedCount] = useState<number | null>(null)
+
+  async function handleApply() {
+    const tags: Record<string, string> = {}
+    for (const { key } of BULK_EDIT_FIELDS) {
+      if (fields[key].trim() !== '') tags[key] = fields[key].trim()
+    }
+    if (Object.keys(tags).length === 0) return
+
+    setSaving(true)
+    setError(null)
+    setSavedCount(null)
+    let count = 0
+    const errors: string[] = []
+    for (const track of selectedTracks) {
+      try {
+        await tagSuggestionsApi.create({
+          track_id: track.id,
+          source: 'mb_search',
+          suggested_tags: tags,
+          confidence: 1.0,
+        })
+        count++
+      } catch (e) {
+        errors.push(e instanceof Error ? e.message : 'unknown error')
+      }
+    }
+    setSaving(false)
+    setSavedCount(count)
+    if (errors.length > 0) setError(`${errors.length} failed: ${errors[0]}`)
+    qc.invalidateQueries({ queryKey: ['tag-suggestions'] })
+    qc.invalidateQueries({ queryKey: ['inbox-count'] })
+  }
+
+  const noneFilledIn = BULK_EDIT_FIELDS.every(f => !fields[f.key].trim())
+
+  return (
+    <div className="border-t border-border bg-bg-surface flex-shrink-0 flex flex-col overflow-hidden" style={{ maxHeight: '45vh' }}>
+      {/* Panel header */}
+      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border flex-shrink-0">
+        <span className="text-xs text-text-muted">
+          {selectedTracks.length} track{selectedTracks.length !== 1 ? 's' : ''} selected
+        </span>
+        <span className="text-[10px] text-text-muted truncate max-w-xs">
+          {selectedTracks.map(t => t.title ?? t.relative_path.split('/').pop()).join(', ')}
+        </span>
+        <div className="ml-auto flex items-center gap-2">
+          {savedCount != null && (
+            <span className="text-xs text-green-400">Applied to {savedCount}</span>
+          )}
+          {error && <span className="text-xs text-destructive">{error}</span>}
+          <button
+            type="button"
+            onClick={handleApply}
+            disabled={saving || noneFilledIn}
+            className="text-xs bg-accent text-bg-base rounded px-3 py-0.5 font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {saving ? 'Applying…' : 'Apply to Selected'}
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-xs text-text-muted hover:text-text-primary border border-border rounded px-2 py-0.5"
+          >
+            Clear
+          </button>
+        </div>
+      </div>
+
+      {/* Fields grid */}
+      <div className="flex-1 overflow-y-auto px-3 py-2">
+        <div className="grid grid-cols-3 gap-x-3 gap-y-1.5">
+          {BULK_EDIT_FIELDS.map(({ key, label, fullWidth }) => (
+            <label
+              key={key}
+              className={`flex flex-col gap-0.5 ${fullWidth ? 'col-span-3' : ''}`}
+            >
+              <span className="text-text-muted text-[10px] uppercase tracking-wider">{label}</span>
+              <input
+                type="text"
+                value={fields[key]}
+                placeholder="(unchanged)"
+                onChange={e => {
+                  setSavedCount(null)
+                  setFields(prev => ({ ...prev, [key]: e.target.value }))
+                }}
+                className="bg-bg-base border border-border text-text-primary text-xs px-2 py-1 rounded focus:outline-none focus:border-accent font-mono placeholder:text-text-muted/40"
+              />
+            </label>
+          ))}
+        </div>
+      </div>
+    </div>
   )
 }
