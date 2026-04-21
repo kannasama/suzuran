@@ -4,15 +4,44 @@ import { tagSuggestionsApi } from '../api/tagSuggestions'
 import type { Track } from '../types/track'
 import type { TagSuggestion } from '../types/tagSuggestion'
 
-const EDIT_TAG_FIELDS = [
-  { key: 'title',       label: 'Title'        },
-  { key: 'artist',      label: 'Artist'       },
-  { key: 'albumartist', label: 'Album Artist' },
-  { key: 'album',       label: 'Album'        },
-  { key: 'tracknumber', label: 'Track #'      },
-  { key: 'date',        label: 'Date'         },
-  { key: 'genre',       label: 'Genre'        },
-] as const
+interface TagField {
+  key: string
+  label: string
+  fullWidth?: boolean
+}
+
+const EDIT_TAG_FIELDS: TagField[] = [
+  // ── Basic ───────────────────────────────────────────────────────────────────
+  { key: 'title',                      label: 'Title' },
+  { key: 'artist',                     label: 'Artist' },
+  { key: 'albumartist',                label: 'Album Artist' },
+  { key: 'album',                      label: 'Album' },
+  { key: 'tracknumber',                label: 'Track #' },
+  { key: 'discnumber',                 label: 'Disc #' },
+  { key: 'date',                       label: 'Date' },
+  { key: 'genre',                      label: 'Genre' },
+  // ── Sort ────────────────────────────────────────────────────────────────────
+  { key: 'albumartistsort',            label: 'Album Artist Sort' },
+  { key: 'artistsort',                 label: 'Artist Sort' },
+  // ── Release metadata ────────────────────────────────────────────────────────
+  { key: 'releasetype',                label: 'Release Type' },
+  { key: 'releasestatus',              label: 'Release Status' },
+  { key: 'releasecountry',             label: 'Release Country' },
+  { key: 'originalyear',              label: 'Original Year' },
+  { key: 'originaldate',              label: 'Original Release Date' },
+  { key: 'totaltracks',               label: 'Total Tracks' },
+  { key: 'totaldiscs',                label: 'Total Discs' },
+  // ── Label / commercial ──────────────────────────────────────────────────────
+  { key: 'label',                      label: 'Record Label' },
+  { key: 'catalognumber',              label: 'Catalog #' },
+  { key: 'barcode',                    label: 'Barcode' },
+  // ── MusicBrainz IDs (full-width — UUIDs are too long for half-width) ────────
+  { key: 'musicbrainz_artistid',       label: 'MB Artist ID',         fullWidth: true },
+  { key: 'musicbrainz_albumartistid',  label: 'MB Release Artist ID', fullWidth: true },
+  { key: 'musicbrainz_releasegroupid', label: 'MB Release Group ID',  fullWidth: true },
+  { key: 'musicbrainz_releaseid',      label: 'MB Release ID',        fullWidth: true },
+  { key: 'musicbrainz_trackid',        label: 'MB Recording ID',      fullWidth: true },
+]
 
 export function TrackEditPanel({
   track,
@@ -73,14 +102,17 @@ export function TrackEditPanel({
   return (
     <div className="flex flex-col gap-2 p-3 bg-bg-panel border border-border rounded">
       <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
-        {EDIT_TAG_FIELDS.map(({ key, label }) => (
-          <label key={key} className="flex flex-col gap-0.5">
+        {EDIT_TAG_FIELDS.map(({ key, label, fullWidth }) => (
+          <label
+            key={key}
+            className={`flex flex-col gap-0.5 ${fullWidth ? 'col-span-2' : ''}`}
+          >
             <span className="text-text-muted text-[10px] uppercase tracking-wider">{label}</span>
             <input
               type="text"
               value={fields[key]}
               onChange={e => setFields(prev => ({ ...prev, [key]: e.target.value }))}
-              className="bg-bg-base border border-border text-text-primary text-xs px-2 py-1 rounded focus:outline-none focus:border-accent"
+              className="bg-bg-base border border-border text-text-primary text-xs px-2 py-1 rounded focus:outline-none focus:border-accent font-mono"
             />
           </label>
         ))}
