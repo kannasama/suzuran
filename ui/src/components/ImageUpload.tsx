@@ -15,14 +15,24 @@ export function ImageUpload({ value, onChange }: Props) {
     setUploading(true)
     setError(null)
     try {
+      // Strip non-ASCII filename — multer fails to parse Content-Disposition
+      // headers containing raw multibyte characters. The backend uses a UUID
+      // for storage so the original filename is irrelevant.
+      const ext = file.name.split('.').pop()?.toLowerCase() ?? 'bin'
+      const safe = new File([file], `upload.${ext}`, { type: file.type })
       const form = new FormData()
-      form.append('file', file)
+      form.append('file', safe)
       const resp = await fetch('/api/v1/uploads/images', {
         method: 'POST',
         body: form,
         credentials: 'include',
       })
-      if (!resp.ok) throw new Error(await resp.text())
+      if (!resp.ok) {
+        const body = await resp.text()
+        let msg = body
+        try { msg = JSON.parse(body).error ?? body } catch { /* use raw text */ }
+        throw new Error(msg)
+      }
       const { url } = await resp.json()
       onChange(url)
     } catch (err) {
@@ -42,7 +52,7 @@ export function ImageUpload({ value, onChange }: Props) {
           placeholder="https://… or upload a file"
           value={value}
           onChange={e => onChange(e.target.value)}
-          className="flex-1 text-sm bg-bg-input border border-border rounded px-2 py-1"
+          className="flex-1 text-sm bg-bg-panel border border-border text-text-primary rounded px-2 py-1"
         />
         {value && (
           <button
