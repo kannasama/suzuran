@@ -4,6 +4,12 @@ All notable changes to suzuran will be documented in this file.
 
 ## [Unreleased]
 
+## [v1.0.0-beta-1] — 2026-04-20
+
+First public beta. Incorporates all four development phases (v0.1.0 – v0.4.0).
+Feature-complete against the v1.0 design specification; released for user acceptance
+testing before the stable v1.0.0 tag.
+
 ## [v0.4.0] — 2026-04-20
 
 ### Added
