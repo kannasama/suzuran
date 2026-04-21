@@ -625,9 +625,9 @@ impl Store for SqliteStore {
     }
 
     async fn set_track_status(&self, id: i64, status: &str) -> Result<(), AppError> {
-        sqlx::query("UPDATE tracks SET status = ?2 WHERE id = ?1")
-            .bind(id)
+        sqlx::query("UPDATE tracks SET status = ?1 WHERE id = ?2")
             .bind(status)
+            .bind(id)
             .execute(&self.pool)
             .await
             .map(|_| ())
