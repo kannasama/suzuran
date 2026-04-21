@@ -47,12 +47,12 @@ async fn handle_cue_split(
         .parent()
         .ok_or_else(|| AppError::BadRequest("cue_path has no parent directory".into()))?;
 
-    // Get library's tag encoding to handle SJIS CUE sheets
-    let tag_encoding = db
+    // Fetch library once — used for tag_encoding and root_path inside the track loop
+    let library = db
         .get_library(library_id)
         .await?
-        .map(|l| l.tag_encoding)
-        .unwrap_or_else(|| "utf8".into());
+        .ok_or_else(|| AppError::NotFound(format!("library {library_id} not found")))?;
+    let tag_encoding = library.tag_encoding.clone();
 
     let cue_path_owned = cue_path.to_path_buf();
     let tag_encoding_clone = tag_encoding.clone();
@@ -178,11 +178,7 @@ async fn handle_cue_split(
         .map_err(|e| AppError::Internal(anyhow::anyhow!("spawn_blocking read_tags: {e}")))?
         .unwrap_or_else(|_| (tags.clone(), tagger::AudioProperties::default()));
 
-        // Build relative path from cue_dir
-        let library = db
-            .get_library(library_id)
-            .await?
-            .ok_or_else(|| AppError::NotFound(format!("library {library_id} not found")))?;
+        // Build relative path from library root
         let library_root = Path::new(&library.root_path);
         let relative_path = out_path
             .strip_prefix(library_root)
