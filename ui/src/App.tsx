@@ -10,6 +10,7 @@ import IngestPage from './pages/IngestPage'
 import SettingsPage from './pages/SettingsPage'
 import AccountPage from './pages/AccountPage'
 import TwoFactorPage from './pages/TwoFactorPage'
+import JobsPage from './pages/JobsPage'
 
 function useSetupStatus() {
   return useQuery({
@@ -61,6 +62,10 @@ function AppRoutes() {
       <Route
         path="/account"
         element={user ? <AccountPage /> : <Navigate to="/login" replace />}
+      />
+      <Route
+        path="/jobs"
+        element={user ? <JobsPage /> : <Navigate to="/login" replace />}
       />
       <Route
         path="/*"

@@ -106,7 +106,7 @@ export function LibraryPage() {
   async function handleScan() {
     if (selectedLibraryId == null) return
     try {
-      await client.post('/jobs', { job_type: 'scan', payload: { library_id: selectedLibraryId } })
+      await client.post('/jobs/scan', { library_id: selectedLibraryId })
       setScanQueued(true)
       setTimeout(() => setScanQueued(false), 2000)
     } catch {
