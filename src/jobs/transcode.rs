@@ -1,6 +1,7 @@
 use std::{path::Path, sync::Arc};
 
-use tokio::{io::AsyncReadExt, process::Command};
+use tokio::io::AsyncReadExt;
+use tokio::process::Command;
 
 use crate::{
     dal::{Store, UpsertTrack},
@@ -80,18 +81,18 @@ async fn handle_transcode(
     payload: serde_json::Value,
 ) -> Result<serde_json::Value, AppError> {
     // 1. Extract payload fields
-    let source_track_id = payload["source_track_id"]
+    let track_id = payload["track_id"]
         .as_i64()
-        .ok_or_else(|| AppError::BadRequest("missing source_track_id".into()))?;
-    let target_library_id = payload["target_library_id"]
+        .ok_or_else(|| AppError::BadRequest("missing track_id".into()))?;
+    let library_profile_id = payload["library_profile_id"]
         .as_i64()
-        .ok_or_else(|| AppError::BadRequest("missing target_library_id".into()))?;
+        .ok_or_else(|| AppError::BadRequest("missing library_profile_id".into()))?;
 
     // 2. Get source track
     let track = store
-        .get_track(source_track_id)
+        .get_track(track_id)
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("track {source_track_id} not found")))?;
+        .ok_or_else(|| AppError::NotFound(format!("track {track_id} not found")))?;
 
     // 3. Get source library
     let src_lib = store
@@ -99,28 +100,21 @@ async fn handle_transcode(
         .await?
         .ok_or_else(|| AppError::NotFound(format!("source library {} not found", track.library_id)))?;
 
-    // 4. Get target library
-    let tgt_lib = store
-        .get_library(target_library_id)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("target library {target_library_id} not found")))?;
+    // 4. Get library profile
+    let lib_profile = store.get_library_profile(library_profile_id).await?;
 
-    // 5. Get encoding profile from target library
-    let ep_id = tgt_lib.encoding_profile_id.ok_or_else(|| {
-        AppError::BadRequest("target library has no encoding_profile_id".into())
-    })?;
-
-    // 6. Get encoding profile
+    // 5. Get encoding profile from library profile
+    let ep_id = lib_profile.encoding_profile_id;
     let profile = store.get_encoding_profile(ep_id).await?;
 
-    // 7. Determine source format from track's relative_path extension, falling back to library format
+    // 6. Determine source format from track's relative_path extension, falling back to library format
     let src_format = Path::new(&track.relative_path)
         .extension()
         .and_then(|e| e.to_str())
         .map(|e| e.to_lowercase())
         .unwrap_or_else(|| src_lib.format.clone());
 
-    // 8. Compatibility check — skip instead of fail for quality violations
+    // 7. Compatibility check — skip instead of fail for quality violations
     if !is_compatible(
         &src_format,
         track.sample_rate,
@@ -131,39 +125,59 @@ async fn handle_transcode(
         return Ok(serde_json::json!({
             "status": "skipped",
             "reason": "source/profile combination not compatible (quality guard)",
-            "source_track_id": source_track_id,
+            "track_id": track_id,
         }));
     }
 
-    // 9. Build source absolute path
+    // 8. Build source absolute path
     let src_path = format!(
         "{}/{}",
         src_lib.root_path.trim_end_matches('/'),
         track.relative_path.trim_start_matches('/')
     );
 
-    // 10. Build output path
+    // 9. Compute output path:
+    //    source relative_path is like "source/album/track.flac"
+    //    output goes to "{root_path}/{derived_dir_name}/album/track.{ext}"
+    //    Strip the "source/" prefix from relative_path.
+    let path_without_source_prefix = track
+        .relative_path
+        .trim_start_matches("source/")
+        .trim_start_matches('/');
+
     let ext = codec_extension(&profile.codec);
-    let src_stem = Path::new(&track.relative_path)
+    let src_stem = Path::new(path_without_source_prefix)
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("track");
-    let out_rel = format!("{}.{}", src_stem, ext);
+    let src_dir_within = Path::new(path_without_source_prefix)
+        .parent()
+        .and_then(|p| p.to_str())
+        .unwrap_or("");
+
+    let out_rel_within_derived = if src_dir_within.is_empty() {
+        format!("{}.{}", src_stem, ext)
+    } else {
+        format!("{}/{}.{}", src_dir_within, src_stem, ext)
+    };
+
+    // out_rel is relative to library root: "{derived_dir_name}/{path}"
+    let out_rel = format!("{}/{}", lib_profile.derived_dir_name, out_rel_within_derived);
     let out_path_str = format!(
         "{}/{}",
-        tgt_lib.root_path.trim_end_matches('/'),
+        src_lib.root_path.trim_end_matches('/'),
         out_rel
     );
     let out_path = Path::new(&out_path_str);
 
-    // 11. Create output parent directory
+    // 10. Create output parent directory
     if let Some(parent) = out_path.parent() {
         tokio::fs::create_dir_all(parent)
             .await
             .map_err(|e| AppError::Internal(anyhow::anyhow!("create_dir_all: {e}")))?;
     }
 
-    // 12. Build ffmpeg args and run
+    // 11. Build ffmpeg args and run
     let mut args: Vec<String> = vec!["-i".into(), src_path];
     args.extend(build_ffmpeg_args(&profile));
     args.extend(["-progress".into(), "pipe:1".into(), "-y".into()]);
@@ -176,13 +190,13 @@ async fn handle_transcode(
         .spawn()
         .map_err(|e| AppError::Internal(anyhow::anyhow!("ffmpeg spawn failed: {e}")))?;
 
-    // 13. Drain stdout (progress output) asynchronously
+    // 12. Drain stdout (progress output) asynchronously
     if let Some(mut stdout) = child.stdout.take() {
         let mut buf = Vec::new();
         let _ = stdout.read_to_end(&mut buf).await;
     }
 
-    // 14. Wait for ffmpeg to exit
+    // 13. Wait for ffmpeg to exit
     let status = child
         .wait()
         .await
@@ -190,11 +204,11 @@ async fn handle_transcode(
 
     if !status.success() {
         return Err(AppError::Internal(anyhow::anyhow!(
-            "ffmpeg exited with non-zero status for track {source_track_id}"
+            "ffmpeg exited with non-zero status for track {track_id}"
         )));
     }
 
-    // 15. Write source tags to output file
+    // 14. Write source tags to output file
     let mut tags_map = std::collections::HashMap::new();
     if let Some(t) = &track.title {
         tags_map.insert("title".into(), t.clone());
@@ -243,7 +257,7 @@ async fn handle_transcode(
         .map_err(|e| AppError::Internal(anyhow::anyhow!("spawn_blocking write_tags: {e}")))?
         .map_err(|e| AppError::Internal(anyhow::anyhow!("write_tags: {e}")))?;
 
-    // 16. Hash the output file
+    // 15. Hash the output file
     let file_hash = hash_file(out_path)
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!("hash_file: {e}")))?;
@@ -258,10 +272,10 @@ async fn handle_transcode(
 
     let tags_json = serde_json::to_value(&tags_from_file).unwrap_or(serde_json::json!({}));
 
-    // 17. Upsert derived track
+    // 16. Upsert derived track (same library, different profile)
     let derived_track = store
         .upsert_track(UpsertTrack {
-            library_id: target_library_id,
+            library_id: track.library_id,
             relative_path: out_rel,
             file_hash,
             title: tags_from_file.get("title").cloned().or_else(|| track.title.clone()),
@@ -302,18 +316,20 @@ async fn handle_transcode(
             channels: audio_props.channels,
             bit_depth: audio_props.bit_depth,
             has_embedded_art: audio_props.has_embedded_art,
+            status: "active".into(),
+            library_profile_id: Some(lib_profile.id),
         })
         .await?;
 
-    // 18. Create track link between source and derived track
+    // 17. Create track link between source and derived track
     store
-        .create_track_link(source_track_id, derived_track.id, Some(ep_id))
+        .create_track_link(track_id, derived_track.id)
         .await?;
 
-    // 19. Return success result
+    // 18. Return success result
     Ok(serde_json::json!({
         "status": "completed",
-        "source_track_id": source_track_id,
+        "track_id": track_id,
         "derived_track_id": derived_track.id,
     }))
 }

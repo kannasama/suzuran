@@ -28,35 +28,48 @@ fn test_codec_extension_unknown_passthrough() {
 // ── integration tests ─────────────────────────────────────────────────────────
 
 #[tokio::test]
-async fn test_transcode_fails_without_encoding_profile() {
-    let (store, source_track_id, target_library_id) =
-        common::setup_transcode_scenario_no_profile().await;
+async fn test_transcode_fails_without_library_profile() {
+    // Pass a non-existent library_profile_id — should return Err (not found)
+    let store = common::setup_store().await;
+    use suzuran_server::dal::Store;
+    let src_lib = store
+        .create_library("Source", "/music/source", "flac")
+        .await
+        .unwrap();
+    let track = store
+        .upsert_track(suzuran_server::dal::UpsertTrack {
+            library_id: src_lib.id,
+            relative_path: "source/artist/album/01.flac".into(),
+            file_hash: "abc".into(),
+            sample_rate: Some(44100),
+            bit_depth: Some(16),
+            bitrate: Some(1000),
+            tags: serde_json::json!({}),
+            ..suzuran_server::dal::UpsertTrack::default()
+        })
+        .await
+        .unwrap();
 
     let handler = TranscodeJobHandler::new(store.clone());
     let result = handler
         .run(
             store.clone(),
             serde_json::json!({
-                "source_track_id": source_track_id,
-                "target_library_id": target_library_id,
+                "track_id": track.id,
+                "library_profile_id": 99999,
             }),
         )
         .await;
 
     assert!(
         result.is_err(),
-        "expected Err when target library has no encoding_profile_id"
-    );
-    let err_str = result.unwrap_err().to_string();
-    assert!(
-        err_str.contains("encoding_profile_id"),
-        "error message should mention encoding_profile_id, got: {err_str}"
+        "expected Err when library_profile_id does not exist"
     );
 }
 
 #[tokio::test]
 async fn test_transcode_skips_lossy_to_lossless() {
-    let (store, source_track_id, target_library_id) =
+    let (store, source_track_id, library_profile_id) =
         common::setup_transcode_lossy_to_lossless_scenario().await;
 
     let handler = TranscodeJobHandler::new(store.clone());
@@ -64,8 +77,8 @@ async fn test_transcode_skips_lossy_to_lossless() {
         .run(
             store.clone(),
             serde_json::json!({
-                "source_track_id": source_track_id,
-                "target_library_id": target_library_id,
+                "track_id": source_track_id,
+                "library_profile_id": library_profile_id,
             }),
         )
         .await
@@ -77,9 +90,9 @@ async fn test_transcode_skips_lossy_to_lossless() {
         "expected status=skipped for AAC → FLAC transcode, got: {result}"
     );
     assert_eq!(
-        result["source_track_id"].as_i64(),
+        result["track_id"].as_i64(),
         Some(source_track_id),
-        "source_track_id should be echoed in skip result"
+        "track_id should be echoed in skip result"
     );
 }
 
@@ -87,20 +100,13 @@ async fn test_transcode_skips_lossy_to_lossless() {
 async fn test_transcode_missing_source_track() {
     let store = common::setup_store().await;
 
-    // Create a target library (encoding profile management moved to library_profiles)
-    use suzuran_server::dal::Store;
-    let tgt_lib = store
-        .create_library("Target", "/music/target", "aac")
-        .await
-        .unwrap();
-
     let handler = TranscodeJobHandler::new(store.clone());
     let result = handler
         .run(
             store.clone(),
             serde_json::json!({
-                "source_track_id": 99999,
-                "target_library_id": tgt_lib.id,
+                "track_id": 99999,
+                "library_profile_id": 1,
             }),
         )
         .await;

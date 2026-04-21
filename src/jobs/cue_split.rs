@@ -235,6 +235,8 @@ async fn handle_cue_split(
             channels: audio_props.channels,
             bit_depth: audio_props.bit_depth,
             has_embedded_art: audio_props.has_embedded_art,
+            status: "active".into(),
+            library_profile_id: None,
         };
 
         let new_track = db.upsert_track(upsert).await?;

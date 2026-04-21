@@ -116,16 +116,68 @@ impl super::JobHandler for MbLookupJobHandler {
         tracing::debug!(
             track_id,
             suggestions_created,
-            "mb_lookup complete"
+            "mb_lookup acoustid phase complete"
         );
 
-        if suggestions_created == 0 && !acoustid_had_results {
-            db.enqueue_job(
-                "freedb_lookup",
-                serde_json::json!({"track_id": track_id}),
-                4,
-            )
-            .await?;
+        // If AcoustID returned no results, try MB text search using track tags
+        if !acoustid_had_results {
+            // Extract title/artist/album from track tags JSON
+            let tags_obj = track.tags.as_object().cloned().unwrap_or_default();
+            let title = tags_obj.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let artist = tags_obj.get("artist").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let album = tags_obj.get("album").and_then(|v| v.as_str()).unwrap_or("").to_string();
+
+            let mb_results = if !title.is_empty() || !artist.is_empty() {
+                self.mb_service
+                    .search_recordings(&title, &artist, &album)
+                    .await
+                    .unwrap_or_default()
+            } else {
+                vec![]
+            };
+
+            let mb_had_results = !mb_results.is_empty();
+
+            for (tag_map, confidence) in mb_results {
+                db.create_tag_suggestion(UpsertTagSuggestion {
+                    track_id,
+                    source: "mb_search".into(),
+                    suggested_tags: serde_json::to_value(&tag_map)
+                        .map_err(|e| AppError::Internal(anyhow::anyhow!("{e}")))?,
+                    confidence: confidence as f32,
+                    mb_recording_id: tag_map.get("musicbrainz_trackid").cloned(),
+                    mb_release_id: tag_map.get("musicbrainz_releaseid").cloned(),
+                    cover_art_url: None,
+                })
+                .await?;
+                suggestions_created += 1;
+            }
+
+            tracing::debug!(
+                track_id,
+                suggestions_created,
+                mb_had_results,
+                "mb_lookup text-search phase complete"
+            );
+
+            // If no results from text search either, check for DISCID tag and fallback to FreeDB
+            if !mb_had_results {
+                let has_discid = tags_obj
+                    .get("DISCID")
+                    .or_else(|| tags_obj.get("discid"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| !s.is_empty())
+                    .unwrap_or(false);
+
+                if has_discid {
+                    db.enqueue_job(
+                        "freedb_lookup",
+                        serde_json::json!({"track_id": track_id}),
+                        4,
+                    )
+                    .await?;
+                }
+            }
         }
 
         Ok(serde_json::json!({

@@ -77,7 +77,11 @@ impl super::JobHandler for VirtualSyncJobHandler {
                 .ok_or_else(|| {
                     AppError::NotFound(format!("library {} not found", source.library_id))
                 })?;
-            let tracks = self.store.list_tracks_by_library(source.library_id).await?;
+            // Use profile-aware listing: None → source tracks, Some(id) → derived tracks
+            let tracks = self
+                .store
+                .list_tracks_by_profile(source.library_id, source.library_profile_id)
+                .await?;
             for track in tracks {
                 let id = track_identity(&track);
                 identity_map.entry(id).or_insert((lib.clone(), track));

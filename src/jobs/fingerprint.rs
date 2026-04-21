@@ -54,34 +54,8 @@ impl super::JobHandler for FingerprintJobHandler {
 
         db.update_track_fingerprint(track_id, fingerprint, duration).await?;
 
-        // Chain to normalize if the library has normalize_on_ingest enabled and an encoding
-        // profile whose target codec differs from the current file extension. Otherwise
-        // proceed directly to MusicBrainz lookup.
-        let src_ext = std::path::Path::new(&track.relative_path)
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("")
-            .to_lowercase();
-
-        let needs_normalize = library.normalize_on_ingest
-            && library.encoding_profile_id.is_some()
-            && {
-                if let Some(ep_id) = library.encoding_profile_id {
-                    if let Ok(profile) = db.get_encoding_profile(ep_id).await {
-                        crate::jobs::transcode::codec_extension(&profile.codec) != src_ext.as_str()
-                    } else {
-                        false
-                    }
-                } else {
-                    false
-                }
-            };
-
-        if needs_normalize {
-            db.enqueue_job("normalize", serde_json::json!({"track_id": track_id}), 4).await?;
-        } else {
-            db.enqueue_job("mb_lookup", serde_json::json!({"track_id": track_id}), 4).await?;
-        }
+        // Always enqueue mb_lookup after fingerprinting
+        db.enqueue_job("mb_lookup", serde_json::json!({"track_id": track_id}), 4).await?;
 
         Ok(serde_json::json!({
             "track_id": track_id,

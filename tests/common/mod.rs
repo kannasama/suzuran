@@ -5,7 +5,7 @@ use webauthn_rs::WebauthnBuilder;
 use suzuran_server::{
     build_router,
     config::Config,
-    dal::{sqlite::SqliteStore, Store, UpsertTrack},
+    dal::{sqlite::SqliteStore, Store, UpsertTrack, UpsertLibraryProfile},
     services::{freedb::FreedBService, musicbrainz::MusicBrainzService},
     state::AppState,
 };
@@ -427,9 +427,11 @@ pub async fn setup_with_track() -> (Arc<dyn Store>, i64) {
 }
 
 /// Set up an in-memory DB with:
-/// - A source library (FLAC) containing one AAC track with no encoding profile
-/// - A target library (aac) with no encoding_profile_id
-/// Returns `(store, source_track_id, target_library_id)`.
+/// - A source library (FLAC) containing one FLAC track
+/// - A library profile without an encoding profile attached (profile id still valid but
+///   the test passes a non-existent id to trigger not-found).
+/// Returns `(store, source_track_id, i64::MAX)` — the last value is an intentionally
+/// invalid `library_profile_id` so the handler returns an error.
 #[allow(dead_code)]
 pub async fn setup_transcode_scenario_no_profile() -> (Arc<dyn Store>, i64, i64) {
     let db = make_db().await;
@@ -442,7 +444,7 @@ pub async fn setup_transcode_scenario_no_profile() -> (Arc<dyn Store>, i64, i64)
     let track = db
         .upsert_track(UpsertTrack {
             library_id: src_lib.id,
-            relative_path: "artist/album/01 - Song.flac".into(),
+            relative_path: "source/artist/album/01 - Song.flac".into(),
             file_hash: "transcode_src_hash_001".into(),
             title: Some("Song".into()),
             artist: Some("Artist".into()),
@@ -455,20 +457,15 @@ pub async fn setup_transcode_scenario_no_profile() -> (Arc<dyn Store>, i64, i64)
         .await
         .unwrap();
 
-    let tgt_lib = db
-        .create_library("Target AAC", "/music/target", "aac")
-        .await
-        .unwrap();
-    // target library intentionally has no library profile
-
-    (db, track.id, tgt_lib.id)
+    // Intentionally non-existent library_profile_id
+    (db, track.id, 99999)
 }
 
 /// Set up an in-memory DB with:
 /// - A source library containing one AAC track (lossy)
-/// - A target library with a FLAC encoding profile (lossless)
+/// - A library profile with a FLAC encoding profile (lossless)
 /// This scenario should be skipped by the transcode job (lossy → lossless guard).
-/// Returns `(store, source_track_id, target_library_id)`.
+/// Returns `(store, source_track_id, library_profile_id)`.
 #[allow(dead_code)]
 pub async fn setup_transcode_lossy_to_lossless_scenario() -> (Arc<dyn Store>, i64, i64) {
     let db = make_db().await;
@@ -481,7 +478,7 @@ pub async fn setup_transcode_lossy_to_lossless_scenario() -> (Arc<dyn Store>, i6
     let track = db
         .upsert_track(UpsertTrack {
             library_id: src_lib.id,
-            relative_path: "01 - Song.aac".into(),
+            relative_path: "source/01 - Song.aac".into(),
             file_hash: "transcode_aac_hash_001".into(),
             title: Some("Song".into()),
             artist: Some("Artist".into()),
@@ -494,10 +491,32 @@ pub async fn setup_transcode_lossy_to_lossless_scenario() -> (Arc<dyn Store>, i6
         .await
         .unwrap();
 
-    let tgt_lib = db
-        .create_library("Target FLAC", "/music/target_flac", "flac")
+    // Create a FLAC encoding profile
+    use suzuran_server::dal::UpsertEncodingProfile;
+    let encoding_profile = db
+        .create_encoding_profile(UpsertEncodingProfile {
+            name: "FLAC Lossless".into(),
+            codec: "flac".into(),
+            bitrate: None,
+            sample_rate: None,
+            channels: None,
+            bit_depth: None,
+            advanced_args: None,
+        })
         .await
         .unwrap();
 
-    (db, track.id, tgt_lib.id)
+    // Create a library profile linking the source library to this encoding profile
+    let lib_profile = db
+        .create_library_profile(&suzuran_server::dal::UpsertLibraryProfile {
+            library_id: src_lib.id,
+            encoding_profile_id: encoding_profile.id,
+            derived_dir_name: "flac-derived".into(),
+            include_on_submit: false,
+            auto_include_above_hz: None,
+        })
+        .await
+        .unwrap();
+
+    (db, track.id, lib_profile.id)
 }

@@ -59,24 +59,8 @@ async fn setup_with_audio_track() -> (Arc<dyn Store>, i64, TempDir) {
             file_hash: "abc123".into(),
             title: Some("Silence".into()),
             artist: Some("Test Artist".into()),
-            albumartist: None,
-            album: None,
-            tracknumber: None,
-            discnumber: None,
-            totaldiscs: None,
-            totaltracks: None,
-            date: None,
-            genre: None,
-            composer: None,
-            label: None,
-            catalognumber: None,
             tags: serde_json::json!({}),
-            duration_secs: None,
-            bitrate: None,
-            sample_rate: None,
-            channels: None,
-            bit_depth: None,
-            has_embedded_art: false,
+            ..UpsertTrack::default()
         })
         .await
         .unwrap();
@@ -146,26 +130,8 @@ async fn test_update_track_fingerprint_dal() {
             library_id: lib.id,
             relative_path: "test.flac".into(),
             file_hash: "hash1".into(),
-            title: None,
-            artist: None,
-            albumartist: None,
-            album: None,
-            tracknumber: None,
-            discnumber: None,
-            totaldiscs: None,
-            totaltracks: None,
-            date: None,
-            genre: None,
-            composer: None,
-            label: None,
-            catalognumber: None,
             tags: serde_json::json!({"title": "Some Song"}),
-            duration_secs: None,
-            bitrate: None,
-            sample_rate: None,
-            channels: None,
-            bit_depth: None,
-            has_embedded_art: false,
+            ..UpsertTrack::default()
         })
         .await
         .unwrap();
@@ -215,9 +181,10 @@ async fn test_scan_enqueues_fingerprint_jobs() {
     let dir = TempDir::new().unwrap();
     let root = dir.path().to_path_buf();
 
-    // Write two audio files (empty content — scanner will upsert even if tags fail)
-    fs::write(root.join("track01.flac"), b"").await.unwrap();
-    fs::write(root.join("track02.flac"), b"").await.unwrap();
+    // Write two audio files into ingest/ (scanner now only walks ingest/ and source/)
+    fs::create_dir_all(root.join("ingest")).await.unwrap();
+    fs::write(root.join("ingest").join("track01.flac"), b"").await.unwrap();
+    fs::write(root.join("ingest").join("track02.flac"), b"").await.unwrap();
 
     let lib = db
         .create_library("Test", root.to_str().unwrap(), "flac")
@@ -234,6 +201,12 @@ async fn test_scan_enqueues_fingerprint_jobs() {
         fp_jobs.len(),
         2,
         "should enqueue 2 fingerprint jobs for newly inserted tracks"
+    );
+
+    // normalize should NOT be enqueued (fingerprint always goes to mb_lookup now)
+    assert!(
+        !jobs.iter().any(|j| j.job_type == "normalize"),
+        "normalize should NOT be enqueued by scanner"
     );
 
     drop(dir);
