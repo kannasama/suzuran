@@ -5,6 +5,7 @@ pub mod freedb_lookup;
 pub mod mb_lookup;
 pub mod normalize;
 pub mod organize;
+pub mod process_staged;
 pub mod scan;
 pub mod transcode;
 pub mod virtual_sync;
@@ -49,14 +50,26 @@ pub struct CueSplitPayload {
 /// Payload for the `transcode` job type.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TranscodePayload {
-    pub source_track_id: i64,
-    pub target_library_id: i64,
+    pub track_id: i64,
+    pub library_profile_id: i64,
+}
+
+/// Payload for the `process_staged` job type.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ProcessStagedPayload {
+    pub track_id: i64,
+    pub tag_suggestion_id: Option<i64>,
+    pub cover_art_url: Option<String>,
+    pub write_folder_art: bool,
+    pub profile_ids: Vec<i64>,
 }
 
 /// Payload for the `normalize` job type.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct NormalizePayload {
     pub track_id: i64,
+    /// Encoding profile to convert to. If absent, the job skips and chains to mb_lookup.
+    pub encoding_profile_id: Option<i64>,
 }
 
 /// Payload for the `art_process` job type.

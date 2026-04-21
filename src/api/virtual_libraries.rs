@@ -8,6 +8,7 @@ use serde::Deserialize;
 
 use crate::{
     api::middleware::{auth::AuthUser, library_admin::LibraryAdminUser},
+    dal::VirtualLibrarySourceInput,
     error::AppError,
     models::{UpsertVirtualLibrary, VirtualLibrary, VirtualLibrarySource},
     state::AppState,
@@ -46,7 +47,8 @@ impl From<VirtualLibraryBody> for UpsertVirtualLibrary {
 #[derive(Deserialize)]
 struct SourceEntry {
     library_id: i64,
-    priority: i64,
+    library_profile_id: Option<i64>,
+    priority: i32,
 }
 
 async fn list_virtual_libraries(
@@ -109,8 +111,15 @@ async fn set_sources(
     Path(id): Path<i64>,
     Json(body): Json<Vec<SourceEntry>>,
 ) -> Result<StatusCode, AppError> {
-    let sources: Vec<(i64, i64)> = body.into_iter().map(|s| (s.library_id, s.priority)).collect();
-    state.db.set_virtual_library_sources(id, &sources).await?;
+    let sources: Vec<VirtualLibrarySourceInput> = body
+        .into_iter()
+        .map(|s| VirtualLibrarySourceInput {
+            library_id: s.library_id,
+            library_profile_id: s.library_profile_id,
+            priority: s.priority,
+        })
+        .collect();
+    state.db.set_virtual_library_sources(id, sources).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 

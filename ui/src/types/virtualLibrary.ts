@@ -7,8 +7,10 @@ export interface VirtualLibrary {
 }
 
 export interface VirtualLibrarySource {
+  id: number;
   virtual_library_id: number;
   library_id: number;
+  library_profile_id: number | null;
   priority: number;
 }
 

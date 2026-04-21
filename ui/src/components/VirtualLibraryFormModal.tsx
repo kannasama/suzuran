@@ -32,12 +32,13 @@ export function VirtualLibraryFormModal({ virtualLibrary, onClose }: Props) {
     data: UpsertVirtualLibrary,
     sources: Array<{ library_id: number; priority: number }>,
   ) {
+    const sourcesWithProfile = sources.map(s => ({ ...s, library_profile_id: null }))
     if (isEdit) {
       await updateMutation.mutateAsync({ id: virtualLibrary!.id, data })
-      await setSources(virtualLibrary!.id, sources)
+      await setSources(virtualLibrary!.id, sourcesWithProfile)
     } else {
       const created = await createMutation.mutateAsync(data)
-      await setSources(created.id, sources)
+      await setSources(created.id, sourcesWithProfile)
     }
     qc.invalidateQueries({ queryKey: ['virtual-libraries'] })
     onClose()

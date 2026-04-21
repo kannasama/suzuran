@@ -12,7 +12,7 @@ async fn org_rule_crud() {
     let db = make_db().await;
 
     // Create a library to scope one of our rules to
-    let lib = db.create_library("FLAC", "/music/flac", "flac", None).await.unwrap();
+    let lib = db.create_library("FLAC", "/music/flac", "flac").await.unwrap();
 
     // Create a global rule (library_id = None)
     let global = db

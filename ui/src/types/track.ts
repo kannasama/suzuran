@@ -21,8 +21,11 @@ export interface Track {
   bitrate?: number;
   sample_rate?: number;
   channels?: number;
+  bit_depth?: number;
   has_embedded_art: boolean;
   acoustid_fingerprint?: string;
+  status: string;
+  library_profile_id: number | null;
   last_scanned_at: string;
   created_at: string;
 }

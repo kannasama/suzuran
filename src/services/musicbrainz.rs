@@ -2,6 +2,8 @@ use reqwest::Client;
 use std::{collections::HashMap, sync::{Arc, Mutex}, time::{Duration, Instant}};
 use tokio::time::sleep;
 
+use crate::error::AppError;
+
 const MB_RATE_LIMIT_MS: u64 = 1100; // MusicBrainz: max 1 req/sec
 
 #[derive(Clone)]
@@ -242,6 +244,103 @@ impl MusicBrainzService {
         }
 
         tags
+    }
+
+    /// Text-search MusicBrainz for recordings matching title/artist/album.
+    ///
+    /// Returns up to 5 `(tag_map, confidence)` pairs where confidence is
+    /// capped at 0.6 (MB text-search is inherently fuzzier than AcoustID).
+    pub async fn search_recordings(
+        &self,
+        title: &str,
+        artist: &str,
+        album: &str,
+    ) -> Result<Vec<(HashMap<String, String>, f64)>, AppError> {
+        let query = format!(
+            r#"recording:"{title}" AND artist:"{artist}" AND release:"{album}""#
+        );
+
+        // Rate-limit like get_recording
+        let sleep_duration = {
+            let mut last = self.last_mb_request.lock().expect("mutex poisoned");
+            let dur = last.map(|t| {
+                let elapsed = t.elapsed();
+                if elapsed < Duration::from_millis(MB_RATE_LIMIT_MS) {
+                    Duration::from_millis(MB_RATE_LIMIT_MS) - elapsed
+                } else {
+                    Duration::ZERO
+                }
+            });
+            *last = Some(Instant::now());
+            dur
+        };
+        if let Some(d) = sleep_duration {
+            if d > Duration::ZERO {
+                sleep(d).await;
+            }
+        }
+
+        let url = format!("{}/recording/", self.mb_base);
+        let resp: serde_json::Value = self
+            .client
+            .get(&url)
+            .query(&[
+                ("query", query.as_str()),
+                ("fmt", "json"),
+                ("limit", "5"),
+            ])
+            .send()
+            .await
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("MB text search HTTP: {e}")))?
+            .error_for_status()
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("MB text search status: {e}")))?
+            .json()
+            .await
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("MB text search parse: {e}")))?;
+
+        let recordings = match resp["recordings"].as_array() {
+            Some(arr) if !arr.is_empty() => arr,
+            _ => return Ok(vec![]),
+        };
+
+        let mut out = Vec::new();
+        for rec_val in recordings.iter().take(5) {
+            let score_raw = rec_val["score"]
+                .as_f64()
+                .unwrap_or(0.0);
+            let confidence = (score_raw / 100.0).min(0.6);
+
+            // Parse enough structure to call to_tag_map
+            let rec: MbRecording = match serde_json::from_value(rec_val.clone()) {
+                Ok(r) => r,
+                Err(_) => continue,
+            };
+
+            // Use first release if present, or construct a minimal one from the recording
+            if let Some(releases) = &rec.releases {
+                if let Some(release) = releases.first() {
+                    let tags = Self::to_tag_map(&rec, release);
+                    out.push((tags, confidence));
+                    continue;
+                }
+            }
+
+            // No release — build a minimal fallback tag map
+            let mut tags = HashMap::new();
+            tags.insert("title".into(), rec.title.clone());
+            tags.insert("musicbrainz_trackid".into(), rec.id.clone());
+            if let Some(ac) = &rec.artist_credit {
+                if let Some(first) = ac.first() {
+                    if let Some(name) = first.name.as_ref().or(first.artist.as_ref().map(|a| &a.name)) {
+                        tags.insert("artist".into(), name.clone());
+                        tags.insert("albumartist".into(), name.clone());
+                    }
+                }
+            }
+            out.push((tags, confidence));
+        }
+
+        Ok(out)
     }
 
     /// Cover Art Archive URL for a release (front image, 500px).

@@ -24,7 +24,7 @@ async fn organize_moves_file_and_updates_path() {
     fs::create_dir_all(old_abs.parent().unwrap()).await.unwrap();
     fs::write(&old_abs, b"audio").await.unwrap();
 
-    let lib = db.create_library("FLAC", root.to_str().unwrap(), "flac", None).await.unwrap();
+    let lib = db.create_library("FLAC", root.to_str().unwrap(), "flac").await.unwrap();
     let track = db.upsert_track(UpsertTrack {
         library_id: lib.id,
         relative_path: old_rel.to_string(),
@@ -50,6 +50,7 @@ async fn organize_moves_file_and_updates_path() {
         }),
         duration_secs: None, bitrate: None, sample_rate: None, channels: None,
         bit_depth: None, has_embedded_art: false,
+        status: "active".into(), library_profile_id: None,
     }).await.unwrap();
 
     let rule = db.create_organization_rule(
@@ -85,7 +86,7 @@ async fn organize_dry_run_does_not_move() {
     let old_rel = "track.flac";
     fs::write(root.join(old_rel), b"audio").await.unwrap();
 
-    let lib = db.create_library("FLAC", root.to_str().unwrap(), "flac", None).await.unwrap();
+    let lib = db.create_library("FLAC", root.to_str().unwrap(), "flac").await.unwrap();
     let track = db.upsert_track(UpsertTrack {
         library_id: lib.id,
         relative_path: old_rel.to_string(),
@@ -99,6 +100,7 @@ async fn organize_dry_run_does_not_move() {
         label: None, catalognumber: None,
         duration_secs: None, bitrate: None, sample_rate: None, channels: None,
         bit_depth: None, has_embedded_art: false,
+        status: "active".into(), library_profile_id: None,
     }).await.unwrap();
 
     let rule = db.create_organization_rule("Default", None, 0, None, "{albumartist}/{date}/{title}", true).await.unwrap();
@@ -124,7 +126,7 @@ async fn organize_dry_run_no_matching_rule_returns_null_path() {
     let old_rel = "track.flac";
     tokio::fs::write(root.join(old_rel), b"audio").await.unwrap();
 
-    let lib = db.create_library("FLAC", root.to_str().unwrap(), "flac", None).await.unwrap();
+    let lib = db.create_library("FLAC", root.to_str().unwrap(), "flac").await.unwrap();
     let track = db.upsert_track(UpsertTrack {
         library_id: lib.id,
         relative_path: old_rel.to_string(),

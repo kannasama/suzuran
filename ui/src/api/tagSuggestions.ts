@@ -1,6 +1,16 @@
 import client from './client';
 import type { TagSuggestion } from '../types/tagSuggestion';
 
+interface CreateTagSuggestionBody {
+  track_id: number;
+  source: string;
+  suggested_tags: Record<string, string>;
+  confidence: number;
+  cover_art_url?: string;
+  musicbrainz_recording_id?: string;
+  musicbrainz_release_id?: string;
+}
+
 export const tagSuggestionsApi = {
   listPending(trackId?: number) {
     return client
@@ -30,5 +40,9 @@ export const tagSuggestionsApi = {
         min_confidence: minConfidence,
       })
       .then(r => r.data);
+  },
+
+  create(body: CreateTagSuggestionBody): Promise<TagSuggestion> {
+    return client.post<TagSuggestion>('/tag-suggestions', body).then(r => r.data);
   },
 };

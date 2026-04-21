@@ -11,8 +11,15 @@ pub use crate::models::UpsertTagSuggestion;
 pub use crate::models::UpsertEncodingProfile;
 pub use crate::models::UpsertArtProfile;
 pub use crate::models::UpsertVirtualLibrary;
+pub use crate::models::{UpsertLibraryProfile, LibraryProfile};
 
-#[derive(Default)]
+#[derive(Debug, Clone)]
+pub struct VirtualLibrarySourceInput {
+    pub library_id: i64,
+    pub library_profile_id: Option<i64>,
+    pub priority: i32,
+}
+
 pub struct UpsertTrack {
     pub library_id: i64,
     pub relative_path: String,
@@ -37,6 +44,40 @@ pub struct UpsertTrack {
     pub channels: Option<i64>,
     pub bit_depth: Option<i64>,
     pub has_embedded_art: bool,
+    pub status: String,
+    pub library_profile_id: Option<i64>,
+}
+
+impl Default for UpsertTrack {
+    fn default() -> Self {
+        Self {
+            library_id: 0,
+            relative_path: String::new(),
+            file_hash: String::new(),
+            title: None,
+            artist: None,
+            albumartist: None,
+            album: None,
+            tracknumber: None,
+            discnumber: None,
+            totaldiscs: None,
+            totaltracks: None,
+            date: None,
+            genre: None,
+            composer: None,
+            label: None,
+            catalognumber: None,
+            tags: JsonValue::Object(Default::default()),
+            duration_secs: None,
+            bitrate: None,
+            sample_rate: None,
+            channels: None,
+            bit_depth: None,
+            has_embedded_art: false,
+            status: "active".into(),
+            library_profile_id: None,
+        }
+    }
 }
 
 #[async_trait::async_trait]
@@ -154,7 +195,6 @@ pub trait Store: Send + Sync {
         name: &str,
         root_path: &str,
         format: &str,
-        parent_library_id: Option<i64>,
     ) -> Result<Library, AppError>;
     async fn update_library(
         &self,
@@ -162,27 +202,22 @@ pub trait Store: Send + Sync {
         name: &str,
         scan_enabled: bool,
         scan_interval_secs: i64,
-        auto_transcode_on_ingest: bool,
         auto_organize_on_ingest: bool,
-        normalize_on_ingest: bool,
         tag_encoding: &str,
     ) -> Result<Option<Library>, AppError>;
     async fn delete_library(&self, id: i64) -> Result<(), AppError>;
-    async fn set_library_encoding_profile(
-        &self,
-        library_id: i64,
-        encoding_profile_id: Option<i64>,
-    ) -> Result<(), AppError>;
-    async fn set_library_ingest_dir(
-        &self,
-        library_id: i64,
-        ingest_dir: Option<&str>,
-    ) -> Result<(), AppError>;
     async fn set_library_org_rule(
         &self,
         library_id: i64,
         organization_rule_id: Option<i64>,
     ) -> Result<(), AppError>;
+
+    // ── library profiles ──────────────────────────────────────────
+    async fn create_library_profile(&self, p: &UpsertLibraryProfile) -> Result<LibraryProfile, AppError>;
+    async fn get_library_profile(&self, id: i64) -> Result<LibraryProfile, AppError>;
+    async fn list_library_profiles(&self, library_id: i64) -> Result<Vec<LibraryProfile>, AppError>;
+    async fn update_library_profile(&self, id: i64, p: &UpsertLibraryProfile) -> Result<LibraryProfile, AppError>;
+    async fn delete_library_profile(&self, id: i64) -> Result<(), AppError>;
 
     // ── jobs ─────────────────────────────────────────────────────
     async fn enqueue_job(
@@ -231,6 +266,9 @@ pub trait Store: Send + Sync {
 
     // ── tracks ────────────────────────────────────────────────────
     async fn list_tracks_by_library(&self, library_id: i64) -> Result<Vec<Track>, AppError>;
+    async fn set_track_status(&self, id: i64, status: &str) -> Result<(), AppError>;
+    async fn list_tracks_by_status(&self, library_id: i64, status: &str) -> Result<Vec<Track>, AppError>;
+    async fn list_tracks_by_profile(&self, library_id: i64, library_profile_id: Option<i64>) -> Result<Vec<Track>, AppError>;
     async fn get_track(&self, id: i64) -> Result<Option<Track>, AppError>;
     async fn find_track_by_path(
         &self,
@@ -270,13 +308,9 @@ pub trait Store: Send + Sync {
         &self,
         source_id: i64,
         derived_id: i64,
-        encoding_profile_id: Option<i64>,
     ) -> Result<TrackLink, AppError>;
     async fn list_derived_tracks(&self, source_id: i64) -> Result<Vec<TrackLink>, AppError>;
     async fn list_source_tracks(&self, derived_id: i64) -> Result<Vec<TrackLink>, AppError>;
-
-    // ── child libraries ───────────────────────────────────────────
-    async fn list_child_libraries(&self, parent_id: i64) -> Result<Vec<Library>, AppError>;
 
     // ── tag suggestions ───────────────────────────────────────────
     async fn create_tag_suggestion(&self, dto: UpsertTagSuggestion) -> Result<TagSuggestion, AppError>;
@@ -295,8 +329,7 @@ pub trait Store: Send + Sync {
     async fn delete_virtual_library(&self, id: i64) -> Result<(), AppError>;
 
     /// Replace the full source list atomically (delete old + insert new in a transaction).
-    /// `sources` contains `(library_id, priority)` tuples.
-    async fn set_virtual_library_sources(&self, id: i64, sources: &[(i64, i64)]) -> Result<(), AppError>;
+    async fn set_virtual_library_sources(&self, virtual_library_id: i64, sources: Vec<VirtualLibrarySourceInput>) -> Result<(), AppError>;
     async fn list_virtual_library_sources(&self, id: i64) -> Result<Vec<VirtualLibrarySource>, AppError>;
 
     async fn upsert_virtual_library_track(&self, vlib_id: i64, track_id: i64, link_path: &str) -> Result<(), AppError>;

@@ -34,6 +34,20 @@ impl super::JobHandler for NormalizeJobHandler {
             .as_i64()
             .ok_or_else(|| AppError::BadRequest("missing track_id".into()))?;
 
+        let ep_id = match payload["encoding_profile_id"].as_i64() {
+            Some(id) => id,
+            None => {
+                self.store
+                    .enqueue_job("mb_lookup", serde_json::json!({"track_id": track_id}), 4)
+                    .await?;
+                return Ok(serde_json::json!({
+                    "status": "skipped",
+                    "reason": "no encoding_profile_id in payload",
+                    "track_id": track_id,
+                }));
+            }
+        };
+
         // 1. Fetch track and library
         let track = self
             .store
@@ -47,36 +61,9 @@ impl super::JobHandler for NormalizeJobHandler {
             .await?
             .ok_or_else(|| AppError::NotFound(format!("library {} not found", track.library_id)))?;
 
-        // 2. Skip if normalize flag is off
-        if !library.normalize_on_ingest {
-            self.store
-                .enqueue_job("mb_lookup", serde_json::json!({"track_id": track_id}), 4)
-                .await?;
-            return Ok(serde_json::json!({
-                "status": "skipped",
-                "reason": "normalize_on_ingest is false",
-                "track_id": track_id,
-            }));
-        }
-
-        // 3. Require encoding profile
-        let ep_id = match library.encoding_profile_id {
-            Some(id) => id,
-            None => {
-                self.store
-                    .enqueue_job("mb_lookup", serde_json::json!({"track_id": track_id}), 4)
-                    .await?;
-                return Ok(serde_json::json!({
-                    "status": "skipped",
-                    "reason": "library has no encoding_profile_id",
-                    "track_id": track_id,
-                }));
-            }
-        };
-
         let profile = self.store.get_encoding_profile(ep_id).await?;
 
-        // 4. Check if already in target format
+        // 2. Check if already in target format
         let src_ext = Path::new(&track.relative_path)
             .extension()
             .and_then(|e| e.to_str())
@@ -96,7 +83,7 @@ impl super::JobHandler for NormalizeJobHandler {
             }));
         }
 
-        // 5. Compatibility check
+        // 3. Compatibility check
         if !is_compatible(
             &src_ext,
             track.sample_rate,
@@ -104,7 +91,6 @@ impl super::JobHandler for NormalizeJobHandler {
             track.bitrate,
             &profile,
         ) {
-            // Incompatible source — still enqueue mb_lookup so the track is not orphaned
             self.store
                 .enqueue_job("mb_lookup", serde_json::json!({"track_id": track_id}), 4)
                 .await?;
@@ -115,7 +101,7 @@ impl super::JobHandler for NormalizeJobHandler {
             }));
         }
 
-        // 6. Build source and output paths
+        // 4. Build source and output paths
         let src_path = format!(
             "{}/{}",
             library.root_path.trim_end_matches('/'),
@@ -127,7 +113,6 @@ impl super::JobHandler for NormalizeJobHandler {
             .and_then(|s| s.to_str())
             .unwrap_or("track");
 
-        // Place output alongside source (same directory), new extension
         let src_dir = Path::new(&track.relative_path)
             .parent()
             .and_then(|p| p.to_str())
@@ -146,14 +131,13 @@ impl super::JobHandler for NormalizeJobHandler {
         );
         let out_path = Path::new(&out_path_str);
 
-        // Create output parent directory if needed
         if let Some(parent) = out_path.parent() {
             tokio::fs::create_dir_all(parent)
                 .await
                 .map_err(|e| AppError::Internal(anyhow::anyhow!("create_dir_all: {e}")))?;
         }
 
-        // 7. Run ffmpeg
+        // 5. Run ffmpeg
         let mut args: Vec<String> = vec!["-i".into(), src_path.clone()];
         args.extend(build_ffmpeg_args(&profile));
         args.extend(["-progress".into(), "pipe:1".into(), "-y".into()]);
@@ -166,7 +150,6 @@ impl super::JobHandler for NormalizeJobHandler {
             .spawn()
             .map_err(|e| AppError::Internal(anyhow::anyhow!("ffmpeg spawn failed: {e}")))?;
 
-        // Drain stdout (progress output)
         if let Some(mut stdout) = child.stdout.take() {
             let mut buf = Vec::new();
             let _ = stdout.read_to_end(&mut buf).await;
@@ -183,7 +166,7 @@ impl super::JobHandler for NormalizeJobHandler {
             )));
         }
 
-        // 8. Verify output exists and is non-empty
+        // 6. Verify output
         let out_meta = tokio::fs::metadata(&out_path_str).await.map_err(|e| {
             AppError::Internal(anyhow::anyhow!("output file missing after ffmpeg: {e}"))
         })?;
@@ -193,12 +176,12 @@ impl super::JobHandler for NormalizeJobHandler {
             )));
         }
 
-        // 9. Delete source file
+        // 7. Delete source file
         tokio::fs::remove_file(&src_path)
             .await
             .map_err(|e| AppError::Internal(anyhow::anyhow!("failed to delete source file: {e}")))?;
 
-        // 10. Hash output and update track record
+        // 8. Hash output and update track record
         let new_hash = hash_file(out_path)
             .await
             .map_err(|e| AppError::Internal(anyhow::anyhow!("hash_file: {e}")))?;
@@ -207,7 +190,7 @@ impl super::JobHandler for NormalizeJobHandler {
             .update_track_path(track_id, &out_rel, &new_hash)
             .await?;
 
-        // 11. Enqueue mb_lookup
+        // 9. Enqueue mb_lookup
         self.store
             .enqueue_job("mb_lookup", serde_json::json!({"track_id": track_id}), 4)
             .await?;

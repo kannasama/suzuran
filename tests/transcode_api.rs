@@ -132,16 +132,16 @@ async fn transcode_track_enqueues_job() {
 
     // Create source and target libraries
     let src_lib = store
-        .create_library("Source", "/music/src", "flac", None)
+        .create_library("Source", "/music/src", "flac")
         .await
         .unwrap();
     let tgt_lib = store
-        .create_library("Target", "/music/tgt", "aac", None)
+        .create_library("Target", "/music/tgt", "aac")
         .await
         .unwrap();
 
-    // Create an encoding profile and attach to target library
-    let ep = store
+    // Create an encoding profile (library_profiles association handled via library_profiles table)
+    let _ep = store
         .create_encoding_profile(UpsertEncodingProfile {
             name: "AAC 256k".into(),
             codec: "aac".into(),
@@ -151,10 +151,6 @@ async fn transcode_track_enqueues_job() {
             bit_depth: None,
             advanced_args: None,
         })
-        .await
-        .unwrap();
-    store
-        .set_library_encoding_profile(tgt_lib.id, Some(ep.id))
         .await
         .unwrap();
 
@@ -200,11 +196,11 @@ async fn transcode_library_enqueues_all_tracks() {
     let client = login_admin(&base).await;
 
     let src_lib = store
-        .create_library("Source", "/music/src2", "flac", None)
+        .create_library("Source", "/music/src2", "flac")
         .await
         .unwrap();
     let tgt_lib = store
-        .create_library("Target2", "/music/tgt2", "aac", None)
+        .create_library("Target2", "/music/tgt2", "aac")
         .await
         .unwrap();
 
@@ -240,11 +236,11 @@ async fn transcode_library_sync_skips_already_linked() {
     let client = login_admin(&base).await;
 
     let src_lib = store
-        .create_library("SrcSync", "/music/srcsync", "flac", None)
+        .create_library("SrcSync", "/music/srcsync", "flac")
         .await
         .unwrap();
     let tgt_lib = store
-        .create_library("TgtSync", "/music/tgtsync", "aac", None)
+        .create_library("TgtSync", "/music/tgtsync", "aac")
         .await
         .unwrap();
 
@@ -282,7 +278,7 @@ async fn transcode_library_sync_skips_already_linked() {
         .await
         .unwrap();
     store
-        .create_track_link(t1.id, derived.id, None)
+        .create_track_link(t1.id, derived.id)
         .await
         .unwrap();
 

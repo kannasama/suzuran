@@ -227,11 +227,11 @@ async fn virtual_libraries_sources() {
 
     // Create two regular libraries in the DB directly
     let lib1 = store
-        .create_library("Lib 1", "/music/lib1", "flac", None)
+        .create_library("Lib 1", "/music/lib1", "flac")
         .await
         .unwrap();
     let lib2 = store
-        .create_library("Lib 2", "/music/lib2", "mp3", None)
+        .create_library("Lib 2", "/music/lib2", "mp3")
         .await
         .unwrap();
 

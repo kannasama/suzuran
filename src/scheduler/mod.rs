@@ -12,6 +12,7 @@ use crate::{
         mb_lookup::MbLookupJobHandler,
         normalize::NormalizeJobHandler,
         organize::OrganizeJobHandler,
+        process_staged::ProcessStagedJobHandler,
         scan::ScanJobHandler,
         transcode::TranscodeJobHandler,
         virtual_sync::VirtualSyncJobHandler,
@@ -42,6 +43,7 @@ impl Scheduler {
         handlers.insert("transcode", Arc::new(TranscodeJobHandler::new(db.clone())));
         handlers.insert("art_process", Arc::new(ArtProcessJobHandler::new(db.clone())));
         handlers.insert("normalize", Arc::new(NormalizeJobHandler::new(db.clone())));
+        handlers.insert("process_staged", Arc::new(ProcessStagedJobHandler::new(db.clone())));
         handlers.insert("virtual_sync", Arc::new(VirtualSyncJobHandler::new(db.clone())));
 
         let mut semaphores: HashMap<&'static str, Arc<Semaphore>> = HashMap::new();
@@ -53,7 +55,8 @@ impl Scheduler {
         semaphores.insert("art_process",   Arc::new(Semaphore::new(DEFAULT_OTHER_CONCURRENCY)));
         semaphores.insert("organize",      Arc::new(Semaphore::new(DEFAULT_OTHER_CONCURRENCY)));
         semaphores.insert("cue_split",     Arc::new(Semaphore::new(2)));
-        semaphores.insert("normalize",      Arc::new(Semaphore::new(2)));
+        semaphores.insert("normalize",       Arc::new(Semaphore::new(2)));
+        semaphores.insert("process_staged", Arc::new(Semaphore::new(2)));
         semaphores.insert("virtual_sync",   Arc::new(Semaphore::new(1)));
 
         Self { db, handlers, semaphores }

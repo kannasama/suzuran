@@ -6,7 +6,7 @@ import { LoginPage } from './pages/LoginPage'
 import { RegisterPage } from './pages/RegisterPage'
 import { LibraryPage } from './pages/LibraryPage'
 import OrganizationPage from './pages/OrganizationPage'
-import InboxPage from './pages/InboxPage'
+import IngestPage from './pages/IngestPage'
 import SettingsPage from './pages/SettingsPage'
 import AccountPage from './pages/AccountPage'
 import TwoFactorPage from './pages/TwoFactorPage'
@@ -49,9 +49,11 @@ function AppRoutes() {
         element={user ? <OrganizationPage /> : <Navigate to="/login" replace />}
       />
       <Route
-        path="/inbox"
-        element={user ? <InboxPage /> : <Navigate to="/login" replace />}
+        path="/ingest"
+        element={user ? <IngestPage /> : <Navigate to="/login" replace />}
       />
+      {/* Legacy inbox route — redirect to /ingest */}
+      <Route path="/inbox" element={<Navigate to="/ingest" replace />} />
       <Route
         path="/settings"
         element={user ? <SettingsPage /> : <Navigate to="/login" replace />}

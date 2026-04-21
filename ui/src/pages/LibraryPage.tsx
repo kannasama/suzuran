@@ -1,8 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { TopNav } from '../components/TopNav'
 import { LibraryTree } from '../components/LibraryTree'
-import { TranscodeDialog } from '../components/TranscodeDialog'
 import { useAuth } from '../contexts/AuthContext'
+import { getLibrary, listLibraryTracks } from '../api/libraries'
+import client from '../api/client'
+import type { Track } from '../types/track'
 
 interface ColumnDef {
   key: string
@@ -37,6 +40,24 @@ function loadColumnVisibility(): Set<string> {
   return new Set(COLUMNS.map(c => c.key))
 }
 
+function formatDuration(secs?: number): string {
+  if (secs == null) return '—'
+  const m = Math.floor(secs / 60)
+  const s = Math.floor(secs % 60)
+  return `${m}:${s.toString().padStart(2, '0')}`
+}
+
+function formatBitrate(bps?: number): string {
+  if (bps == null) return '—'
+  return `${Math.round(bps / 1000)}k`
+}
+
+function getFileExtension(path: string): string {
+  const dot = path.lastIndexOf('.')
+  if (dot === -1) return '—'
+  return path.slice(dot + 1).toLowerCase()
+}
+
 export function LibraryPage() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
@@ -44,9 +65,7 @@ export function LibraryPage() {
 
   const [selectedLibraryId, setSelectedLibraryId] = useState<number | null>(null)
   const [selectedVirtualLibraryId, setSelectedVirtualLibraryId] = useState<number | null>(null)
-  const [transcodeDialog, setTranscodeDialog] = useState<
-    { mode: 'track' | 'library'; sourceId: number } | null
-  >(null)
+  const [scanQueued, setScanQueued] = useState(false)
   const [visibleColumns, setVisibleColumns] = useState<Set<string>>(loadColumnVisibility)
   const [showColumnPicker, setShowColumnPicker] = useState(false)
   const pickerRef = useRef<HTMLDivElement>(null)
@@ -72,6 +91,39 @@ export function LibraryPage() {
     })
   }
 
+  const { data: selectedLibrary } = useQuery({
+    queryKey: ['library', selectedLibraryId],
+    queryFn: () => getLibrary(selectedLibraryId!),
+    enabled: selectedLibraryId != null,
+  })
+
+  const { data: tracks = [], isLoading: tracksLoading } = useQuery({
+    queryKey: ['library-tracks', selectedLibraryId],
+    queryFn: () => listLibraryTracks(selectedLibraryId!),
+    enabled: selectedLibraryId != null,
+  })
+
+  async function handleScan() {
+    if (selectedLibraryId == null) return
+    try {
+      await client.post('/jobs', { job_type: 'scan', payload: { library_id: selectedLibraryId } })
+      setScanQueued(true)
+      setTimeout(() => setScanQueued(false), 2000)
+    } catch {
+      // ignore — job queue errors are not critical UI failures
+    }
+  }
+
+  function getToolbarLabel() {
+    if (selectedLibraryId == null && selectedVirtualLibraryId == null) {
+      return 'Select a library'
+    }
+    if (selectedVirtualLibraryId != null) {
+      return `Virtual Library #${selectedVirtualLibraryId}`
+    }
+    return selectedLibrary?.name ?? `Library #${selectedLibraryId}`
+  }
+
   return (
     <div className="flex flex-col h-screen bg-bg-base overflow-hidden">
       <TopNav />
@@ -93,21 +145,22 @@ export function LibraryPage() {
           {/* Toolbar */}
           <div className="flex items-center gap-2 px-3 py-1.5 bg-bg-surface border-b border-border flex-shrink-0">
             <span className="text-text-muted text-xs">
-              {selectedLibraryId == null && selectedVirtualLibraryId == null
-                ? 'Select a library'
-                : selectedVirtualLibraryId != null
-                  ? `Virtual Library #${selectedVirtualLibraryId}`
-                  : `Library #${selectedLibraryId}`}
+              {getToolbarLabel()}
             </span>
-            <div className="ml-auto flex gap-1">
+            <div className="ml-auto flex gap-1 items-center">
               {selectedLibraryId != null && selectedVirtualLibraryId == null && (
-                <button
-                  onClick={() => setTranscodeDialog({ mode: 'library', sourceId: selectedLibraryId })}
-                  className="text-xs text-text-muted bg-bg-panel border border-border rounded px-2 py-0.5 hover:text-text-primary hover:border-accent"
-                  title="Transcode this library to a derived library"
-                >
-                  Transcode ▾
-                </button>
+                <>
+                  {scanQueued && (
+                    <span className="text-xs text-accent mr-1">Scan queued</span>
+                  )}
+                  <button
+                    onClick={handleScan}
+                    className="text-xs text-text-muted bg-bg-panel border border-border rounded px-2 py-0.5 hover:text-text-primary hover:border-accent"
+                    title="Scan this library for new/changed files"
+                  >
+                    Scan
+                  </button>
+                </>
               )}
               <button className="text-xs text-text-muted bg-bg-panel border border-border rounded px-2 py-0.5 hover:border-border">
                 Group: None ▾
@@ -158,24 +211,67 @@ export function LibraryPage() {
             </div>
           </div>
 
-          {/* Track list area (stub — populated in a future subphase) */}
+          {/* Track list area */}
           <div className="flex-1 overflow-y-auto">
-            <div className="flex items-center justify-center h-32 text-text-muted text-xs">
-              {selectedLibraryId == null && selectedVirtualLibraryId == null
-                ? 'Select a library from the tree to view tracks.'
-                : 'Track list coming in a future subphase.'}
-            </div>
+            {selectedLibraryId == null && selectedVirtualLibraryId == null ? (
+              <div className="flex items-center justify-center h-32 text-text-muted text-xs">
+                Select a library from the tree to view tracks.
+              </div>
+            ) : tracksLoading ? (
+              <div className="flex items-center justify-center h-32 text-text-muted text-xs">
+                Loading tracks…
+              </div>
+            ) : tracks.length === 0 ? (
+              <div className="flex items-center justify-center h-32 text-text-muted text-xs">
+                No tracks in this library. Run a scan to discover files.
+              </div>
+            ) : (
+              tracks.map((track: Track) => (
+                <TrackRow key={track.id} track={track} visibleColumns={visibleColumns} />
+              ))
+            )}
           </div>
         </main>
       </div>
+    </div>
+  )
+}
 
-      {/* Transcode dialog */}
-      {transcodeDialog != null && (
-        <TranscodeDialog
-          mode={transcodeDialog.mode}
-          sourceId={transcodeDialog.sourceId}
-          onClose={() => setTranscodeDialog(null)}
-        />
+function TrackRow({ track, visibleColumns }: { track: Track; visibleColumns: Set<string> }) {
+  return (
+    <div className="flex items-center gap-0 px-2 py-0.5 border-b border-border-subtle text-xs hover:bg-bg-row-hover">
+      <span className="w-5 shrink-0 text-text-muted text-[10px]"></span>
+      {visibleColumns.has('num') && (
+        <span className="w-6 shrink-0 text-text-muted font-mono">{track.tracknumber ?? '—'}</span>
+      )}
+      {visibleColumns.has('title') && (
+        <span className="flex-[3] shrink-0 text-text-primary truncate pr-2">{track.title ?? '—'}</span>
+      )}
+      {visibleColumns.has('artist') && (
+        <span className="flex-[2] shrink-0 text-text-secondary truncate pr-2">{track.artist ?? '—'}</span>
+      )}
+      {visibleColumns.has('album') && (
+        <span className="flex-[2] shrink-0 text-text-secondary truncate pr-2">{track.album ?? '—'}</span>
+      )}
+      {visibleColumns.has('year') && (
+        <span className="w-10 shrink-0 text-text-muted">{track.date?.slice(0, 4) ?? '—'}</span>
+      )}
+      {visibleColumns.has('genre') && (
+        <span className="flex-1 shrink-0 text-text-muted truncate pr-2">{track.genre ?? '—'}</span>
+      )}
+      {visibleColumns.has('format') && (
+        <span className="w-12 shrink-0 text-text-muted font-mono uppercase text-[10px]">
+          {getFileExtension(track.relative_path)}
+        </span>
+      )}
+      {visibleColumns.has('bitrate') && (
+        <span className="w-14 shrink-0 text-text-muted font-mono">{formatBitrate(track.bitrate)}</span>
+      )}
+      {visibleColumns.has('duration') && (
+        <span className="w-10 shrink-0 text-text-muted font-mono">{formatDuration(track.duration_secs)}</span>
+      )}
+      {visibleColumns.has('actions') && (
+        <span className="w-16 shrink-0"></span>
       )}
     </div>
   )

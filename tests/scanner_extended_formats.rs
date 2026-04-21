@@ -23,12 +23,14 @@ async fn make_db() -> Arc<dyn Store> {
     Arc::new(store)
 }
 
-/// Returns a temp dir containing a single file with the given filename and real audio bytes.
+/// Returns a temp dir containing a single file in source/ with the given filename and real audio bytes.
 /// Writes real fixture bytes so lofty actually parses the file headers.
 async fn make_temp_library_with_file(filename: &str, content: &[u8]) -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::TempDir::new().unwrap();
     let root = dir.path().to_path_buf();
-    fs::write(root.join(filename), content).await.unwrap();
+    let source_dir = root.join("source");
+    fs::create_dir_all(&source_dir).await.unwrap();
+    fs::write(source_dir.join(filename), content).await.unwrap();
     (dir, root)
 }
 
@@ -37,7 +39,7 @@ async fn test_wavpack_file_ingested() {
     let db = make_db().await;
     let (dir, root) = make_temp_library_with_file("silence.wv", SILENCE_WV).await;
 
-    let lib = db.create_library("Test", root.to_str().unwrap(), "wv", None).await.unwrap();
+    let lib = db.create_library("Test", root.to_str().unwrap(), "wv").await.unwrap();
     scan_library(&db, lib.id, &root).await.unwrap();
 
     let tracks = db.list_tracks_by_library(lib.id).await.unwrap();
@@ -50,7 +52,7 @@ async fn test_ape_file_ingested() {
     let db = make_db().await;
     let (dir, root) = make_temp_library_with_file("silence.ape", SILENCE_APE).await;
 
-    let lib = db.create_library("Test", root.to_str().unwrap(), "ape", None).await.unwrap();
+    let lib = db.create_library("Test", root.to_str().unwrap(), "ape").await.unwrap();
     scan_library(&db, lib.id, &root).await.unwrap();
 
     let tracks = db.list_tracks_by_library(lib.id).await.unwrap();
@@ -63,7 +65,7 @@ async fn test_tta_file_ingested() {
     let db = make_db().await;
     let (dir, root) = make_temp_library_with_file("silence.tta", SILENCE_TTA).await;
 
-    let lib = db.create_library("Test", root.to_str().unwrap(), "tta", None).await.unwrap();
+    let lib = db.create_library("Test", root.to_str().unwrap(), "tta").await.unwrap();
     scan_library(&db, lib.id, &root).await.unwrap();
 
     let tracks = db.list_tracks_by_library(lib.id).await.unwrap();

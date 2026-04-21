@@ -47,12 +47,33 @@ async fn handle_cue_split(
         .parent()
         .ok_or_else(|| AppError::BadRequest("cue_path has no parent directory".into()))?;
 
-    // Get library's tag encoding to handle SJIS CUE sheets
-    let tag_encoding = db
+    // Fetch library once — used for tag_encoding and root_path inside the track loop
+    let library = db
         .get_library(library_id)
         .await?
-        .map(|l| l.tag_encoding)
-        .unwrap_or_else(|| "utf8".into());
+        .ok_or_else(|| AppError::NotFound(format!("library {library_id} not found")))?;
+    let tag_encoding = library.tag_encoding.clone();
+
+    // Compute the output directory: replace leading "ingest" component with "source"
+    let library_root = Path::new(&library.root_path);
+    let source_out_dir = {
+        let cue_rel_dir = cue_dir.strip_prefix(library_root).unwrap_or(cue_dir);
+        let cue_rel_str = cue_rel_dir.to_string_lossy();
+        let source_rel = if cue_rel_str == "ingest" {
+            "source".to_string()
+        } else if let Some(rest) = cue_rel_str.strip_prefix("ingest/") {
+            format!("source/{}", rest)
+        } else {
+            // CUE file not in ingest/ — keep original directory as fallback
+            cue_rel_str.to_string()
+        };
+        library_root.join(&source_rel)
+    };
+
+    // Ensure the output directory exists
+    tokio::fs::create_dir_all(&source_out_dir)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("create_dir_all source_out_dir: {e}")))?;
 
     let cue_path_owned = cue_path.to_path_buf();
     let tag_encoding_clone = tag_encoding.clone();
@@ -86,7 +107,7 @@ async fn handle_cue_split(
     for (i, track) in sheet.tracks.iter().enumerate() {
         let title = track.title.clone().unwrap_or_else(|| format!("Track {}", track.number));
         let out_filename = format!("{:02} - {}.{}", track.number, sanitize_filename(&title), ext);
-        let out_path = cue_dir.join(&out_filename);
+        let out_path = source_out_dir.join(&out_filename);
 
         // Idempotency: skip if output file already exists
         if out_path.exists() {
@@ -178,12 +199,7 @@ async fn handle_cue_split(
         .map_err(|e| AppError::Internal(anyhow::anyhow!("spawn_blocking read_tags: {e}")))?
         .unwrap_or_else(|_| (tags.clone(), tagger::AudioProperties::default()));
 
-        // Build relative path from cue_dir
-        let library = db
-            .get_library(library_id)
-            .await?
-            .ok_or_else(|| AppError::NotFound(format!("library {library_id} not found")))?;
-        let library_root = Path::new(&library.root_path);
+        // Build relative path from library root
         let relative_path = out_path
             .strip_prefix(library_root)
             .map(|p| p.to_string_lossy().to_string())
@@ -235,6 +251,8 @@ async fn handle_cue_split(
             channels: audio_props.channels,
             bit_depth: audio_props.bit_depth,
             has_embedded_art: audio_props.has_embedded_art,
+            status: "active".into(),
+            library_profile_id: None,
         };
 
         let new_track = db.upsert_track(upsert).await?;
@@ -249,6 +267,10 @@ async fn handle_cue_split(
 
         tracks_created += 1;
     }
+
+    // Remove original CUE+audio from ingest/ after all tracks are successfully split
+    let _ = tokio::fs::remove_file(cue_path).await;  // ignore error — file may already be gone
+    let _ = tokio::fs::remove_file(&audio_path).await;
 
     Ok(serde_json::json!({ "tracks_created": tracks_created }))
 }

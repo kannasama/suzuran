@@ -84,6 +84,7 @@ const SETTING_META: Record<string, { label: string; description: string; type: '
   scan_concurrency:        { label: 'Scan Concurrency',          description: 'Number of parallel file scan workers.',                                        type: 'number'   },
   transcode_concurrency:   { label: 'Transcode Concurrency',     description: 'Number of parallel transcode jobs.',                                           type: 'number'   },
   default_art_profile_id:  { label: 'Default Art Profile ID',    description: 'Art profile applied when no library-specific profile is set.',                  type: 'number'   },
+  folder_art_filename:     { label: 'Folder art filename',       description: 'Written alongside audio files in source/. Leave empty to disable. Default: folder.jpg', type: 'text' },
   allow_registration:      { label: 'Allow Registration',        description: 'Show the Register link on the login page. Disable after initial setup.',       type: 'boolean'  },
 }
 
@@ -95,6 +96,7 @@ const SETTING_ORDER = [
   'scan_concurrency',
   'transcode_concurrency',
   'default_art_profile_id',
+  'folder_art_filename',
   'allow_registration',
 ]
 

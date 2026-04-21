@@ -199,3 +199,82 @@ async fn test_get_recording_rate_limit_second_call_does_not_sleep_full_interval(
         two_calls_ms
     );
 }
+
+#[tokio::test]
+async fn test_search_recordings_returns_results() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path_regex("/recording/"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "recordings": [
+                {
+                    "id": "rec-search-1",
+                    "title": "Test Song",
+                    "score": 88,
+                    "length": 240000,
+                    "releases": [
+                        {
+                            "id": "rel-search-1",
+                            "title": "Test Album",
+                            "date": "2010"
+                        }
+                    ],
+                    "artist-credit": [
+                        {
+                            "name": "Test Artist",
+                            "artist": { "id": "art-1", "name": "Test Artist" }
+                        }
+                    ]
+                }
+            ]
+        })))
+        .mount(&server)
+        .await;
+
+    let svc = MusicBrainzService::with_base_urls(
+        server.uri(),
+        "https://api.acoustid.org".into(),
+    );
+
+    let results = svc
+        .search_recordings("Test Song", "Test Artist", "Test Album")
+        .await
+        .unwrap();
+
+    assert_eq!(results.len(), 1, "should return 1 result");
+
+    let (tags, confidence) = &results[0];
+    assert!(
+        *confidence <= 0.6,
+        "confidence should be capped at 0.6, got {confidence}"
+    );
+    assert_eq!(tags.get("title").map(String::as_str), Some("Test Song"));
+    assert_eq!(tags.get("album").map(String::as_str), Some("Test Album"));
+    assert_eq!(tags.get("artist").map(String::as_str), Some("Test Artist"));
+}
+
+#[tokio::test]
+async fn test_search_recordings_empty_response() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path_regex("/recording/"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "recordings": []
+        })))
+        .mount(&server)
+        .await;
+
+    let svc = MusicBrainzService::with_base_urls(
+        server.uri(),
+        "https://api.acoustid.org".into(),
+    );
+
+    let results = svc
+        .search_recordings("Unknown", "Nobody", "Nowhere")
+        .await
+        .unwrap();
+
+    assert!(results.is_empty(), "empty recordings should return empty vec");
+}

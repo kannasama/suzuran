@@ -1,7 +1,7 @@
 mod common;
 
 use std::sync::Arc;
-use suzuran_server::dal::{UpsertTrack, UpsertVirtualLibrary};
+use suzuran_server::dal::{UpsertTrack, UpsertVirtualLibrary, VirtualLibrarySourceInput};
 use suzuran_server::jobs::virtual_sync::VirtualSyncJobHandler;
 use suzuran_server::jobs::JobHandler;
 use tempfile::TempDir;
@@ -25,7 +25,6 @@ async fn test_virtual_sync_creates_symlinks() {
             "FLAC",
             src_dir.path().to_str().unwrap(),
             "flac",
-            None,
         )
         .await
         .unwrap();
@@ -50,7 +49,11 @@ async fn test_virtual_sync_creates_symlinks() {
         .await
         .unwrap();
     store
-        .set_virtual_library_sources(vlib.id, &[(lib.id, 1)])
+        .set_virtual_library_sources(vlib.id, vec![VirtualLibrarySourceInput {
+            library_id: lib.id,
+            library_profile_id: None,
+            priority: 1,
+        }])
         .await
         .unwrap();
 
@@ -91,11 +94,11 @@ async fn test_virtual_sync_priority_order() {
     tokio::fs::write(src2.path().join("01.flac"), b"src2").await.unwrap();
 
     let lib1 = store
-        .create_library("L1", src1.path().to_str().unwrap(), "flac", None)
+        .create_library("L1", src1.path().to_str().unwrap(), "flac")
         .await
         .unwrap();
     let lib2 = store
-        .create_library("L2", src2.path().to_str().unwrap(), "flac", None)
+        .create_library("L2", src2.path().to_str().unwrap(), "flac")
         .await
         .unwrap();
 
@@ -137,7 +140,10 @@ async fn test_virtual_sync_priority_order() {
         .unwrap();
     // lib1 = priority 1 (wins), lib2 = priority 2
     store
-        .set_virtual_library_sources(vlib.id, &[(lib1.id, 1), (lib2.id, 2)])
+        .set_virtual_library_sources(vlib.id, vec![
+            VirtualLibrarySourceInput { library_id: lib1.id, library_profile_id: None, priority: 1 },
+            VirtualLibrarySourceInput { library_id: lib2.id, library_profile_id: None, priority: 2 },
+        ])
         .await
         .unwrap();
 
@@ -167,7 +173,7 @@ async fn test_virtual_sync_is_idempotent() {
 
     tokio::fs::write(src_dir.path().join("01.flac"), b"dummy").await.unwrap();
     let lib = store
-        .create_library("L", src_dir.path().to_str().unwrap(), "flac", None)
+        .create_library("L", src_dir.path().to_str().unwrap(), "flac")
         .await
         .unwrap();
     store
@@ -188,7 +194,11 @@ async fn test_virtual_sync_is_idempotent() {
         .await
         .unwrap();
     store
-        .set_virtual_library_sources(vlib.id, &[(lib.id, 1)])
+        .set_virtual_library_sources(vlib.id, vec![VirtualLibrarySourceInput {
+            library_id: lib.id,
+            library_profile_id: None,
+            priority: 1,
+        }])
         .await
         .unwrap();
 

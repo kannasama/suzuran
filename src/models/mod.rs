@@ -64,17 +64,32 @@ pub struct Library {
     pub name: String,
     pub root_path: String,
     pub format: String,
-    pub encoding_profile_id: Option<i64>,
-    pub parent_library_id: Option<i64>,
     pub scan_enabled: bool,
     pub scan_interval_secs: i64,
-    pub auto_transcode_on_ingest: bool,
     pub auto_organize_on_ingest: bool,
-    pub normalize_on_ingest: bool,
     pub tag_encoding: String,
-    pub ingest_dir: Option<String>,
     pub organization_rule_id: Option<i64>,
     pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct LibraryProfile {
+    pub id: i64,
+    pub library_id: i64,
+    pub encoding_profile_id: i64,
+    pub derived_dir_name: String,
+    pub include_on_submit: bool,
+    pub auto_include_above_hz: Option<i64>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpsertLibraryProfile {
+    pub library_id: i64,
+    pub encoding_profile_id: i64,
+    pub derived_dir_name: String,
+    pub include_on_submit: bool,
+    pub auto_include_above_hz: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
@@ -104,6 +119,8 @@ pub struct Track {
     pub bit_depth: Option<i64>,
     pub has_embedded_art: bool,
     pub acoustid_fingerprint: Option<String>,
+    pub status: String,
+    pub library_profile_id: Option<i64>,
     pub last_scanned_at: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
 }
@@ -217,7 +234,6 @@ pub struct ArtProfile {
 pub struct TrackLink {
     pub source_track_id: i64,
     pub derived_track_id: i64,
-    pub encoding_profile_id: Option<i64>,
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
@@ -250,9 +266,11 @@ pub struct UpsertVirtualLibrary {
 
 #[derive(Debug, Clone, sqlx::FromRow, serde::Serialize, serde::Deserialize)]
 pub struct VirtualLibrarySource {
+    pub id: i64,
     pub virtual_library_id: i64,
     pub library_id: i64,
     pub priority: i64,
+    pub library_profile_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, sqlx::FromRow, serde::Serialize, serde::Deserialize)]

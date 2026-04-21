@@ -79,6 +79,44 @@ impl FreedBService {
         Ok(text)
     }
 
+    /// Search by artist + album name. Returns up to 5 matching candidates.
+    /// Uses gnudb.org's web search HTML endpoint (no formal API available).
+    pub async fn text_search(
+        &self,
+        artist: &str,
+        album: &str,
+    ) -> anyhow::Result<Vec<FreedBCandidate>> {
+        let keywords = format!("{} {}", artist, album);
+        // Derive search base from cddb URL: strip the CGI path
+        let search_base = self.base_url
+            .split("/~cddb")
+            .next()
+            .unwrap_or(&self.base_url)
+            .trim_end_matches('/');
+        let search_url = format!("{}/search/search", search_base);
+
+        let html = self.client
+            .get(&search_url)
+            .query(&[("keywords", &keywords), ("type", &"0".to_string())])
+            .send()
+            .await?
+            .error_for_status()?
+            .text()
+            .await?;
+
+        let disc_ids = parse_search_html(&html);
+        let mut candidates = Vec::new();
+        for (category, disc_id) in disc_ids.into_iter().take(5) {
+            let read_cmd = format!("cddb read {} {}", category, disc_id);
+            if let Ok(read_resp) = self.cddb_request(&read_cmd).await {
+                if read_resp.starts_with("200") {
+                    candidates.push(parse_xmcd(&read_resp));
+                }
+            }
+        }
+        Ok(candidates)
+    }
+
     /// Convert a FreedBCandidate to a tag map.
     pub fn to_tag_map(
         candidate: &FreedBCandidate,
@@ -106,6 +144,27 @@ impl Default for FreedBService {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Extract (category, disc_id) pairs from gnudb.org search result HTML.
+/// Links appear as: href="/gnudb/CATEGORY/DISCID"
+fn parse_search_html(html: &str) -> Vec<(String, String)> {
+    let mut seen = std::collections::HashSet::new();
+    let mut results = Vec::new();
+    for cap in html.split("href=\"/gnudb/") {
+        let fragment = cap;
+        if let Some(end) = fragment.find('"') {
+            let path = &fragment[..end];
+            let parts: Vec<&str> = path.splitn(2, '/').collect();
+            if parts.len() == 2 && !parts[0].is_empty() && !parts[1].is_empty() {
+                let entry = (parts[0].to_string(), parts[1].to_string());
+                if seen.insert(entry.clone()) {
+                    results.push(entry);
+                }
+            }
+        }
+    }
+    results
 }
 
 fn parse_query_first_result(text: &str) -> Option<(String, String)> {

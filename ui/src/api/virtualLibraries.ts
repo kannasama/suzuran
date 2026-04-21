@@ -27,7 +27,7 @@ export async function getSources(id: number): Promise<VirtualLibrarySource[]> {
 
 export async function setSources(
   id: number,
-  sources: Array<{ library_id: number; priority: number }>,
+  sources: Array<{ library_id: number; library_profile_id: number | null; priority: number }>,
 ): Promise<void> {
   await client.put(`/virtual-libraries/${id}/sources`, sources)
 }
