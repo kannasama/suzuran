@@ -42,6 +42,7 @@ export function LibraryPage() {
   const isAdmin = user?.role === 'admin'
 
   const [selectedLibraryId, setSelectedLibraryId] = useState<number | null>(null)
+  const [selectedVirtualLibraryId, setSelectedVirtualLibraryId] = useState<number | null>(null)
   const [transcodeDialog, setTranscodeDialog] = useState<
     { mode: 'track' | 'library'; sourceId: number } | null
   >(null)
@@ -79,7 +80,9 @@ export function LibraryPage() {
           <LibraryTree
             isAdmin={isAdmin}
             selectedLibraryId={selectedLibraryId}
-            onSelectLibrary={setSelectedLibraryId}
+            onSelectLibrary={id => { setSelectedLibraryId(id); setSelectedVirtualLibraryId(null) }}
+            selectedVirtualLibraryId={selectedVirtualLibraryId}
+            onSelectVirtualLibrary={id => { setSelectedVirtualLibraryId(id); setSelectedLibraryId(null) }}
           />
         </aside>
 
@@ -88,10 +91,14 @@ export function LibraryPage() {
           {/* Toolbar */}
           <div className="flex items-center gap-2 px-3 py-1.5 bg-bg-surface border-b border-border flex-shrink-0">
             <span className="text-text-muted text-xs">
-              {selectedLibraryId == null ? 'Select a library' : `Library #${selectedLibraryId}`}
+              {selectedLibraryId == null && selectedVirtualLibraryId == null
+                ? 'Select a library'
+                : selectedVirtualLibraryId != null
+                  ? `Virtual Library #${selectedVirtualLibraryId}`
+                  : `Library #${selectedLibraryId}`}
             </span>
             <div className="ml-auto flex gap-1">
-              {selectedLibraryId != null && (
+              {selectedLibraryId != null && selectedVirtualLibraryId == null && (
                 <button
                   onClick={() => setTranscodeDialog({ mode: 'library', sourceId: selectedLibraryId })}
                   className="text-xs text-text-muted bg-bg-panel border border-border rounded px-2 py-0.5 hover:text-text-primary hover:border-accent"
@@ -152,7 +159,7 @@ export function LibraryPage() {
           {/* Track list area (stub — populated in a future subphase) */}
           <div className="flex-1 overflow-y-auto">
             <div className="flex items-center justify-center h-32 text-text-muted text-xs">
-              {selectedLibraryId == null
+              {selectedLibraryId == null && selectedVirtualLibraryId == null
                 ? 'Select a library from the tree to view tracks.'
                 : 'Track list coming in a future subphase.'}
             </div>

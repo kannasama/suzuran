@@ -1,20 +1,35 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { listLibraries, deleteLibrary, type Library } from '../api/libraries'
+import { listVirtualLibraries } from '../api/virtualLibraries'
+import type { VirtualLibrary } from '../types/virtualLibrary'
 import { LibraryFormModal } from './LibraryFormModal'
 
 interface Props {
   isAdmin: boolean
   selectedLibraryId: number | null
   onSelectLibrary: (id: number) => void
+  selectedVirtualLibraryId: number | null
+  onSelectVirtualLibrary: (id: number) => void
 }
 
-export function LibraryTree({ isAdmin, selectedLibraryId, onSelectLibrary }: Props) {
+export function LibraryTree({
+  isAdmin,
+  selectedLibraryId,
+  onSelectLibrary,
+  selectedVirtualLibraryId,
+  onSelectVirtualLibrary,
+}: Props) {
   const queryClient = useQueryClient()
 
-  const { data: libraries = [], isLoading } = useQuery({
+  const { data: libraries = [], isLoading: libsLoading } = useQuery({
     queryKey: ['libraries'],
     queryFn: listLibraries,
+  })
+
+  const { data: virtualLibraries = [] } = useQuery({
+    queryKey: ['virtual-libraries'],
+    queryFn: listVirtualLibraries,
   })
 
   const [showCreateModal, setShowCreateModal] = useState(false)
@@ -32,23 +47,20 @@ export function LibraryTree({ isAdmin, selectedLibraryId, onSelectLibrary }: Pro
     deleteMutation.mutate(lib.id)
   }
 
-  if (isLoading) {
+  if (libsLoading) {
     return <div className="p-3 text-text-muted text-xs">Loading…</div>
   }
 
-  // Split into roots and children
   const roots = libraries.filter(l => l.parent_library_id === null)
   const childrenOf = (parentId: number) =>
     libraries.filter(l => l.parent_library_id === parentId)
 
-  const isEmpty = libraries.length === 0
-
   return (
     <>
       <div className="flex flex-col overflow-y-auto text-xs">
-        {/* Header row */}
+        {/* Libraries header */}
         <div className="px-2 py-1 mb-0 border-b border-border-subtle flex items-center gap-1">
-          <span className="text-text-muted uppercase text-[9px] tracking-wider flex-1">Libraries</span>
+          <span className="text-text-muted uppercase text-[11px] tracking-wider flex-1">Libraries</span>
           {isAdmin && (
             <button
               onClick={() => setShowCreateModal(true)}
@@ -61,7 +73,7 @@ export function LibraryTree({ isAdmin, selectedLibraryId, onSelectLibrary }: Pro
         </div>
 
         {/* Empty state */}
-        {isEmpty && (
+        {libraries.length === 0 && (
           <div className="px-2 py-3 text-text-muted text-xs">
             No libraries.
             {isAdmin && (
@@ -103,6 +115,23 @@ export function LibraryTree({ isAdmin, selectedLibraryId, onSelectLibrary }: Pro
             ))}
           </div>
         ))}
+
+        {/* Virtual Libraries section */}
+        {virtualLibraries.length > 0 && (
+          <>
+            <div className="px-2 py-1 mt-1 border-b border-border-subtle border-t border-t-border-subtle flex items-center">
+              <span className="text-text-muted uppercase text-[11px] tracking-wider flex-1">Virtual</span>
+            </div>
+            {virtualLibraries.map(vl => (
+              <VirtualLibraryRow
+                key={vl.id}
+                virtualLibrary={vl}
+                isSelected={selectedVirtualLibraryId === vl.id}
+                onSelect={() => onSelectVirtualLibrary(vl.id)}
+              />
+            ))}
+          </>
+        )}
       </div>
 
       {/* Modals */}
@@ -167,6 +196,30 @@ function LibraryRow({ library, isSelected, isAdmin, onSelect, onEdit, onDelete, 
           </button>
         </span>
       )}
+    </div>
+  )
+}
+
+interface VirtualRowProps {
+  virtualLibrary: VirtualLibrary
+  isSelected: boolean
+  onSelect: () => void
+}
+
+function VirtualLibraryRow({ virtualLibrary, isSelected, onSelect }: VirtualRowProps) {
+  return (
+    <div
+      className={`flex items-center gap-1 pl-2 pr-1 py-0.5 cursor-pointer border-l-2 ${
+        isSelected
+          ? 'bg-accent-muted border-accent text-accent'
+          : 'text-text-secondary hover:bg-bg-hover border-transparent'
+      }`}
+      onClick={onSelect}
+    >
+      <span className="flex-1 truncate">{virtualLibrary.name}</span>
+      <span className="text-text-muted uppercase text-[9px] tracking-wider shrink-0">
+        {virtualLibrary.link_type === 'symlink' ? 'sym' : 'hard'}
+      </span>
     </div>
   )
 }
