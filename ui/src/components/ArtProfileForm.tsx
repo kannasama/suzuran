@@ -43,7 +43,7 @@ export function ArtProfileForm({ initial, onSave, onCancel, isPending }: Props) 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-3">
       <label className="flex flex-col gap-1">
-        <span className="text-text-muted text-[10px] uppercase tracking-wider">Name</span>
+        <span className="text-text-muted text-xs uppercase tracking-wider">Name</span>
         <input
           type="text" value={name} onChange={e => setName(e.target.value)} autoFocus required
           className="bg-bg-base border border-border text-text-primary text-xs px-2 py-1.5 rounded focus:outline-none focus:border-accent"
@@ -52,7 +52,7 @@ export function ArtProfileForm({ initial, onSave, onCancel, isPending }: Props) 
 
       <div className="flex gap-3">
         <label className="flex flex-col gap-1 flex-1">
-          <span className="text-text-muted text-[10px] uppercase tracking-wider">Format</span>
+          <span className="text-text-muted text-xs uppercase tracking-wider">Format</span>
           <select
             value={format}
             onChange={e => setFormat(e.target.value as 'jpeg' | 'png')}
@@ -63,7 +63,7 @@ export function ArtProfileForm({ initial, onSave, onCancel, isPending }: Props) 
           </select>
         </label>
         <label className="flex flex-col gap-1 flex-1">
-          <span className="text-text-muted text-[10px] uppercase tracking-wider">Quality (1–100)</span>
+          <span className="text-text-muted text-xs uppercase tracking-wider">Quality (1–100)</span>
           <input
             type="number" value={quality} onChange={e => setQuality(e.target.value)}
             min={1} max={100} required
@@ -74,7 +74,7 @@ export function ArtProfileForm({ initial, onSave, onCancel, isPending }: Props) 
 
       <div className="flex gap-3">
         <label className="flex flex-col gap-1 flex-1">
-          <span className="text-text-muted text-[10px] uppercase tracking-wider">Max Width (px)</span>
+          <span className="text-text-muted text-xs uppercase tracking-wider">Max Width (px)</span>
           <input
             type="number" value={maxWidth} onChange={e => setMaxWidth(e.target.value)}
             min={1} required
@@ -82,7 +82,7 @@ export function ArtProfileForm({ initial, onSave, onCancel, isPending }: Props) 
           />
         </label>
         <label className="flex flex-col gap-1 flex-1">
-          <span className="text-text-muted text-[10px] uppercase tracking-wider">Max Height (px)</span>
+          <span className="text-text-muted text-xs uppercase tracking-wider">Max Height (px)</span>
           <input
             type="number" value={maxHeight} onChange={e => setMaxHeight(e.target.value)}
             min={1} required
@@ -92,7 +92,7 @@ export function ArtProfileForm({ initial, onSave, onCancel, isPending }: Props) 
       </div>
 
       <label className="flex flex-col gap-1">
-        <span className="text-text-muted text-[10px] uppercase tracking-wider">Max Size (bytes, optional)</span>
+        <span className="text-text-muted text-xs uppercase tracking-wider">Max Size (bytes, optional)</span>
         <input
           type="number" value={maxSizeBytes} onChange={e => setMaxSizeBytes(e.target.value)}
           placeholder="e.g. 524288"

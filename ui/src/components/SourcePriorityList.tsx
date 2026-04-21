@@ -52,7 +52,7 @@ export function SourcePriorityList({ sources, allLibraries, onChange }: Props) {
   return (
     <div className="flex flex-col gap-1">
       {sources.length === 0 ? (
-        <p className="text-text-muted text-[10px] italic">No source libraries — add one below.</p>
+        <p className="text-text-muted text-xs italic">No source libraries — add one below.</p>
       ) : (
         <div className="border border-border rounded overflow-hidden">
           {sources.map((src, i) => (
@@ -69,7 +69,7 @@ export function SourcePriorityList({ sources, allLibraries, onChange }: Props) {
                   type="button"
                   onClick={() => moveUp(i)}
                   disabled={i === 0}
-                  className="text-text-muted hover:text-text-primary disabled:opacity-30 text-[10px] px-0.5"
+                  className="text-text-muted hover:text-text-primary disabled:opacity-30 text-xs px-0.5"
                   title="Move up"
                 >
                   ▲
@@ -78,7 +78,7 @@ export function SourcePriorityList({ sources, allLibraries, onChange }: Props) {
                   type="button"
                   onClick={() => moveDown(i)}
                   disabled={i === sources.length - 1}
-                  className="text-text-muted hover:text-text-primary disabled:opacity-30 text-[10px] px-0.5"
+                  className="text-text-muted hover:text-text-primary disabled:opacity-30 text-xs px-0.5"
                   title="Move down"
                 >
                   ▼
@@ -86,7 +86,7 @@ export function SourcePriorityList({ sources, allLibraries, onChange }: Props) {
                 <button
                   type="button"
                   onClick={() => remove(i)}
-                  className="text-text-muted hover:text-destructive text-[10px] px-0.5"
+                  className="text-text-muted hover:text-destructive text-xs px-0.5"
                   title="Remove"
                 >
                   ✕
@@ -104,7 +104,7 @@ export function SourcePriorityList({ sources, allLibraries, onChange }: Props) {
             const id = Number(e.target.value)
             if (id) add(id)
           }}
-          className="mt-1 bg-bg-base border border-border text-text-muted text-[10px] px-2 py-1 rounded focus:outline-none focus:border-accent"
+          className="mt-1 bg-bg-base border border-border text-text-muted text-xs px-2 py-1 rounded focus:outline-none focus:border-accent"
         >
           <option value="" disabled>+ Add source library…</option>
           {available.map(lib => (

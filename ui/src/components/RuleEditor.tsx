@@ -52,7 +52,7 @@ export function RuleEditor({ existing, onClose }: Props) {
         {/* Form */}
         <form onSubmit={e => { e.preventDefault(); setError(null); mutation.mutate() }} className="flex flex-col gap-3 px-4 py-4">
           <label className="flex flex-col gap-1">
-            <span className="text-text-muted text-[10px] uppercase tracking-wider">Name</span>
+            <span className="text-text-muted text-xs uppercase tracking-wider">Name</span>
             <input
               type="text" value={name} onChange={e => setName(e.target.value)} autoFocus
               className="bg-bg-base border border-border text-text-primary text-xs px-2 py-1.5 rounded focus:outline-none focus:border-accent"
@@ -61,7 +61,7 @@ export function RuleEditor({ existing, onClose }: Props) {
 
           {!existing && (
             <label className="flex flex-col gap-1">
-              <span className="text-text-muted text-[10px] uppercase tracking-wider">Library</span>
+              <span className="text-text-muted text-xs uppercase tracking-wider">Library</span>
               <select
                 value={libraryId ?? ''}
                 onChange={e => setLibraryId(e.target.value ? Number(e.target.value) : null)}
@@ -74,18 +74,18 @@ export function RuleEditor({ existing, onClose }: Props) {
           )}
 
           <label className="flex flex-col gap-1">
-            <span className="text-text-muted text-[10px] uppercase tracking-wider">Priority</span>
+            <span className="text-text-muted text-xs uppercase tracking-wider">Priority</span>
             <div className="flex items-center gap-2">
               <input
                 type="number" value={priority} onChange={e => setPriority(Number(e.target.value))}
                 className="w-20 bg-bg-base border border-border text-text-primary text-xs px-2 py-1.5 rounded focus:outline-none focus:border-accent"
               />
-              <span className="text-text-muted text-[10px]">Lower = higher priority</span>
+              <span className="text-text-muted text-xs">Lower = higher priority</span>
             </div>
           </label>
 
           <div className="flex flex-col gap-1">
-            <span className="text-text-muted text-[10px] uppercase tracking-wider">Path Template</span>
+            <span className="text-text-muted text-xs uppercase tracking-wider">Path Template</span>
             <input
               type="text" value={template} onChange={e => setTemplate(e.target.value)}
               placeholder="{albumartist}/{date} - {album}/{tracknumber:02} - {title}"

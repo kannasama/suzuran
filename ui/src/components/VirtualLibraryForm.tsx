@@ -49,7 +49,7 @@ export function VirtualLibraryForm({ initial, onSave, onCancel, isPending }: Pro
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-3">
       <label className="flex flex-col gap-1">
-        <span className="text-text-muted text-[10px] uppercase tracking-wider">Name</span>
+        <span className="text-text-muted text-xs uppercase tracking-wider">Name</span>
         <input
           type="text"
           value={name}
@@ -61,7 +61,7 @@ export function VirtualLibraryForm({ initial, onSave, onCancel, isPending }: Pro
       </label>
 
       <label className="flex flex-col gap-1">
-        <span className="text-text-muted text-[10px] uppercase tracking-wider">Root Path</span>
+        <span className="text-text-muted text-xs uppercase tracking-wider">Root Path</span>
         <input
           type="text"
           value={rootPath}
@@ -73,7 +73,7 @@ export function VirtualLibraryForm({ initial, onSave, onCancel, isPending }: Pro
       </label>
 
       <label className="flex flex-col gap-1">
-        <span className="text-text-muted text-[10px] uppercase tracking-wider">Link Type</span>
+        <span className="text-text-muted text-xs uppercase tracking-wider">Link Type</span>
         <select
           value={linkType}
           onChange={e => setLinkType(e.target.value as 'symlink' | 'hardlink')}
@@ -85,8 +85,8 @@ export function VirtualLibraryForm({ initial, onSave, onCancel, isPending }: Pro
       </label>
 
       <div className="flex flex-col gap-1">
-        <span className="text-text-muted text-[10px] uppercase tracking-wider">Source Libraries</span>
-        <p className="text-text-muted text-[10px]">Priority 1 wins when the same track appears in multiple sources.</p>
+        <span className="text-text-muted text-xs uppercase tracking-wider">Source Libraries</span>
+        <p className="text-text-muted text-xs">Priority 1 wins when the same track appears in multiple sources.</p>
         <SourcePriorityList
           sources={sources}
           allLibraries={allLibraries}

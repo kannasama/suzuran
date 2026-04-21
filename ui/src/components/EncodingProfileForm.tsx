@@ -43,7 +43,7 @@ export function EncodingProfileForm({ initial, onSave, onCancel, isPending }: Pr
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-3">
       <label className="flex flex-col gap-1">
-        <span className="text-text-muted text-[10px] uppercase tracking-wider">Name</span>
+        <span className="text-text-muted text-xs uppercase tracking-wider">Name</span>
         <input
           type="text" value={name} onChange={e => setName(e.target.value)} autoFocus required
           className="bg-bg-base border border-border text-text-primary text-xs px-2 py-1.5 rounded focus:outline-none focus:border-accent"
@@ -51,7 +51,7 @@ export function EncodingProfileForm({ initial, onSave, onCancel, isPending }: Pr
       </label>
 
       <label className="flex flex-col gap-1">
-        <span className="text-text-muted text-[10px] uppercase tracking-wider">Codec</span>
+        <span className="text-text-muted text-xs uppercase tracking-wider">Codec</span>
         <select
           value={codec}
           onChange={e => setCodec(e.target.value)}
@@ -65,7 +65,7 @@ export function EncodingProfileForm({ initial, onSave, onCancel, isPending }: Pr
 
       {!isLossless && (
         <label className="flex flex-col gap-1">
-          <span className="text-text-muted text-[10px] uppercase tracking-wider">Bitrate</span>
+          <span className="text-text-muted text-xs uppercase tracking-wider">Bitrate</span>
           <input
             type="text" value={bitrate} onChange={e => setBitrate(e.target.value)}
             placeholder="e.g. 320k, 256k, 192k"
@@ -76,7 +76,7 @@ export function EncodingProfileForm({ initial, onSave, onCancel, isPending }: Pr
 
       <div className="flex gap-3">
         <label className="flex flex-col gap-1 flex-1">
-          <span className="text-text-muted text-[10px] uppercase tracking-wider">Sample Rate</span>
+          <span className="text-text-muted text-xs uppercase tracking-wider">Sample Rate</span>
           <input
             type="number" value={sampleRate} onChange={e => setSampleRate(e.target.value)}
             placeholder="e.g. 44100"
@@ -84,7 +84,7 @@ export function EncodingProfileForm({ initial, onSave, onCancel, isPending }: Pr
           />
         </label>
         <label className="flex flex-col gap-1 flex-1">
-          <span className="text-text-muted text-[10px] uppercase tracking-wider">Channels</span>
+          <span className="text-text-muted text-xs uppercase tracking-wider">Channels</span>
           <input
             type="number" value={channels} onChange={e => setChannels(e.target.value)}
             placeholder="e.g. 2"
@@ -97,13 +97,13 @@ export function EncodingProfileForm({ initial, onSave, onCancel, isPending }: Pr
         <button
           type="button"
           onClick={() => setShowAdvanced(v => !v)}
-          className="text-text-muted text-[10px] uppercase tracking-wider hover:text-text-secondary"
+          className="text-text-muted text-xs uppercase tracking-wider hover:text-text-secondary"
         >
           {showAdvanced ? '▾' : '▸'} Advanced
         </button>
         {showAdvanced && (
           <label className="flex flex-col gap-1 mt-2">
-            <span className="text-text-muted text-[10px] uppercase tracking-wider">Additional ffmpeg Args</span>
+            <span className="text-text-muted text-xs uppercase tracking-wider">Additional ffmpeg Args</span>
             <textarea
               value={advancedArgs} onChange={e => setAdvancedArgs(e.target.value)}
               rows={2}

@@ -86,7 +86,7 @@ export function TranscodeDialog({ mode, sourceId, onClose }: Props) {
 
           {!isLoading && targetLibraries.length > 0 && (
             <label className="flex flex-col gap-1">
-              <span className="text-text-muted text-[10px] uppercase tracking-wider">
+              <span className="text-text-muted text-xs uppercase tracking-wider">
                 Target Library
               </span>
               <select
@@ -102,7 +102,7 @@ export function TranscodeDialog({ mode, sourceId, onClose }: Props) {
                 ))}
               </select>
               {selectedLib && (
-                <span className="text-text-muted text-[10px] font-mono truncate">
+                <span className="text-text-muted text-xs font-mono truncate">
                   {selectedLib.root_path}
                 </span>
               )}

@@ -62,7 +62,7 @@ export function LibraryTree({ isAdmin, selectedLibraryId, onSelectLibrary }: Pro
 
         {/* Empty state */}
         {isEmpty && (
-          <div className="px-2 py-3 text-text-muted text-[10px]">
+          <div className="px-2 py-3 text-text-muted text-xs">
             No libraries.
             {isAdmin && (
               <>

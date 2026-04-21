@@ -50,7 +50,7 @@ export function TopNav() {
   )
 
   return (
-    <header className="flex items-center gap-0 bg-bg-base border-b border-border px-4 flex-shrink-0 h-9">
+    <header className="flex items-center gap-0 bg-bg-base border-b border-border px-4 flex-shrink-0 h-10">
       <span className="text-accent text-sm font-semibold mr-4 tracking-tight">
         suzuran
       </span>
@@ -102,7 +102,7 @@ export function TopNav() {
               <div className="absolute right-0 top-full mt-1 w-44 bg-bg-surface border border-border rounded shadow-lg z-50 py-1">
                 <div className="px-3 py-1.5 border-b border-border">
                   <p className="text-xs font-medium text-text-primary truncate">{user.username}</p>
-                  <p className="text-[10px] text-text-muted capitalize">{user.role}</p>
+                  <p className="text-xs text-text-muted capitalize">{user.role}</p>
                 </div>
                 <NavLink
                   to="/settings"

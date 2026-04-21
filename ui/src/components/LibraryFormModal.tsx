@@ -122,7 +122,7 @@ export function LibraryFormModal({ library, libraries, onClose }: Props) {
         <form onSubmit={handleSubmit} className="flex flex-col gap-3 px-4 py-4">
           {/* Name */}
           <label className="flex flex-col gap-1">
-            <span className="text-text-muted text-[10px] uppercase tracking-wider">Name</span>
+            <span className="text-text-muted text-xs uppercase tracking-wider">Name</span>
             <input
               type="text"
               value={name}
@@ -138,7 +138,7 @@ export function LibraryFormModal({ library, libraries, onClose }: Props) {
             <>
               {/* Root Path */}
               <label className="flex flex-col gap-1">
-                <span className="text-text-muted text-[10px] uppercase tracking-wider">Root Path</span>
+                <span className="text-text-muted text-xs uppercase tracking-wider">Root Path</span>
                 <input
                   type="text"
                   value={rootPath}
@@ -150,7 +150,7 @@ export function LibraryFormModal({ library, libraries, onClose }: Props) {
 
               {/* Format */}
               <label className="flex flex-col gap-1">
-                <span className="text-text-muted text-[10px] uppercase tracking-wider">Format</span>
+                <span className="text-text-muted text-xs uppercase tracking-wider">Format</span>
                 <select
                   value={format}
                   onChange={e => setFormat(e.target.value)}
@@ -164,7 +164,7 @@ export function LibraryFormModal({ library, libraries, onClose }: Props) {
 
               {/* Parent Library */}
               <label className="flex flex-col gap-1">
-                <span className="text-text-muted text-[10px] uppercase tracking-wider">Parent Library</span>
+                <span className="text-text-muted text-xs uppercase tracking-wider">Parent Library</span>
                 <select
                   value={parentId ?? ''}
                   onChange={e => setParentId(e.target.value === '' ? null : Number(e.target.value))}

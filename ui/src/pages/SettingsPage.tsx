@@ -134,7 +134,7 @@ function EncodingProfilesSection() {
 
       {editing != null && (
         <div className="mb-5 bg-bg-panel border border-border rounded p-4 max-w-lg">
-          <p className="text-text-muted text-[10px] uppercase tracking-wider mb-3">
+          <p className="text-text-muted text-xs uppercase tracking-wider mb-3">
             {editing === 'new' ? 'New Encoding Profile' : `Edit: ${editing.name}`}
           </p>
           <EncodingProfileForm
@@ -159,7 +159,7 @@ function EncodingProfilesSection() {
       ) : profiles.length === 0 && editing == null ? (
         <div className="flex flex-col items-center justify-center py-16 gap-2">
           <p className="text-text-muted text-xs">No encoding profiles defined.</p>
-          <p className="text-text-muted text-[10px]">Profiles configure the output codec and quality for transcoding.</p>
+          <p className="text-text-muted text-xs">Profiles configure the output codec and quality for transcoding.</p>
         </div>
       ) : profiles.length > 0 ? (
         <table className="w-full text-xs border-collapse">
@@ -263,7 +263,7 @@ function ArtProfilesSection() {
 
       {editing != null && (
         <div className="mb-5 bg-bg-panel border border-border rounded p-4 max-w-lg">
-          <p className="text-text-muted text-[10px] uppercase tracking-wider mb-3">
+          <p className="text-text-muted text-xs uppercase tracking-wider mb-3">
             {editing === 'new' ? 'New Art Profile' : `Edit: ${editing.name}`}
           </p>
           <ArtProfileForm
@@ -288,7 +288,7 @@ function ArtProfilesSection() {
       ) : profiles.length === 0 && editing == null ? (
         <div className="flex flex-col items-center justify-center py-16 gap-2">
           <p className="text-text-muted text-xs">No art profiles defined.</p>
-          <p className="text-text-muted text-[10px]">Profiles configure cover art resizing and recompression.</p>
+          <p className="text-text-muted text-xs">Profiles configure cover art resizing and recompression.</p>
         </div>
       ) : profiles.length > 0 ? (
         <table className="w-full text-xs border-collapse">
@@ -409,7 +409,7 @@ function VirtualLibrariesSection() {
 
       {editing != null && (
         <div className="mb-5 bg-bg-panel border border-border rounded p-4 max-w-lg">
-          <p className="text-text-muted text-[10px] uppercase tracking-wider mb-3">
+          <p className="text-text-muted text-xs uppercase tracking-wider mb-3">
             {editing === 'new' ? 'New Virtual Library' : `Edit: ${editing.name}`}
           </p>
           <VirtualLibraryForm
@@ -426,7 +426,7 @@ function VirtualLibrariesSection() {
       ) : vlibs.length === 0 && editing == null ? (
         <div className="flex flex-col items-center justify-center py-16 gap-2">
           <p className="text-text-muted text-xs">No virtual libraries defined.</p>
-          <p className="text-text-muted text-[10px]">Virtual libraries aggregate tracks from multiple source libraries via symlinks or hardlinks.</p>
+          <p className="text-text-muted text-xs">Virtual libraries aggregate tracks from multiple source libraries via symlinks or hardlinks.</p>
         </div>
       ) : vlibs.length > 0 ? (
         <table className="w-full text-xs border-collapse">
@@ -585,7 +585,7 @@ function ThemesSection() {
 
       {editing != null && (
         <div className="mb-5 bg-bg-panel border border-border rounded p-4 max-w-lg">
-          <p className="text-text-muted text-[10px] uppercase tracking-wider mb-3">
+          <p className="text-text-muted text-xs uppercase tracking-wider mb-3">
             {editing === 'new' ? 'New Theme' : `Edit: ${editing.name}`}
           </p>
           <div className="space-y-3">
@@ -595,7 +595,7 @@ function ThemesSection() {
                 type="text"
                 value={editingTheme.name}
                 onChange={e => setEditingTheme(t => ({ ...t, name: e.target.value }))}
-                className="w-full text-sm bg-bg-input border border-border rounded px-2 py-1"
+                className="w-full text-sm bg-bg-panel text-text-primary border border-border rounded px-2 py-1"
                 placeholder="My Theme"
               />
             </div>
@@ -605,7 +605,7 @@ function ThemesSection() {
                 type="text"
                 value={editingTheme.accent_color ?? ''}
                 onChange={e => setEditingTheme(t => ({ ...t, accent_color: e.target.value || null }))}
-                className="w-full text-sm bg-bg-input border border-border rounded px-2 py-1"
+                className="w-full text-sm bg-bg-panel text-text-primary border border-border rounded px-2 py-1"
                 placeholder="#6366f1"
               />
             </div>
@@ -637,7 +637,7 @@ function ThemesSection() {
       ) : themes.length === 0 && editing == null ? (
         <div className="flex flex-col items-center justify-center py-16 gap-2">
           <p className="text-text-muted text-xs">No custom themes defined.</p>
-          <p className="text-text-muted text-[10px]">Themes can set an accent color and a background image.</p>
+          <p className="text-text-muted text-xs">Themes can set an accent color and a background image.</p>
         </div>
       ) : themes.length > 0 ? (
         <table className="w-full text-xs border-collapse">

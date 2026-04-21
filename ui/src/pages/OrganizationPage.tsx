@@ -33,7 +33,7 @@ export default function OrganizationPage() {
         ) : rules.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 gap-2">
             <p className="text-text-muted text-xs">No organization rules defined.</p>
-            <p className="text-text-muted text-[10px]">Rules determine how files are named and organized on disk.</p>
+            <p className="text-text-muted text-xs">Rules determine how files are named and organized on disk.</p>
           </div>
         ) : (
           <table className="w-full text-xs border-collapse">
