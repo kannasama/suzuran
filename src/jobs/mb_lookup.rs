@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::{
     dal::{Store, UpsertTagSuggestion},
     error::AppError,
-    services::musicbrainz::MusicBrainzService,
+    services::musicbrainz::{MbRelease, MusicBrainzService},
 };
 
 pub struct MbLookupJobHandler {
@@ -17,6 +17,33 @@ impl MbLookupJobHandler {
 }
 
 const ACOUSTID_THRESHOLD: f32 = 0.8;
+
+/// One alternative release entry stored alongside the primary suggestion.
+#[derive(serde::Serialize)]
+struct AlternativeEntry<'a> {
+    suggested_tags: std::collections::HashMap<String, String>,
+    mb_release_id: &'a str,
+    cover_art_url: String,
+}
+
+/// Score and sort releases, returning (best_release, alternatives).
+/// `existing_tags` is the track's existing tag JSON (used as seed for scoring).
+fn pick_best_release<'a>(
+    releases: &'a [MbRelease],
+    existing_tags: Option<&serde_json::Map<String, serde_json::Value>>,
+) -> Option<(&'a MbRelease, Vec<&'a MbRelease>)> {
+    if releases.is_empty() {
+        return None;
+    }
+    let mut scored: Vec<(i32, &MbRelease)> = releases
+        .iter()
+        .map(|r| (MusicBrainzService::score_release(r, existing_tags), r))
+        .collect();
+    scored.sort_by(|a, b| b.0.cmp(&a.0));
+    let best = scored[0].1;
+    let rest: Vec<&MbRelease> = scored[1..].iter().map(|s| s.1).collect();
+    Some((best, rest))
+}
 
 #[async_trait::async_trait]
 impl super::JobHandler for MbLookupJobHandler {
@@ -79,6 +106,9 @@ impl super::JobHandler for MbLookupJobHandler {
         let acoustid_had_results = !results.is_empty();
         let mut suggestions_created: usize = 0;
 
+        // Existing tag map for scoring seed (may be null/empty)
+        let existing_tags = track.tags.as_object();
+
         for result in results.iter().filter(|r| r.score >= ACOUSTID_THRESHOLD) {
             let Some(recordings) = &result.recordings else {
                 continue;
@@ -92,24 +122,44 @@ impl super::JobHandler for MbLookupJobHandler {
                     }
                 };
 
-                for release in rec.releases.as_deref().unwrap_or(&[]) {
-                    let tag_map = MusicBrainzService::to_tag_map(&rec, release);
-                    let cover_art_url = Some(MusicBrainzService::caa_url(&release.id));
+                let releases = rec.releases.as_deref().unwrap_or(&[]);
+                let Some((best, rest)) = pick_best_release(releases, existing_tags) else {
+                    continue;
+                };
 
-                    db.create_tag_suggestion(UpsertTagSuggestion {
-                        track_id,
-                        source: "acoustid".into(),
-                        suggested_tags: serde_json::to_value(&tag_map)
-                            .map_err(|e| AppError::Internal(anyhow::anyhow!("{e}")))?,
-                        confidence: result.score,
-                        mb_recording_id: Some(rec.id.clone()),
-                        mb_release_id: Some(release.id.clone()),
-                        cover_art_url,
+                let best_tags = MusicBrainzService::to_tag_map(&rec, best);
+                let cover_art_url = MusicBrainzService::caa_url(&best.id);
+
+                // Build alternatives JSON array
+                let alternatives: Vec<AlternativeEntry> = rest
+                    .iter()
+                    .map(|r| AlternativeEntry {
+                        suggested_tags: MusicBrainzService::to_tag_map(&rec, r),
+                        mb_release_id: &r.id,
+                        cover_art_url: MusicBrainzService::caa_url(&r.id),
                     })
-                    .await?;
+                    .collect();
+                let alternatives_json = if alternatives.is_empty() {
+                    None
+                } else {
+                    serde_json::to_value(&alternatives)
+                        .ok()
+                };
 
-                    suggestions_created += 1;
-                }
+                db.create_tag_suggestion(UpsertTagSuggestion {
+                    track_id,
+                    source: "acoustid".into(),
+                    suggested_tags: serde_json::to_value(&best_tags)
+                        .map_err(|e| AppError::Internal(anyhow::anyhow!("{e}")))?,
+                    confidence: result.score,
+                    mb_recording_id: Some(rec.id.clone()),
+                    mb_release_id: Some(best.id.clone()),
+                    cover_art_url: Some(cover_art_url),
+                    alternatives: alternatives_json,
+                })
+                .await?;
+
+                suggestions_created += 1;
             }
         }
 
@@ -148,6 +198,7 @@ impl super::JobHandler for MbLookupJobHandler {
                     mb_recording_id: tag_map.get("musicbrainz_trackid").cloned(),
                     mb_release_id: tag_map.get("musicbrainz_releaseid").cloned(),
                     cover_art_url: None,
+                    alternatives: None,
                 })
                 .await?;
                 suggestions_created += 1;

@@ -52,6 +52,7 @@ async fn test_create_and_list_pending() {
         mb_recording_id: Some("rec-uuid".into()),
         mb_release_id: Some("rel-uuid".into()),
         cover_art_url: None,
+        alternatives: None,
     };
     let s = store.create_tag_suggestion(dto).await.unwrap();
     assert_eq!(s.status, "pending");
@@ -81,6 +82,7 @@ async fn test_filter_by_track_id() {
         mb_recording_id: None,
         mb_release_id: None,
         cover_art_url: None,
+        alternatives: None,
     }).await.unwrap();
 
     let filtered = store.list_pending_tag_suggestions(Some(track_id)).await.unwrap();
@@ -102,6 +104,7 @@ async fn test_get_tag_suggestion() {
         mb_recording_id: None,
         mb_release_id: None,
         cover_art_url: Some("https://example.com/art.jpg".into()),
+        alternatives: None,
     }).await.unwrap();
 
     let fetched = store.get_tag_suggestion(s.id).await.unwrap()

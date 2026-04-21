@@ -124,6 +124,7 @@ async fn create(
         mb_recording_id: body.musicbrainz_recording_id,
         mb_release_id: body.musicbrainz_release_id,
         cover_art_url: body.cover_art_url,
+        alternatives: None,
     };
     let suggestion = state.db.create_tag_suggestion(dto).await?;
     Ok((StatusCode::CREATED, Json(suggestion)))

@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { TopNav } from '../components/TopNav'
 import { LibraryTree } from '../components/LibraryTree'
 import { TrackEditPanel } from '../components/TrackEditPanel'
+import { AlternativesPanel } from '../components/AlternativesPanel'
 import { IngestSearchDialog } from '../components/IngestSearchDialog'
 import { useAuth } from '../contexts/AuthContext'
 import { getLibrary, listLibraryTracks } from '../api/libraries'
@@ -333,6 +334,7 @@ function TrackRow({
   onEditTagsClose: () => void
 }) {
   const pct = suggestion ? Math.round(suggestion.confidence * 100) : null
+  const [showAlt, setShowAlt] = useState(false)
 
   return (
     <>
@@ -418,6 +420,18 @@ function TrackRow({
             >
               Edit Tags
             </button>
+            {suggestion?.alternatives && suggestion.alternatives.length > 0 && (
+              <button
+                onClick={() => setShowAlt(v => !v)}
+                className={`text-xs border rounded px-2 py-0.5 ${
+                  showAlt
+                    ? 'border-accent text-accent'
+                    : 'border-border text-text-muted hover:bg-bg-panel hover:border-accent hover:text-text-secondary'
+                }`}
+              >
+                Alt…
+              </button>
+            )}
           </div>
 
           {/* Pending suggestion */}
@@ -448,6 +462,11 @@ function TrackRow({
                 ))}
               </div>
             </div>
+          )}
+
+          {/* Alternatives picker */}
+          {showAlt && suggestion && !isEditingTags && (
+            <AlternativesPanel suggestion={suggestion} onClose={() => setShowAlt(false)} />
           )}
 
           {/* Tag editor */}

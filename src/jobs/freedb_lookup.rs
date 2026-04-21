@@ -87,6 +87,7 @@ impl super::JobHandler for FreedBLookupJobHandler {
             mb_recording_id: None,
             mb_release_id: None,
             cover_art_url: None,
+            alternatives: None,
         })
         .await?;
 

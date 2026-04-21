@@ -988,8 +988,8 @@ impl Store for SqliteStore {
     async fn create_tag_suggestion(&self, dto: UpsertTagSuggestion) -> Result<TagSuggestion, AppError> {
         sqlx::query_as::<_, TagSuggestion>(
             "INSERT INTO tag_suggestions
-             (track_id, source, suggested_tags, confidence, mb_recording_id, mb_release_id, cover_art_url)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             (track_id, source, suggested_tags, confidence, mb_recording_id, mb_release_id, cover_art_url, alternatives)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
              RETURNING *",
         )
         .bind(dto.track_id)
@@ -999,6 +999,7 @@ impl Store for SqliteStore {
         .bind(dto.mb_recording_id)
         .bind(dto.mb_release_id)
         .bind(dto.cover_art_url)
+        .bind(dto.alternatives.map(|v| v.to_string()))
         .fetch_one(&self.pool)
         .await
         .map_err(AppError::Database)

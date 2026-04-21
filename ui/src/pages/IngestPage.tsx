@@ -5,6 +5,7 @@ import { TagDiffTable } from '../components/TagDiffTable'
 import { IngestSearchDialog } from '../components/IngestSearchDialog'
 import { ImageUpload } from '../components/ImageUpload'
 import { TrackEditPanel } from '../components/TrackEditPanel'
+import { AlternativesPanel } from '../components/AlternativesPanel'
 import { tagSuggestionsApi } from '../api/tagSuggestions'
 import { getStagedTracks, submitTrack } from '../api/ingest'
 import { enqueueLookup } from '../api/tracks'
@@ -213,6 +214,7 @@ function AlbumGroup({
   const firstSuggestion = suggestionsByTrack[firstTrack.id]
   const coverArtUrl = firstSuggestion?.cover_art_url
   const formatExt = firstTrack.relative_path.split('.').pop()?.toUpperCase() ?? '?'
+  const [altTrackId, setAltTrackId] = useState<number | null>(null)
 
   return (
     <div className="border border-border rounded bg-bg-panel">
@@ -295,6 +297,14 @@ function AlbumGroup({
                       Reject
                     </button>
                   )}
+                  {suggestion?.alternatives && suggestion.alternatives.length > 0 && (
+                    <button
+                      onClick={() => setAltTrackId(altTrackId === track.id ? null : track.id)}
+                      className={`text-xs border rounded px-2 py-0.5 hover:bg-bg-surface ${altTrackId === track.id ? 'border-accent text-accent' : 'border-border text-text-muted'}`}
+                    >
+                      Alt…
+                    </button>
+                  )}
                   <button
                     onClick={() => onSearch(track)}
                     className="text-xs border border-border text-text-muted rounded px-2 py-0.5 hover:bg-bg-surface"
@@ -333,6 +343,14 @@ function AlbumGroup({
                   <strong className="font-semibold not-italic text-text-secondary">Search</strong> to find manually, or{' '}
                   <strong className="font-semibold not-italic text-text-secondary">Edit</strong> to enter tags directly.
                 </p>
+              )}
+
+              {/* Alternatives picker */}
+              {!isEditing && altTrackId === track.id && suggestion && (
+                <AlternativesPanel
+                  suggestion={suggestion}
+                  onClose={() => setAltTrackId(null)}
+                />
               )}
             </div>
           )

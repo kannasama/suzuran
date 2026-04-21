@@ -1,3 +1,9 @@
+export interface AlternativeRelease {
+  suggested_tags: Record<string, string>;
+  mb_release_id: string;
+  cover_art_url: string;
+}
+
 export interface TagSuggestion {
   id: number;
   track_id: number;
@@ -9,4 +15,5 @@ export interface TagSuggestion {
   cover_art_url?: string;
   status: 'pending' | 'accepted' | 'rejected';
   created_at: string;
+  alternatives?: AlternativeRelease[];
 }

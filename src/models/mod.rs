@@ -181,6 +181,9 @@ pub struct TagSuggestion {
     pub cover_art_url: Option<String>,
     pub status: String,
     pub created_at: DateTime<Utc>,
+    /// Alternative releases for this recording, as a JSON array of
+    /// `{suggested_tags, cover_art_url, mb_release_id}` objects.
+    pub alternatives: Option<serde_json::Value>,
 }
 
 pub struct UpsertTagSuggestion {
@@ -191,6 +194,7 @@ pub struct UpsertTagSuggestion {
     pub mb_recording_id: Option<String>,
     pub mb_release_id: Option<String>,
     pub cover_art_url: Option<String>,
+    pub alternatives: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, sqlx::FromRow, serde::Serialize, serde::Deserialize)]

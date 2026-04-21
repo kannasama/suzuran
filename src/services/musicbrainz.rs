@@ -41,6 +41,7 @@ pub struct MbRelease {
     pub id: String,
     pub title: String,
     pub date: Option<String>,
+    pub status: Option<String>,
     #[serde(rename = "artist-credit")]
     pub artist_credit: Option<Vec<MbArtistCredit>>,
     #[serde(rename = "label-info")]
@@ -174,7 +175,7 @@ impl MusicBrainzService {
         let rec = self.client
             .get(&url)
             .query(&[
-                ("inc", "releases+artist-credits+labels+media"),
+                ("inc", "releases+release-groups+artist-credits+media"),
                 ("fmt", "json"),
             ])
             .send().await?
@@ -341,6 +342,96 @@ impl MusicBrainzService {
         }
 
         Ok(out)
+    }
+
+    /// Score a release for MBP-style best-match selection.
+    ///
+    /// Higher is better. Factors (cumulative):
+    /// - Official status:      +30
+    /// - Release type:         Album +40, EP +25, Single +15, Compilation +10
+    /// - Date (earlier pref):  up to +20 (1960→20, 1990→10, 2020+→0)
+    /// - Existing tag seeds:   album match +25, albumartist +20, date year +15, totaltracks +10
+    pub fn score_release(
+        release: &MbRelease,
+        existing_tags: Option<&serde_json::Map<String, serde_json::Value>>,
+    ) -> i32 {
+        let mut score = 0i32;
+
+        if release.status.as_deref() == Some("Official") {
+            score += 30;
+        }
+
+        if let Some(rg) = &release.release_group {
+            match rg.primary_type.as_deref() {
+                Some("Album")       => score += 40,
+                Some("EP")          => score += 25,
+                Some("Single")      => score += 15,
+                Some("Compilation") => score += 10,
+                _                   => {}
+            }
+        }
+
+        if let Some(date) = &release.date {
+            if let Ok(year) = date[..date.len().min(4)].parse::<i32>() {
+                let year_score = (20i32 - ((year - 1960).max(0) / 3)).max(0);
+                score += year_score;
+            }
+        }
+
+        if let Some(tags) = existing_tags {
+            let get_tag = |key: &str| -> String {
+                tags.get(key)
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .trim()
+                    .to_lowercase()
+            };
+
+            // Album title match
+            let existing_album = get_tag("album");
+            if !existing_album.is_empty() && release.title.trim().to_lowercase() == existing_album {
+                score += 25;
+            }
+
+            // Album artist match
+            let existing_albumartist = get_tag("albumartist");
+            if !existing_albumartist.is_empty() {
+                let release_artist = release.artist_credit.as_ref()
+                    .and_then(|ac| ac.first())
+                    .and_then(|a| a.name.as_ref().or(a.artist.as_ref().map(|ar| &ar.name)))
+                    .map(|s| s.trim().to_lowercase())
+                    .unwrap_or_default();
+                if !release_artist.is_empty() && release_artist == existing_albumartist {
+                    score += 20;
+                }
+            }
+
+            // Date year match
+            let existing_date = get_tag("date");
+            if !existing_date.is_empty() {
+                if let Some(release_date) = &release.date {
+                    let ex_year = existing_date.get(..4).unwrap_or("").trim();
+                    let rel_year = release_date.get(..4).unwrap_or("").trim();
+                    if !ex_year.is_empty() && ex_year == rel_year {
+                        score += 15;
+                    }
+                }
+            }
+
+            // Total tracks match
+            let existing_totaltracks = get_tag("totaltracks");
+            if !existing_totaltracks.is_empty() {
+                if let Some(media) = &release.media {
+                    if media.iter().any(|m| {
+                        m.track_count.map(|tc| tc.to_string()) == Some(existing_totaltracks.clone())
+                    }) {
+                        score += 10;
+                    }
+                }
+            }
+        }
+
+        score
     }
 
     /// Cover Art Archive URL for a release (front image, 500px).

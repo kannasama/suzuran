@@ -134,6 +134,7 @@ async fn seed_suggestion(store: &Arc<dyn Store>, track_id: i64, confidence: f32)
             mb_recording_id: None,
             mb_release_id: None,
             cover_art_url: None,
+            alternatives: None,
         })
         .await
         .unwrap();

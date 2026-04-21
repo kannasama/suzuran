@@ -22,6 +22,7 @@ async fn create_suggestion(
             mb_recording_id: None,
             mb_release_id: None,
             cover_art_url: None,
+            alternatives: None,
         })
         .await
         .unwrap()
