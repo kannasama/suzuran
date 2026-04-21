@@ -56,7 +56,7 @@ export function TopNav() {
       </span>
       {navItem('/', 'Library')}
       <NavLink
-        to="/inbox"
+        to="/ingest"
         className={({ isActive }) =>
           `text-xs px-3 py-2 border-b-2 transition-colors inline-flex items-center ${
             isActive
@@ -65,7 +65,7 @@ export function TopNav() {
           }`
         }
       >
-        Inbox
+        Ingest
         {inboxCount > 0 && (
           <span className="ml-1.5 inline-flex items-center justify-center
                            h-4 min-w-[1rem] px-1 rounded-full
