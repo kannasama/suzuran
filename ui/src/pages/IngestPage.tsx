@@ -3,9 +3,11 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { TopNav } from '../components/TopNav'
 import { TagDiffTable } from '../components/TagDiffTable'
 import { IngestSearchDialog } from '../components/IngestSearchDialog'
+import { ImageUpload } from '../components/ImageUpload'
 import { tagSuggestionsApi } from '../api/tagSuggestions'
 import { getStagedTracks, submitTrack } from '../api/ingest'
 import { listLibraryProfiles } from '../api/libraryProfiles'
+import { listSettings } from '../api/settings'
 import type { Track } from '../types/track'
 import type { TagSuggestion } from '../types/tagSuggestion'
 import type { LibraryProfile } from '../types/libraryProfile'
@@ -15,6 +17,7 @@ export default function IngestPage() {
   const [threshold, setThreshold] = useState(80)
   const [searchTrack, setSearchTrack] = useState<Track | null>(null)
   const [submitAlbum, setSubmitAlbum] = useState<string | null>(null)
+  const [editingTrackId, setEditingTrackId] = useState<number | null>(null)
 
   const { data: stagedTracks = [], isLoading: tracksLoading } = useQuery({
     queryKey: ['ingest-staged'],
@@ -126,6 +129,9 @@ export default function IngestPage() {
                 onSubmitAlbum={key => setSubmitAlbum(key)}
                 acceptPending={acceptMutation.isPending ? acceptMutation.variables ?? null : null}
                 rejectPending={rejectMutation.isPending ? rejectMutation.variables ?? null : null}
+                editingTrackId={editingTrackId}
+                onEdit={id => setEditingTrackId(id)}
+                onEditClose={() => setEditingTrackId(null)}
               />
             ))
           )}
@@ -174,6 +180,9 @@ function AlbumGroup({
   onSubmitAlbum,
   acceptPending,
   rejectPending,
+  editingTrackId,
+  onEdit,
+  onEditClose,
 }: {
   albumKey: string
   tracks: Track[]
@@ -184,6 +193,9 @@ function AlbumGroup({
   onSubmitAlbum: (key: string) => void
   acceptPending: number | null
   rejectPending: number | null
+  editingTrackId: number | null
+  onEdit: (id: number) => void
+  onEditClose: () => void
 }) {
   const firstTrack = tracks[0]
   const firstSuggestion = suggestionsByTrack[firstTrack.id]
@@ -224,6 +236,7 @@ function AlbumGroup({
         {tracks.map(track => {
           const suggestion = suggestionsByTrack[track.id]
           const pct = suggestion ? Math.round(suggestion.confidence * 100) : null
+          const isEditing = editingTrackId === track.id
           return (
             <div key={track.id} className="px-3 py-2 flex flex-col gap-2">
               {/* Track meta row */}
@@ -255,14 +268,22 @@ function AlbumGroup({
                       >
                         Accept
                       </button>
-                      <button
-                        onClick={() => onReject(suggestion.id)}
-                        disabled={rejectPending === suggestion.id}
-                        className="text-xs border border-border rounded px-2 py-0.5 hover:bg-bg-surface disabled:opacity-50"
-                      >
-                        Reject
-                      </button>
                     </>
+                  )}
+                  <button
+                    onClick={() => isEditing ? onEditClose() : onEdit(track.id)}
+                    className={`text-xs border rounded px-2 py-0.5 hover:bg-bg-surface ${isEditing ? 'border-accent text-accent' : 'border-border'}`}
+                  >
+                    Edit
+                  </button>
+                  {suggestion && (
+                    <button
+                      onClick={() => onReject(suggestion.id)}
+                      disabled={rejectPending === suggestion.id}
+                      className="text-xs border border-border rounded px-2 py-0.5 hover:bg-bg-surface disabled:opacity-50"
+                    >
+                      Reject
+                    </button>
                   )}
                   <button
                     onClick={() => onSearch(track)}
@@ -273,14 +294,119 @@ function AlbumGroup({
                 </div>
               </div>
 
+              {/* Inline edit panel */}
+              {isEditing && (
+                <TrackEditPanel
+                  track={track}
+                  suggestion={suggestion}
+                  onClose={onEditClose}
+                />
+              )}
+
               {/* Tag diff */}
-              <TagDiffTable
-                trackId={track.id}
-                suggestedTags={suggestion?.suggested_tags ?? {}}
-              />
+              {!isEditing && (
+                <TagDiffTable
+                  trackId={track.id}
+                  suggestedTags={suggestion?.suggested_tags ?? {}}
+                />
+              )}
             </div>
           )
         })}
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Inline track tag edit panel
+// ---------------------------------------------------------------------------
+
+const EDIT_TAG_FIELDS = [
+  { key: 'title', label: 'Title' },
+  { key: 'artist', label: 'Artist' },
+  { key: 'albumartist', label: 'Album Artist' },
+  { key: 'album', label: 'Album' },
+  { key: 'tracknumber', label: 'Track #' },
+  { key: 'date', label: 'Date' },
+  { key: 'genre', label: 'Genre' },
+] as const
+
+function TrackEditPanel({
+  track,
+  suggestion,
+  onClose,
+}: {
+  track: Track
+  suggestion: TagSuggestion | undefined
+  onClose: () => void
+}) {
+  const qc = useQueryClient()
+
+  const initialTags = suggestion?.suggested_tags ?? {}
+  const [fields, setFields] = useState<Record<string, string>>(() =>
+    Object.fromEntries(
+      EDIT_TAG_FIELDS.map(({ key }) => [key, initialTags[key] ?? ''])
+    )
+  )
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+
+  async function handleSave() {
+    setSaving(true)
+    setSaveError(null)
+    try {
+      const tags: Record<string, string> = {}
+      for (const { key } of EDIT_TAG_FIELDS) {
+        if (fields[key].trim() !== '') tags[key] = fields[key].trim()
+      }
+      await tagSuggestionsApi.create({
+        track_id: track.id,
+        source: 'mb_search',
+        suggested_tags: tags,
+        confidence: 1.0,
+      })
+      qc.invalidateQueries({ queryKey: ['tag-suggestions'] })
+      onClose()
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Failed to save.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-2 p-3 bg-bg-panel border border-border rounded">
+      <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
+        {EDIT_TAG_FIELDS.map(({ key, label }) => (
+          <label key={key} className="flex flex-col gap-0.5">
+            <span className="text-text-muted text-[10px] uppercase tracking-wider">{label}</span>
+            <input
+              type="text"
+              value={fields[key]}
+              onChange={e => setFields(prev => ({ ...prev, [key]: e.target.value }))}
+              className="bg-bg-base border border-border text-text-primary text-xs px-2 py-1 rounded focus:outline-none focus:border-accent"
+            />
+          </label>
+        ))}
+      </div>
+      {saveError && <p className="text-destructive text-xs">{saveError}</p>}
+      <div className="flex justify-end gap-2">
+        <button
+          type="button"
+          onClick={onClose}
+          className="text-xs text-text-muted bg-bg-panel border border-border rounded px-3 py-1 hover:text-text-primary"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={saving}
+          className="text-xs text-bg-base bg-accent rounded px-3 py-1 font-medium disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90"
+        >
+          {saving ? 'Saving…' : 'Save'}
+        </button>
       </div>
     </div>
   )
@@ -311,6 +437,13 @@ function SubmitDialog({
     queryFn: () => listLibraryProfiles(libraryId),
   })
 
+  // Gap 5: fetch settings to determine write_folder_art
+  const { data: settings = [] } = useQuery({
+    queryKey: ['settings'],
+    queryFn: listSettings,
+  })
+  const folderArtFilename = settings.find(s => s.key === 'folder_art_filename')?.value ?? ''
+
   // Pre-select profiles per spec: include_on_submit AND (auto_include_above_hz is null OR track.sample_rate >= auto_include_above_hz)
   const firstTrack = tracks[0]
   const defaultSelected = new Set(
@@ -326,6 +459,8 @@ function SubmitDialog({
   const [selectedProfiles, setSelectedProfiles] = useState<Set<number>>(defaultSelected)
   const [queued, setQueued] = useState(0)
   const [submitting, setSubmitting] = useState(false)
+  // Gap 4: uploaded art URL (overrides suggestion art when set)
+  const [uploadedArtUrl, setUploadedArtUrl] = useState<string>('')
 
   function toggleProfile(id: number) {
     setSelectedProfiles(prev => {
@@ -338,7 +473,16 @@ function SubmitDialog({
 
   // Gather representative tags from best accepted/pending suggestion for first track
   const suggestion = suggestionsByTrack[firstTrack.id]
-  const coverArtUrl = suggestion?.cover_art_url
+  const suggestedArtUrl = suggestion?.cover_art_url
+
+  // Gap 4: resolved art — uploaded takes precedence, fallback to suggestion, null = skip
+  const [artSkipped, setArtSkipped] = useState(false)
+  const selectedArtUrl: string | undefined = artSkipped
+    ? undefined
+    : (uploadedArtUrl || suggestedArtUrl || undefined)
+
+  // Gap 5: write_folder_art logic
+  const writeFolderArt = selectedArtUrl != null && folderArtFilename !== ''
 
   async function handleConfirm() {
     setSubmitting(true)
@@ -350,8 +494,8 @@ function SubmitDialog({
         await submitTrack({
           track_id: track.id,
           tag_suggestion_id: s?.id,
-          cover_art_url: s?.cover_art_url,
-          write_folder_art: false,
+          cover_art_url: selectedArtUrl,
+          write_folder_art: writeFolderArt,
           profile_ids: profileIds,
         })
         count++
@@ -395,18 +539,43 @@ function SubmitDialog({
             </div>
           )}
 
-          {/* Art panel */}
-          {coverArtUrl && (
-            <div>
-              <p className="text-text-muted text-xs uppercase tracking-wider mb-1">Cover Art</p>
-              <img
-                src={coverArtUrl}
-                alt="cover"
-                className="w-20 h-20 object-cover rounded border border-border"
-                onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
-              />
+          {/* Art panel — Gap 4 */}
+          <div>
+            <p className="text-text-muted text-xs uppercase tracking-wider mb-2">Cover Art</p>
+            <div className="flex items-start gap-3">
+              {/* Suggested thumbnail */}
+              {suggestedArtUrl && !artSkipped && (
+                <img
+                  src={uploadedArtUrl || suggestedArtUrl}
+                  alt="cover"
+                  className="w-16 h-16 object-cover rounded border border-border flex-shrink-0"
+                  onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
+                />
+              )}
+              <div className="flex flex-col gap-2 flex-1 min-w-0">
+                <ImageUpload
+                  value={uploadedArtUrl}
+                  onChange={url => { setUploadedArtUrl(url); setArtSkipped(false) }}
+                />
+                {!artSkipped ? (
+                  <button
+                    type="button"
+                    onClick={() => { setArtSkipped(true); setUploadedArtUrl('') }}
+                    className="self-start text-xs text-text-muted hover:text-text-primary border border-border rounded px-2 py-0.5"
+                  >
+                    Skip art
+                  </button>
+                ) : (
+                  <span className="text-xs text-text-muted italic">Art skipped</span>
+                )}
+              </div>
             </div>
-          )}
+            {writeFolderArt && (
+              <p className="text-xs text-text-muted mt-1">
+                Folder art will be written as <span className="font-mono">{folderArtFilename}</span>
+              </p>
+            )}
+          </div>
 
           {/* Profile checklist */}
           {profiles.length > 0 && (

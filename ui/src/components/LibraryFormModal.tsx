@@ -67,11 +67,18 @@ export function LibraryFormModal({ library, onClose }: Props) {
     queryFn: () => listRules(),
   })
 
-  const { data: libraryProfiles = [], refetch: refetchProfiles } = useQuery({
+  const { data: fetchedProfiles = [], refetch: refetchProfiles } = useQuery({
     queryKey: ['library-profiles', library?.id],
     queryFn: () => listLibraryProfiles(library!.id),
     enabled: isEdit && library != null,
   })
+
+  // Local ordered copy of profiles — supports visual reordering without an API
+  const [profileOrder, setProfileOrder] = useState<LibraryProfile[]>([])
+  // Sync fetched profiles into local order state (only when the fetched list changes length)
+  const libraryProfiles = profileOrder.length > 0 && profileOrder.length === fetchedProfiles.length
+    ? profileOrder
+    : fetchedProfiles
 
   const createMutation = useMutation({
     mutationFn: (input: CreateLibraryInput) => createLibrary(input),
@@ -107,6 +114,7 @@ export function LibraryFormModal({ library, onClose }: Props) {
       })
     },
     onSuccess: () => {
+      setProfileOrder([])
       refetchProfiles()
       setShowAddProfile(false)
       setNewProfileDirName('')
@@ -122,8 +130,22 @@ export function LibraryFormModal({ library, onClose }: Props) {
 
   const deleteProfileMutation = useMutation({
     mutationFn: (id: number) => deleteLibraryProfile(id),
-    onSuccess: () => refetchProfiles(),
+    onSuccess: () => { setProfileOrder([]); refetchProfiles() },
   })
+
+  function moveProfileUp(index: number) {
+    if (index === 0) return
+    const next = [...libraryProfiles]
+    ;[next[index - 1], next[index]] = [next[index], next[index - 1]]
+    setProfileOrder(next)
+  }
+
+  function moveProfileDown(index: number) {
+    if (index === libraryProfiles.length - 1) return
+    const next = [...libraryProfiles]
+    ;[next[index], next[index + 1]] = [next[index + 1], next[index]]
+    setProfileOrder(next)
+  }
 
   const isPending = createMutation.isPending || updateMutation.isPending
 
@@ -319,11 +341,31 @@ export function LibraryFormModal({ library, onClose }: Props) {
                 {/* Profile list */}
                 {libraryProfiles.length > 0 && (
                   <div className="flex flex-col gap-1">
-                    {libraryProfiles.map((p: LibraryProfile) => (
+                    {libraryProfiles.map((p: LibraryProfile, i: number) => (
                       <div
                         key={p.id}
                         className="flex items-center gap-2 px-2 py-1.5 bg-bg-panel border border-border rounded text-xs"
                       >
+                        <div className="flex flex-col shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => moveProfileUp(i)}
+                            disabled={i === 0}
+                            className="text-text-muted hover:text-text-primary disabled:opacity-30 text-xs px-0.5 leading-none"
+                            title="Move up"
+                          >
+                            ▲
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => moveProfileDown(i)}
+                            disabled={i === libraryProfiles.length - 1}
+                            className="text-text-muted hover:text-text-primary disabled:opacity-30 text-xs px-0.5 leading-none"
+                            title="Move down"
+                          >
+                            ▼
+                          </button>
+                        </div>
                         <span className="font-mono text-text-primary flex-1 truncate">{p.derived_dir_name || '—'}</span>
                         <span className="text-text-muted shrink-0">{getEncodingProfileName(p.encoding_profile_id)}</span>
                         {p.include_on_submit && (
@@ -379,16 +421,18 @@ export function LibraryFormModal({ library, onClose }: Props) {
                       </label>
                     </div>
                     <div className="flex gap-2 items-end">
-                      <label className="flex flex-col gap-1 flex-1">
-                        <span className="text-text-muted text-[10px] uppercase tracking-wider">Min Sample Rate (Hz)</span>
-                        <input
-                          type="number"
-                          value={newProfileAboveHz}
-                          onChange={e => setNewProfileAboveHz(e.target.value)}
-                          placeholder="Optional — e.g. 88200"
-                          className="bg-bg-base border border-border text-text-primary text-xs px-2 py-1.5 rounded focus:outline-none focus:border-accent"
-                        />
-                      </label>
+                      {encodingProfiles.find(ep => ep.id === newProfileEncodingId)?.codec === 'flac' && (
+                        <label className="flex flex-col gap-1 flex-1">
+                          <span className="text-text-muted text-[10px] uppercase tracking-wider">Min Sample Rate (Hz)</span>
+                          <input
+                            type="number"
+                            value={newProfileAboveHz}
+                            onChange={e => setNewProfileAboveHz(e.target.value)}
+                            placeholder="Optional — e.g. 88200"
+                            className="bg-bg-base border border-border text-text-primary text-xs px-2 py-1.5 rounded focus:outline-none focus:border-accent"
+                          />
+                        </label>
+                      )}
                       <label className="flex flex-col gap-1 shrink-0">
                         <span className="text-text-muted text-[10px] uppercase tracking-wider">Include on Submit</span>
                         <button
