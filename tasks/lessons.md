@@ -384,3 +384,20 @@ feedback record travels with the repo and is available to all contributors and f
   one named `YYYY-MM-DD-<topic>-feedback.md` — do not wait until end of session
 - Commit the summary file immediately after writing — not deferred to end of session
 - If no summary exists yet for the topic, create one even if the only content is the feedback section
+
+## 2026-04-21 — Write session summaries inline during work, not at end of session
+
+**Mistake:** Summary files were not written during the session. The user had to explicitly prompt
+for them to be created — twice across sessions.
+
+**Rule:** Write `docs/summaries/` entries during the work, not after. The user must never have
+to ask for a summary to be created.
+
+**How to apply:**
+- After each significant task is committed, append to the running session summary (or create it
+  if it doesn't exist yet for this topic)
+- When the user provides feedback mid-session (correction, approval, clarification), write it to
+  the summary immediately — do not batch it
+- Commit the summary update in the same commit as the task, or immediately after
+- The summary file is a running log that grows as work progresses, not a final artifact written
+  at the end
