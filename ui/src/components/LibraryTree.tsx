@@ -74,10 +74,6 @@ export function LibraryTree({
     return <div className="p-3 text-text-muted text-xs">Loading…</div>
   }
 
-  const roots = libraries.filter(l => l.parent_library_id === null)
-  const childrenOf = (parentId: number) =>
-    libraries.filter(l => l.parent_library_id === parentId)
-
   return (
     <>
       <div className="flex flex-col overflow-y-auto text-xs">
@@ -113,30 +109,17 @@ export function LibraryTree({
           </div>
         )}
 
-        {/* Tree: roots, then their children indented */}
-        {roots.map(root => (
-          <div key={root.id}>
-            <LibraryRow
-              library={root}
-              isSelected={selectedLibraryId === root.id}
-              isAdmin={isAdmin}
-              onSelect={() => onSelectLibrary(root.id)}
-              onEdit={() => setEditingLibrary(root)}
-              onDelete={() => handleDelete(root)}
-            />
-            {childrenOf(root.id).map(child => (
-              <LibraryRow
-                key={child.id}
-                library={child}
-                isSelected={selectedLibraryId === child.id}
-                isAdmin={isAdmin}
-                onSelect={() => onSelectLibrary(child.id)}
-                onEdit={() => setEditingLibrary(child)}
-                onDelete={() => handleDelete(child)}
-                indent
-              />
-            ))}
-          </div>
+        {/* Flat library list */}
+        {libraries.map(lib => (
+          <LibraryRow
+            key={lib.id}
+            library={lib}
+            isSelected={selectedLibraryId === lib.id}
+            isAdmin={isAdmin}
+            onSelect={() => onSelectLibrary(lib.id)}
+            onEdit={() => setEditingLibrary(lib)}
+            onDelete={() => handleDelete(lib)}
+          />
         ))}
 
         {/* Virtual Libraries section */}
@@ -185,14 +168,12 @@ export function LibraryTree({
       {/* Modals */}
       {showCreateModal && (
         <LibraryFormModal
-          libraries={libraries}
           onClose={() => setShowCreateModal(false)}
         />
       )}
       {editingLibrary && (
         <LibraryFormModal
           library={editingLibrary}
-          libraries={libraries}
           onClose={() => setEditingLibrary(null)}
         />
       )}

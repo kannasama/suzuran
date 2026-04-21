@@ -19,8 +19,8 @@ export function TranscodeDialog({ mode, sourceId, onClose }: Props) {
     queryFn: listLibraries,
   })
 
-  // Only libraries that have an encoding profile (derived/transcode targets)
-  const targetLibraries = libraries.filter(l => l.encoding_profile_id != null)
+  // All libraries are potential transcode targets (encoding profile is managed via library profiles)
+  const targetLibraries = libraries
 
   const transcodeMutation = useMutation({
     mutationFn: (action: 'all' | 'sync') => {
@@ -79,8 +79,7 @@ export function TranscodeDialog({ mode, sourceId, onClose }: Props) {
 
           {!isLoading && targetLibraries.length === 0 && (
             <p className="text-text-muted text-xs">
-              No libraries with an encoding profile found. Create a derived library with an
-              encoding profile in Settings first.
+              No libraries found. Create a target library first.
             </p>
           )}
 
