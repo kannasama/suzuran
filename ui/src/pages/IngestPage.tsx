@@ -344,9 +344,18 @@ function TrackEditPanel({
   const qc = useQueryClient()
 
   const initialTags = suggestion?.suggested_tags ?? {}
+  const trackFallback: Record<string, string> = {
+    title:       track.title       ?? '',
+    artist:      track.artist      ?? '',
+    albumartist: track.albumartist ?? '',
+    album:       track.album       ?? '',
+    tracknumber: track.tracknumber ?? '',
+    date:        track.date        ?? '',
+    genre:       track.genre       ?? '',
+  }
   const [fields, setFields] = useState<Record<string, string>>(() =>
     Object.fromEntries(
-      EDIT_TAG_FIELDS.map(({ key }) => [key, initialTags[key] ?? ''])
+      EDIT_TAG_FIELDS.map(({ key }) => [key, initialTags[key] ?? trackFallback[key] ?? ''])
     )
   )
   const [saving, setSaving] = useState(false)
