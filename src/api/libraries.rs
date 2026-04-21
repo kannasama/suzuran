@@ -42,7 +42,6 @@ struct CreateLibraryRequest {
     name: String,
     root_path: String,
     format: String,
-    ingest_dir: Option<String>,
     organization_rule_id: Option<i64>,
 }
 
@@ -54,10 +53,8 @@ async fn create_library(
     let lib = state.db
         .create_library(&body.name, &body.root_path, &body.format)
         .await?;
-    state.db.set_library_ingest_dir(lib.id, body.ingest_dir.as_deref()).await?;
     state.db.set_library_org_rule(lib.id, body.organization_rule_id).await?;
     Ok((StatusCode::CREATED, Json(Library {
-        ingest_dir: body.ingest_dir,
         organization_rule_id: body.organization_rule_id,
         ..lib
     })))
@@ -71,7 +68,6 @@ struct UpdateLibraryRequest {
     auto_organize_on_ingest: bool,
     #[serde(default = "default_utf8")]
     tag_encoding: String,
-    ingest_dir: Option<String>,
     organization_rule_id: Option<i64>,
 }
 
@@ -88,10 +84,8 @@ async fn update_library(
             body.auto_organize_on_ingest, &body.tag_encoding)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("library {id} not found")))?;
-    state.db.set_library_ingest_dir(id, body.ingest_dir.as_deref()).await?;
     state.db.set_library_org_rule(id, body.organization_rule_id).await?;
     Ok(Json(Library {
-        ingest_dir: body.ingest_dir,
         organization_rule_id: body.organization_rule_id,
         ..lib
     }))

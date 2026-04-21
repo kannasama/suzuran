@@ -68,7 +68,6 @@ pub struct Library {
     pub scan_interval_secs: i64,
     pub auto_organize_on_ingest: bool,
     pub tag_encoding: String,
-    pub ingest_dir: Option<String>,
     pub organization_rule_id: Option<i64>,
     pub created_at: DateTime<Utc>,
 }

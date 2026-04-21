@@ -439,20 +439,6 @@ impl Store for SqliteStore {
             .bind(id).execute(&self.pool).await.map(|_| ()).map_err(AppError::Database)
     }
 
-    async fn set_library_ingest_dir(
-        &self,
-        library_id: i64,
-        ingest_dir: Option<&str>,
-    ) -> Result<(), AppError> {
-        sqlx::query("UPDATE libraries SET ingest_dir = ?1 WHERE id = ?2")
-            .bind(ingest_dir)
-            .bind(library_id)
-            .execute(&self.pool)
-            .await
-            .map(|_| ())
-            .map_err(AppError::Database)
-    }
-
     async fn set_library_org_rule(
         &self,
         library_id: i64,

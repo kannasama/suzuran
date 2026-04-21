@@ -206,11 +206,6 @@ pub trait Store: Send + Sync {
         tag_encoding: &str,
     ) -> Result<Option<Library>, AppError>;
     async fn delete_library(&self, id: i64) -> Result<(), AppError>;
-    async fn set_library_ingest_dir(
-        &self,
-        library_id: i64,
-        ingest_dir: Option<&str>,
-    ) -> Result<(), AppError>;
     async fn set_library_org_rule(
         &self,
         library_id: i64,
