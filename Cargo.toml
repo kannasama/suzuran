@@ -62,6 +62,7 @@ url = "2"
 
 # Image processing
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+infer = "0.16"
 
 # HTTP client
 reqwest = { version = "0.12", features = ["json"] }

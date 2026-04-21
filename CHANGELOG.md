@@ -4,6 +4,31 @@ All notable changes to suzuran will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- General Settings tab: per-field Save buttons for all 7 seeded settings (AcoustID key,
+  MusicBrainz user agent, rate limit, confidence threshold, scan/transcode concurrency,
+  default art profile)
+- Shift-JIS tag encoding support: `tag_encoding` column on `libraries` table; per-library
+  selector (UTF-8 / Shift-JIS) in LibraryFormModal; scanner re-decodes ID3v2 Latin-1
+  mojibake via `encoding_rs`; CUE sheets decoded from SJIS when the library setting is set
+- Theme engine: named 14-colour accent palette, `--accent-rgb` CSS variable enabling Tailwind
+  opacity modifier syntax (`bg-accent/50`), canvas histogram palette extraction from background
+  images, active-theme persistence in `localStorage`
+- Image upload magic-bytes validation via `infer` crate alongside Content-Type header check
+- Path-traversal guard in the organize job handler — rules producing `..` or absolute paths
+  are rejected before any file operation
+
+### Changed
+- AcoustID API key now read from the database per-job; updating the key via the Settings UI
+  takes effect immediately without a server restart
+
+### Fixed
+- Template engine: unclosed `{` at end of input now passes through literally instead of
+  being silently swallowed
+- Organize job: dry-run with no matching rule now returns
+  `{"dry_run": true, "proposed_path": null}` instead of HTTP 400
+- JWT decode now explicitly pins HS256 algorithm
+
 ## [v1.0.0-beta-1] — 2026-04-20
 
 First public beta. Incorporates all four development phases (v0.1.0 – v0.4.0).

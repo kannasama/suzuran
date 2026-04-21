@@ -73,7 +73,8 @@ async fn enqueue_scan(
 
     let job = state.db.enqueue_job(
         "scan",
-        serde_json::to_value(ScanPayload { library_id: body.library_id }).unwrap(),
+        serde_json::to_value(ScanPayload { library_id: body.library_id })
+            .map_err(|e| AppError::Internal(e.into()))?,
         0,
     ).await?;
 

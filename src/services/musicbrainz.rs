@@ -104,7 +104,7 @@ impl MusicBrainzService {
             .user_agent("suzuran/0.3 ( music-library-manager )")
             .timeout(Duration::from_secs(30))
             .build()
-            .expect("reqwest client build");
+            .expect("failed to build MusicBrainz HTTP client");
         Self {
             client,
             mb_base,
@@ -151,7 +151,7 @@ impl MusicBrainzService {
         // last-request timestamp and both sleep, potentially allowing a small burst. In practice
         // the scheduler semaphore limits concurrent mb_lookup jobs, so this is acceptable.
         let sleep_duration = {
-            let mut last = self.last_mb_request.lock().unwrap();
+            let mut last = self.last_mb_request.lock().expect("mutex poisoned");
             let dur = last.map(|t| {
                 let elapsed = t.elapsed();
                 if elapsed < Duration::from_millis(MB_RATE_LIMIT_MS) {

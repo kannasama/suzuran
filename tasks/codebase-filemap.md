@@ -165,6 +165,7 @@ docker compose logs -f app
 | `0017_jobs_add_normalize.sql` | Expands `job_type` CHECK constraint to include `normalize` via ALTER TABLE DROP/ADD CONSTRAINT |
 | `0018_virtual_libraries.sql` | `virtual_libraries` (BIGSERIAL id, name, root_path, link_type CHECK symlink/hardlink, created_at), `virtual_library_sources` (composite PK, priority, FK to libraries), `virtual_library_tracks` (composite PK, link_path, FK to tracks ON DELETE CASCADE), `idx_vls_priority` index |
 | `0019_jobs_add_virtual_sync.sql` | Expands `job_type` CHECK constraint to include `virtual_sync` via ALTER TABLE DROP/ADD CONSTRAINT |
+| `0020_libraries_tag_encoding.sql` | `ALTER TABLE libraries ADD COLUMN tag_encoding TEXT NOT NULL DEFAULT 'utf8'` |
 
 ### `migrations/sqlite/`
 
@@ -189,21 +190,23 @@ docker compose logs -f app
 | `0017_jobs_add_normalize.sql` | Recreates `jobs` table to add `normalize` to the `job_type` CHECK constraint |
 | `0018_virtual_libraries.sql` | `virtual_libraries` (INTEGER id AUTOINCREMENT, name, root_path, link_type CHECK symlink/hardlink, created_at TEXT), `virtual_library_sources` (composite PK, priority, FK to libraries), `virtual_library_tracks` (composite PK, link_path, FK to tracks ON DELETE CASCADE), `idx_vls_priority` index |
 | `0019_jobs_add_virtual_sync.sql` | Recreates `jobs` table to add `virtual_sync` to the `job_type` CHECK constraint |
+| `0020_libraries_tag_encoding.sql` | `ALTER TABLE libraries ADD COLUMN tag_encoding TEXT NOT NULL DEFAULT 'utf8'` |
 
 ## Directories
 
 | Directory | Owns |
 |-----------|------|
 | `docs/plans/` | Implementation plans — date-prefixed kebab-case filenames; latest: `2026-04-20-phase4-transcoding-art.md` |
-| `migrations/postgres/` | Postgres SQL migrations (0001–0010, through Phase 3) |
-| `migrations/sqlite/` | SQLite SQL migrations (0001–0010, through Phase 3) |
+| `migrations/postgres/` | Postgres SQL migrations (0001–0020) |
+| `migrations/sqlite/` | SQLite SQL migrations (0001–0020) |
 | `resources/` | App assets (logos, icons, etc.) |
 | `scripts/` | Developer tooling scripts |
 | `secrets/` | Local secret files (gitignored except README) |
 | `ui/` | React + Vite + Tailwind SPA — `npm run build` → `ui/dist/` |
-| `ui/src/theme/` | `tokens.ts` (dark/light CSS vars) + `ThemeProvider.tsx` (context + `applyTokens`; now exposes `backgroundUrl` state + `--theme-bg-image` CSS variable + `has-theme-bg` class on `<html>`) |
+| `ui/src/theme/` | `tokens.ts` (dark/light CSS vars, `ACCENT_COLORS` named palette, `hexToRgbChannels`, `applyTokens` with `extraVars` param) + `ThemeProvider.tsx` (loads active theme from DB via `useQuery`, persists `activeThemeId` in `localStorage`, exposes `setActiveTheme`, overlays `css_vars` + accent on base tokens, sets `--theme-bg-image`) |
+| `ui/src/utils/` | `extractPalette.ts` — canvas 2D histogram-based dominant-hue extraction; returns `ExtractedPalette { accent, isDark, appliedTone, themeVars }` with tinted RGBA surface vars |
 | `ui/src/types/` | `tagSuggestion.ts` — `TagSuggestion` interface; `track.ts` — `Track` interface; `encodingProfile.ts` — `EncodingProfile` + `UpsertEncodingProfile` interfaces; `artProfile.ts` — `ArtProfile` + `UpsertArtProfile` interfaces; `virtualLibrary.ts` — `VirtualLibrary` + `VirtualLibrarySource` + `UpsertVirtualLibrary` interfaces |
-| `ui/src/api/` | `client.ts` (Axios baseURL `/api/v1`), `auth.ts`, `libraries.ts` (Library type includes `encoding_profile_id: number \| null`), `organizationRules.ts`, `tagSuggestions.ts`, `tracks.ts`, `encodingProfiles.ts` (list, create, update, delete → `/encoding-profiles`), `artProfiles.ts` (list, create, update, delete → `/art-profiles`), `virtualLibraries.ts` (list, create, update, delete, getSources, setSources, triggerSync → `/virtual-libraries`), `transcode.ts` (`transcodeApi` — transcodeTrack, transcodeLibrary, transcodeSync), `art.ts` (`artApi` — embedFromUrl, extract, standardize, standardizeLibrary), `themes.ts` (list, create, update, delete → `/themes`; `Theme` + `UpsertTheme` types with `background_url: string \| null`) |
+| `ui/src/api/` | `client.ts` (Axios baseURL `/api/v1`), `auth.ts`, `libraries.ts` (`Library` + `UpdateLibraryInput` include `tag_encoding: string`), `organizationRules.ts`, `tagSuggestions.ts`, `tracks.ts`, `encodingProfiles.ts`, `artProfiles.ts`, `virtualLibraries.ts`, `transcode.ts`, `art.ts`, `themes.ts` (`Theme` + `UpsertTheme` with `css_vars`, `accent_color`, `background_url`), `settings.ts` (list, setSetting → `/settings`; `Setting` type with `key`, `value`, `updated_at`) |
 | `ui/src/contexts/` | `AuthContext.tsx` — current user context, `useAuth` hook |
-| `ui/src/pages/` | `LoginPage.tsx`, `RegisterPage.tsx`, `LibraryPage.tsx`, `OrganizationPage.tsx`, `InboxPage.tsx`, `SettingsPage.tsx` (tabbed: Encoding Profiles + Art Profiles + Virtual Libraries + Themes — inline form, list table, create/edit/delete with TanStack Query mutations; Virtual Libraries tab includes SourcePriorityList and per-row Sync button; Themes tab includes `ImageUpload` for `background_url`) |
+| `ui/src/pages/` | `LoginPage.tsx`, `RegisterPage.tsx`, `LibraryPage.tsx`, `OrganizationPage.tsx`, `InboxPage.tsx`, `SettingsPage.tsx` (tabs: General — per-field save for 7 settings; Encoding Profiles; Art Profiles; Virtual Libraries — with SourcePriorityList and Sync; Themes — accent swatches, background upload with palette extraction, Apply/Remove per row) |
 | `ui/src/components/` | `TopNav.tsx`, `LibraryTree.tsx`, `LibraryFormModal.tsx`, `RuleEditor.tsx`, `TemplatePreview.tsx`, `TagDiffTable.tsx`, `EncodingProfileForm.tsx` (codec select from CODECS const, bitrate hidden for flac, collapsible advanced args), `ArtProfileForm.tsx` (format select, quality 1–100, dimensions, optional max_size_bytes), `TranscodeDialog.tsx` (modal — track/library mode, fetches libraries filtered by encoding_profile_id, transcode all + sync-missing buttons), `SourcePriorityList.tsx` (reorder list with ▲/▼/✕ buttons and + add dropdown, renumbers priorities on change), `VirtualLibraryForm.tsx` (name, root_path, link_type select, SourcePriorityList; fetches existing sources when editing; calls onSave with data + sources), `ImageUpload.tsx` (text URL input + file upload via `POST /api/v1/uploads/images`, preview thumbnail, clear button; used in theme editor) |

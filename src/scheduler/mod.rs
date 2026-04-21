@@ -90,7 +90,8 @@ impl Scheduler {
                     let db = self.db.clone();
 
                     tokio::spawn(async move {
-                        let _permit = semaphore.acquire().await.unwrap();
+                        let _permit = semaphore.acquire().await
+                            .expect("job semaphore unexpectedly closed");
 
                         tracing::info!(job_id = job.id, job_type = %job.job_type, "running job");
 

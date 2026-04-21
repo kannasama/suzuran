@@ -54,6 +54,14 @@ async fn upload_image(
                 bytes.len()
             )));
         }
+        // Validate actual file content via magic bytes, not just the client-supplied Content-Type
+        let detected = infer::get(&bytes).map(|t| t.mime_type());
+        if !detected.map(|m| ALLOWED_MIME.contains(&m)).unwrap_or(false) {
+            return Err(AppError::BadRequest(format!(
+                "file content does not match an allowed image type (detected: {})",
+                detected.unwrap_or("unknown"),
+            )));
+        }
         let filename = format!("{}.{ext}", Uuid::new_v4());
         tokio::fs::create_dir_all(&state.config.uploads_dir)
             .await

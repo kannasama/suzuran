@@ -180,7 +180,7 @@ async fn apply(
                     track_id: *track_id,
                     dry_run: false,
                 })
-                .unwrap(),
+                .map_err(|e| AppError::Internal(e.into()))?,
                 0,
             )
             .await?;

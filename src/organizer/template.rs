@@ -13,11 +13,18 @@ pub fn render_template(template: &str, tags: &HashMap<String, String>) -> String
     while let Some(ch) = chars.next() {
         if ch == '{' {
             let mut token = String::new();
+            let mut closed = false;
             for inner in chars.by_ref() {
-                if inner == '}' { break; }
+                if inner == '}' { closed = true; break; }
                 token.push(inner);
             }
-            out.push_str(&resolve_token(&token, tags));
+            if closed {
+                out.push_str(&resolve_token(&token, tags));
+            } else {
+                // Unclosed '{': emit literally so malformed templates are visible in output
+                out.push('{');
+                out.push_str(&token);
+            }
         } else {
             out.push(ch);
         }

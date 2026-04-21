@@ -25,7 +25,7 @@ impl FreedBService {
             .user_agent("suzuran/0.3 ( music-library-manager )")
             .timeout(Duration::from_secs(15))
             .build()
-            .unwrap();
+            .expect("failed to build FreeDB HTTP client");
         Self { client, base_url }
     }
 

@@ -640,7 +640,8 @@ impl Store for SqliteStore {
             .and_then(|s| serde_json::from_str(s).ok())
             .unwrap_or_else(|| serde_json::json!({}));
         tags["acoustid_fingerprint"] = serde_json::Value::String(fingerprint.into());
-        let tags_str = serde_json::to_string(&tags).unwrap();
+        let tags_str = serde_json::to_string(&tags)
+            .map_err(|e| AppError::Internal(e.into()))?;
         sqlx::query(
             "UPDATE tracks SET tags = ?1, duration_secs = ?2, acoustid_fingerprint = ?3 WHERE id = ?4",
         )

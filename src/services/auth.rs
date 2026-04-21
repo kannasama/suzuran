@@ -5,7 +5,7 @@ use argon2::{
     Argon2,
 };
 use chrono::{Duration, Utc};
-use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
+use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -73,7 +73,7 @@ impl AuthService {
         decode::<Claims>(
             token,
             &DecodingKey::from_secret(jwt_secret.as_bytes()),
-            &Validation::default(),
+            &Validation::new(Algorithm::HS256),
         )
         .map(|td| td.claims)
         .map_err(|_| AppError::Unauthorized)

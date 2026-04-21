@@ -112,3 +112,33 @@ async fn organize_dry_run_does_not_move() {
 
     drop(dir);
 }
+
+#[tokio::test]
+async fn organize_dry_run_no_matching_rule_returns_null_path() {
+    let db = make_db().await;
+    let dir = tempfile::TempDir::new().unwrap();
+    let root = dir.path();
+
+    let old_rel = "track.flac";
+    tokio::fs::write(root.join(old_rel), b"audio").await.unwrap();
+
+    let lib = db.create_library("FLAC", root.to_str().unwrap(), "flac", None).await.unwrap();
+    let track = db.upsert_track(UpsertTrack {
+        library_id: lib.id,
+        relative_path: old_rel.to_string(),
+        file_hash: "xyz".to_string(),
+        tags: serde_json::json!({}),
+        ..UpsertTrack::default()
+    }).await.unwrap();
+
+    // No rules created — apply_rules returns None
+    let handler = OrganizeJobHandler;
+    let payload = serde_json::to_value(OrganizePayload { track_id: track.id, dry_run: true }).unwrap();
+    let result = handler.run(db.clone(), payload).await.unwrap();
+
+    assert_eq!(result["dry_run"], serde_json::json!(true));
+    assert!(result["proposed_path"].is_null(), "proposed_path should be null when no rule matches");
+    assert!(root.join(old_rel).exists(), "file should be untouched");
+
+    drop(dir);
+}

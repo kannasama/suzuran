@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, path::Component, sync::Arc};
 use serde_json::Value;
 use tokio::fs;
 use crate::{
@@ -40,12 +40,25 @@ impl JobHandler for OrganizeJobHandler {
             .map(|r| (r.conditions, r.path_template))
             .collect();
 
-        let new_relative = apply_rules(&rule_pairs, &tags)
-            .ok_or_else(|| AppError::BadRequest(format!("no matching rule for track {}", p.track_id)))?;
+        let new_relative = apply_rules(&rule_pairs, &tags);
+
+        // Guard against path traversal in rule output, regardless of dry_run mode
+        if let Some(ref path) = new_relative {
+            if std::path::Path::new(path).components().any(|c| {
+                matches!(c, Component::ParentDir | Component::RootDir | Component::Prefix(_))
+            }) {
+                return Err(AppError::BadRequest(format!(
+                    "organize rule produced an unsafe path: {path}"
+                )));
+            }
+        }
 
         if p.dry_run {
             return Ok(serde_json::json!({ "dry_run": true, "proposed_path": new_relative }));
         }
+
+        let new_relative = new_relative
+            .ok_or_else(|| AppError::BadRequest(format!("no matching rule for track {}", p.track_id)))?;
 
         let old_abs = std::path::Path::new(&library.root_path).join(&track.relative_path);
         let new_abs = std::path::Path::new(&library.root_path).join(&new_relative);

@@ -107,3 +107,22 @@ fn full_template_single_disc() {
         "Air/1998 - Moon Safari/01 - La Femme d'Argent"
     );
 }
+
+#[test]
+fn unclosed_brace_passes_through_literally() {
+    // An unclosed '{' and its partial token should appear verbatim in the output
+    // rather than being silently swallowed.
+    assert_eq!(render_template("prefix/{unclosed", &tags(&[])), "prefix/{unclosed");
+}
+
+#[test]
+fn unclosed_brace_at_start_passes_through() {
+    assert_eq!(render_template("{no-close", &tags(&[])), "{no-close");
+}
+
+#[test]
+fn valid_and_unclosed_mixed() {
+    let t = tags(&[("artist", "Air")]);
+    // The valid {artist} substitutes; the trailing {unclosed passes through literally
+    assert_eq!(render_template("{artist}/{unclosed", &t), "Air/{unclosed");
+}
