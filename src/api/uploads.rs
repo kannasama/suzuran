@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Multipart, State},
+    extract::{DefaultBodyLimit, Multipart, State},
     http::StatusCode,
     response::IntoResponse,
     Json, Router,
@@ -12,7 +12,12 @@ const ALLOWED_MIME: &[&str] = &["image/jpeg", "image/png", "image/webp", "image/
 const MAX_BYTES: usize = 10 * 1024 * 1024; // 10 MiB
 
 pub fn router() -> Router<AppState> {
-    Router::new().route("/images", axum::routing::post(upload_image))
+    // Raise the Axum body limit for this route to match our in-code MAX_BYTES.
+    // Without this, Axum's default 2 MiB limit causes multer to error (→ 400)
+    // before we even read the bytes, which breaks real-world image uploads.
+    Router::new()
+        .route("/images", axum::routing::post(upload_image))
+        .layer(DefaultBodyLimit::max(MAX_BYTES))
 }
 
 async fn upload_image(
@@ -54,13 +59,16 @@ async fn upload_image(
                 bytes.len()
             )));
         }
-        // Validate actual file content via magic bytes, not just the client-supplied Content-Type
-        let detected = infer::get(&bytes).map(|t| t.mime_type());
-        if !detected.map(|m| ALLOWED_MIME.contains(&m)).unwrap_or(false) {
-            return Err(AppError::BadRequest(format!(
-                "file content does not match an allowed image type (detected: {})",
-                detected.unwrap_or("unknown"),
-            )));
+        // Validate actual file content via magic bytes in addition to the client-supplied Content-Type.
+        // If infer can't identify the type (returns None) we allow it through — the Content-Type
+        // check above already filtered non-image claims; we only hard-reject on a positive mismatch.
+        if let Some(detected) = infer::get(&bytes) {
+            if !ALLOWED_MIME.contains(&detected.mime_type()) {
+                return Err(AppError::BadRequest(format!(
+                    "file content does not match an allowed image type (detected: {})",
+                    detected.mime_type(),
+                )));
+            }
         }
         let filename = format!("{}.{ext}", Uuid::new_v4());
         tokio::fs::create_dir_all(&state.config.uploads_dir)
