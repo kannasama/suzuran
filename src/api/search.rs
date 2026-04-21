@@ -42,8 +42,7 @@ async fn search_mb(
 #[derive(Deserialize)]
 struct FreedBSearchBody {
     disc_id: Option<String>,
-    /// Accepted for forward compatibility; CDDB protocol does not support text search
-    /// so artist/album are not forwarded to the service when disc_id is absent.
+    /// Used for text search when disc_id is absent. Both fields empty → returns [].
     artist: Option<String>,
     album: Option<String>,
 }
