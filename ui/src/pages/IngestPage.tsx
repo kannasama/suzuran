@@ -15,12 +15,36 @@ import type { Track } from '../types/track'
 import type { TagSuggestion } from '../types/tagSuggestion'
 import type { LibraryProfile } from '../types/libraryProfile'
 
+// ── Album-scope tag fields (shared across all tracks in an album) ─────────────
+interface TagField { key: string; label: string; fullWidth?: boolean }
+const ALBUM_EDIT_FIELDS: TagField[] = [
+  { key: 'albumartist',                label: 'Album Artist' },
+  { key: 'albumartistsort',            label: 'Album Artist Sort' },
+  { key: 'album',                      label: 'Album' },
+  { key: 'date',                       label: 'Date' },
+  { key: 'originalyear',              label: 'Original Year' },
+  { key: 'originaldate',              label: 'Original Release Date' },
+  { key: 'releasetype',                label: 'Release Type' },
+  { key: 'releasestatus',              label: 'Release Status' },
+  { key: 'releasecountry',             label: 'Release Country' },
+  { key: 'totaltracks',               label: 'Total Tracks' },
+  { key: 'totaldiscs',                label: 'Total Discs' },
+  { key: 'label',                      label: 'Record Label' },
+  { key: 'catalognumber',              label: 'Catalog #' },
+  { key: 'barcode',                    label: 'Barcode' },
+  { key: 'musicbrainz_albumartistid',  label: 'MB Release Artist ID', fullWidth: true },
+  { key: 'musicbrainz_releasegroupid', label: 'MB Release Group ID',  fullWidth: true },
+  { key: 'musicbrainz_releaseid',      label: 'MB Release ID',        fullWidth: true },
+]
+
 export default function IngestPage() {
   const qc = useQueryClient()
   const [threshold, setThreshold] = useState(80)
   const [searchTrack, setSearchTrack] = useState<Track | null>(null)
   const [submitAlbum, setSubmitAlbum] = useState<string | null>(null)
   const [editingTrackId, setEditingTrackId] = useState<number | null>(null)
+  // Per-album custom art URLs (uploaded in the album header before import)
+  const [albumArtUrls, setAlbumArtUrls] = useState<Record<string, string>>({})
 
   const { data: stagedTracks = [], isLoading: tracksLoading } = useQuery({
     queryKey: ['ingest-staged'],
@@ -141,6 +165,8 @@ export default function IngestPage() {
                 editingTrackId={editingTrackId}
                 onEdit={id => setEditingTrackId(id)}
                 onEditClose={() => setEditingTrackId(null)}
+                presetArtUrl={albumArtUrls[albumKey] ?? ''}
+                onArtChange={url => setAlbumArtUrls(prev => ({ ...prev, [albumKey]: url }))}
               />
             ))
           )}
@@ -158,6 +184,7 @@ export default function IngestPage() {
             setSubmitAlbum(null)
             qc.invalidateQueries({ queryKey: ['ingest-staged'] })
           }}
+          presetArtUrl={albumArtUrls[submitAlbum] ?? ''}
         />
       )}
 
@@ -194,6 +221,8 @@ function AlbumGroup({
   editingTrackId,
   onEdit,
   onEditClose,
+  presetArtUrl,
+  onArtChange,
 }: {
   albumKey: string
   tracks: Track[]
@@ -209,22 +238,27 @@ function AlbumGroup({
   editingTrackId: number | null
   onEdit: (id: number) => void
   onEditClose: () => void
+  presetArtUrl: string
+  onArtChange: (url: string) => void
 }) {
   const firstTrack = tracks[0]
   const firstSuggestion = suggestionsByTrack[firstTrack.id]
   const coverArtUrl = firstSuggestion?.cover_art_url
+  const displayArtUrl = presetArtUrl || coverArtUrl
   const formatExt = firstTrack.relative_path.split('.').pop()?.toUpperCase() ?? '?'
   const [altTrackId, setAltTrackId] = useState<number | null>(null)
+  const [editingAlbum, setEditingAlbum] = useState(false)
+  const [showArtUpload, setShowArtUpload] = useState(false)
 
   return (
     <div className="border border-border rounded bg-bg-panel">
       {/* Album header */}
       <div className="flex items-center gap-3 px-3 py-2 border-b border-border">
-        {coverArtUrl && (
+        {displayArtUrl && (
           <img
-            src={coverArtUrl}
+            src={displayArtUrl}
             alt=""
-            className="w-8 h-8 object-cover rounded border border-border flex-shrink-0"
+            className="w-14 h-14 object-cover rounded border border-border flex-shrink-0"
             onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
           />
         )}
@@ -238,12 +272,61 @@ function AlbumGroup({
           </span>
         </div>
         <button
+          onClick={() => setShowArtUpload(v => !v)}
+          className={`text-xs border rounded px-3 py-1 font-medium shrink-0 ${showArtUpload ? 'border-accent text-accent' : 'border-border text-text-muted hover:text-text-primary'}`}
+        >
+          {displayArtUrl ? 'Change Art' : 'Add Art'}
+        </button>
+        <button
+          onClick={() => setEditingAlbum(v => !v)}
+          className={`text-xs border rounded px-3 py-1 font-medium shrink-0 ${editingAlbum ? 'border-accent text-accent' : 'border-border text-text-muted hover:text-text-primary'}`}
+        >
+          Edit Album
+        </button>
+        <button
           onClick={() => onSubmitAlbum(albumKey)}
           className="text-xs bg-accent text-bg-base rounded px-3 py-1 font-medium hover:opacity-90 shrink-0"
         >
           Import Album
         </button>
       </div>
+
+      {/* Inline art upload panel */}
+      {showArtUpload && (
+        <div className="border-b border-border bg-bg-base px-3 py-2 flex items-center gap-3">
+          <span className="text-[10px] uppercase tracking-wide text-text-muted font-mono shrink-0">Cover Art</span>
+          <div className="flex-1">
+            <ImageUpload
+              value={presetArtUrl}
+              onChange={url => { onArtChange(url); setShowArtUpload(false) }}
+            />
+          </div>
+          {presetArtUrl && (
+            <button
+              type="button"
+              onClick={() => { onArtChange(''); setShowArtUpload(false) }}
+              className="text-xs text-text-muted border border-border rounded px-2 py-0.5 hover:text-destructive shrink-0"
+            >
+              Remove
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setShowArtUpload(false)}
+            className="text-xs text-text-muted border border-border rounded px-2 py-0.5 hover:text-text-primary shrink-0"
+          >
+            Close
+          </button>
+        </div>
+      )}
+
+      {/* Album bulk-edit panel */}
+      {editingAlbum && (
+        <AlbumEditPanel
+          tracks={tracks}
+          onClose={() => setEditingAlbum(false)}
+        />
+      )}
 
       {/* Track rows */}
       <div className="flex flex-col divide-y divide-border">
@@ -361,6 +444,111 @@ function AlbumGroup({
 }
 
 // ---------------------------------------------------------------------------
+// Album bulk-edit panel
+// ---------------------------------------------------------------------------
+
+function AlbumEditPanel({
+  tracks,
+  onClose,
+}: {
+  tracks: Track[]
+  onClose: () => void
+}) {
+  const qc = useQueryClient()
+  const [fields, setFields] = useState<Record<string, string>>(
+    () => Object.fromEntries(ALBUM_EDIT_FIELDS.map(f => [f.key, '']))
+  )
+  const [saving, setSaving] = useState(false)
+  const [savedCount, setSavedCount] = useState<number | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const noneFilledIn = ALBUM_EDIT_FIELDS.every(f => !fields[f.key].trim())
+
+  async function handleApply() {
+    const tags: Record<string, string> = {}
+    for (const { key } of ALBUM_EDIT_FIELDS) {
+      if (fields[key].trim() !== '') tags[key] = fields[key].trim()
+    }
+    if (Object.keys(tags).length === 0) return
+
+    setSaving(true)
+    setError(null)
+    setSavedCount(null)
+    let count = 0
+    const errors: string[] = []
+    for (const track of tracks) {
+      try {
+        await tagSuggestionsApi.create({
+          track_id: track.id,
+          source: 'mb_search',
+          suggested_tags: tags,
+          confidence: 1.0,
+        })
+        count++
+      } catch (e) {
+        errors.push(e instanceof Error ? e.message : 'unknown error')
+      }
+    }
+    setSaving(false)
+    setSavedCount(count)
+    if (errors.length > 0) setError(`${errors.length} failed: ${errors[0]}`)
+    qc.invalidateQueries({ queryKey: ['tag-suggestions'] })
+    qc.invalidateQueries({ queryKey: ['inbox-count'] })
+  }
+
+  return (
+    <div className="border-b border-border bg-bg-base px-3 py-2 flex flex-col gap-2">
+      <div className="flex items-center gap-2">
+        <span className="text-[10px] uppercase tracking-wide text-text-muted font-mono">
+          Album Tags — applies to all {tracks.length} tracks
+        </span>
+        <div className="ml-auto flex items-center gap-2">
+          {savedCount != null && (
+            <span className="text-xs text-green-400">Applied to {savedCount} tracks</span>
+          )}
+          {error && <span className="text-xs text-destructive">{error}</span>}
+          <button
+            type="button"
+            onClick={handleApply}
+            disabled={saving || noneFilledIn}
+            className="text-xs bg-accent text-bg-base rounded px-3 py-0.5 font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {saving ? 'Applying…' : 'Apply to All'}
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-xs text-text-muted border border-border rounded px-2 py-0.5 hover:text-text-primary"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+      <div className="grid grid-cols-3 gap-x-3 gap-y-1.5">
+        {ALBUM_EDIT_FIELDS.map(({ key, label, fullWidth }) => (
+          <label
+            key={key}
+            className={`flex flex-col gap-0.5 ${fullWidth ? 'col-span-3' : ''}`}
+          >
+            <span className="text-text-muted text-[10px] uppercase tracking-wider">{label}</span>
+            <input
+              type="text"
+              value={fields[key]}
+              placeholder="(unchanged)"
+              onChange={e => {
+                setSavedCount(null)
+                setFields(prev => ({ ...prev, [key]: e.target.value }))
+              }}
+              className="bg-bg-panel border border-border text-text-primary text-xs px-2 py-1 rounded focus:outline-none focus:border-accent font-mono placeholder:text-text-muted/40"
+            />
+          </label>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Import pre-flight dialog
 // ---------------------------------------------------------------------------
 
@@ -370,12 +558,14 @@ function SubmitDialog({
   suggestionsByTrack,
   onClose,
   onSubmitted,
+  presetArtUrl,
 }: {
   albumKey: string
   tracks: Track[]
   suggestionsByTrack: Record<number, TagSuggestion>
   onClose: () => void
   onSubmitted: () => void
+  presetArtUrl: string
 }) {
   const qc = useQueryClient()
   const libraryId = tracks[0].library_id
@@ -413,7 +603,8 @@ function SubmitDialog({
   const [queued, setQueued] = useState(0)
   const [submitting, setSubmitting] = useState(false)
   // Gap 4: uploaded art URL (overrides suggestion art when set)
-  const [uploadedArtUrl, setUploadedArtUrl] = useState<string>('')
+  // Initialise from presetArtUrl so art chosen in the album header carries over
+  const [uploadedArtUrl, setUploadedArtUrl] = useState<string>(presetArtUrl)
 
   function toggleProfile(id: number) {
     setSelectedProfiles(prev => {
