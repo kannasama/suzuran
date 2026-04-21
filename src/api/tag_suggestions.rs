@@ -103,11 +103,19 @@ struct CreateTagSuggestionBody {
     musicbrainz_release_id: Option<String>,
 }
 
+const VALID_SUGGESTION_SOURCES: &[&str] = &["acoustid", "mb_search", "freedb"];
+
 async fn create(
     _user: AuthUser,
     State(state): State<AppState>,
     Json(body): Json<CreateTagSuggestionBody>,
 ) -> Result<(StatusCode, Json<TagSuggestion>), AppError> {
+    if !VALID_SUGGESTION_SOURCES.contains(&body.source.as_str()) {
+        return Err(AppError::BadRequest(format!(
+            "invalid source {:?}; must be one of: acoustid, mb_search, freedb",
+            body.source
+        )));
+    }
     let dto = UpsertTagSuggestion {
         track_id: body.track_id,
         source: body.source,

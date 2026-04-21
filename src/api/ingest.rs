@@ -6,7 +6,7 @@ use axum::{
 };
 
 use crate::{
-    api::middleware::auth::AuthUser,
+    api::middleware::{admin::AdminUser, auth::AuthUser},
     error::AppError,
     jobs::ProcessStagedPayload,
     models::Track,
@@ -23,6 +23,8 @@ async fn list_staged(
     State(state): State<AppState>,
     _auth: AuthUser,
 ) -> Result<Json<Vec<Track>>, AppError> {
+    // Fetches staged tracks across all libraries (N+1 by design — intentionally global,
+    // single-tenant model; no per-library access filtering in current role system).
     let libraries = state.db.list_libraries().await?;
     let mut all_tracks: Vec<Track> = Vec::new();
     for lib in libraries {
@@ -34,7 +36,7 @@ async fn list_staged(
 
 async fn submit(
     State(state): State<AppState>,
-    _auth: AuthUser,
+    _admin: AdminUser,
     Json(payload): Json<ProcessStagedPayload>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
     let job = state.db.enqueue_job(
