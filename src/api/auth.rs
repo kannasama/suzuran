@@ -29,13 +29,20 @@ pub fn router() -> Router<AppState> {
 #[derive(Serialize)]
 struct SetupStatusResponse {
     needs_setup: bool,
+    allow_registration: bool,
 }
 
 async fn setup_status(
     State(state): State<AppState>,
 ) -> Result<Json<SetupStatusResponse>, AppError> {
     let needs_setup = state.db.count_users().await? == 0;
-    Ok(Json(SetupStatusResponse { needs_setup }))
+    let allow_registration = state
+        .db
+        .get_setting("allow_registration")
+        .await?
+        .map(|s| s.value != "false")
+        .unwrap_or(true);
+    Ok(Json(SetupStatusResponse { needs_setup, allow_registration }))
 }
 
 #[derive(Deserialize)]
@@ -76,11 +83,21 @@ async fn register(
     State(state): State<AppState>,
     Json(body): Json<RegisterRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    // Registration is first-run only; reject once any user exists
-    if state.db.count_users().await? > 0 {
-        return Err(AppError::Forbidden);
+    let user_count = state.db.count_users().await?;
+    let needs_setup = user_count == 0;
+    if !needs_setup {
+        let allow_registration = state
+            .db
+            .get_setting("allow_registration")
+            .await?
+            .map(|s| s.value != "false")
+            .unwrap_or(true);
+        if !allow_registration {
+            return Err(AppError::Forbidden);
+        }
     }
-    let role = "admin";
+    // First registered user is always admin; subsequent users are normal members.
+    let role = if needs_setup { "admin" } else { "member" };
 
     if body.password.len() < 8 {
         return Err(AppError::BadRequest(

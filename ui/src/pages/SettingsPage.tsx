@@ -1,10 +1,9 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { TopNav } from '../components/TopNav'
 import { EncodingProfileForm } from '../components/EncodingProfileForm'
 import { ArtProfileForm } from '../components/ArtProfileForm'
 import { VirtualLibraryForm } from '../components/VirtualLibraryForm'
-import { ImageUpload } from '../components/ImageUpload'
 import {
   listEncodingProfiles,
   createEncodingProfile,
@@ -36,8 +35,7 @@ import {
 } from '../api/themes'
 import { listSettings, setSetting } from '../api/settings'
 import { useTheme } from '../theme/ThemeProvider'
-import { ACCENT_COLORS, type AccentName } from '../theme/tokens'
-import { extractPalette } from '../utils/extractPalette'
+import { extractPalette, hslToRgbStr } from '../utils/extractPalette'
 import type { EncodingProfile, UpsertEncodingProfile } from '../types/encodingProfile'
 import type { ArtProfile, UpsertArtProfile } from '../types/artProfile'
 import type { VirtualLibrary, UpsertVirtualLibrary } from '../types/virtualLibrary'
@@ -91,7 +89,7 @@ function TabButton({ label, active, onClick }: { label: string; active: boolean;
 // General Settings section
 // ---------------------------------------------------------------------------
 
-const SETTING_META: Record<string, { label: string; description: string; type: 'text' | 'number' | 'password' }> = {
+const SETTING_META: Record<string, { label: string; description: string; type: 'text' | 'number' | 'password' | 'boolean' }> = {
   acoustid_api_key:        { label: 'AcoustID API Key',          description: 'Required for acoustic fingerprint lookups. Get a free key at acoustid.org.',  type: 'password' },
   mb_user_agent:           { label: 'MusicBrainz User Agent',    description: 'Sent with every MusicBrainz request. Must identify your application.',        type: 'text'     },
   mb_rate_limit_ms:        { label: 'MusicBrainz Rate Limit (ms)', description: 'Minimum delay between MusicBrainz requests. Default: 1100.',                type: 'number'   },
@@ -99,6 +97,7 @@ const SETTING_META: Record<string, { label: string; description: string; type: '
   scan_concurrency:        { label: 'Scan Concurrency',          description: 'Number of parallel file scan workers.',                                        type: 'number'   },
   transcode_concurrency:   { label: 'Transcode Concurrency',     description: 'Number of parallel transcode jobs.',                                           type: 'number'   },
   default_art_profile_id:  { label: 'Default Art Profile ID',    description: 'Art profile applied when no library-specific profile is set.',                  type: 'number'   },
+  allow_registration:      { label: 'Allow Registration',        description: 'Show the Register link on the login page. Disable after initial setup.',       type: 'boolean'  },
 }
 
 const SETTING_ORDER = [
@@ -109,6 +108,7 @@ const SETTING_ORDER = [
   'scan_concurrency',
   'transcode_concurrency',
   'default_art_profile_id',
+  'allow_registration',
 ]
 
 function GeneralSettingsSection() {
@@ -160,6 +160,44 @@ function GeneralSettingsSection() {
           const meta = SETTING_META[key]
           if (!meta) return null
           const isDirty = key in drafts
+
+          if (meta.type === 'boolean') {
+            const isEnabled = getValue(key) !== 'false'
+            return (
+              <div key={key} className="flex flex-col gap-1">
+                <span className="text-text-muted text-xs uppercase tracking-wider">{meta.label}</span>
+                <div className="flex gap-2 items-center">
+                  <button
+                    onClick={async () => {
+                      const next = isEnabled ? 'false' : 'true'
+                      setSaving(s => ({ ...s, [key]: true }))
+                      setErrors(e => ({ ...e, [key]: '' }))
+                      try {
+                        await setSetting(key, next)
+                        qc.invalidateQueries({ queryKey: ['settings'] })
+                        qc.invalidateQueries({ queryKey: ['setup-status'] })
+                      } catch (err) {
+                        setErrors(e => ({ ...e, [key]: err instanceof Error ? err.message : 'Save failed' }))
+                      } finally {
+                        setSaving(s => ({ ...s, [key]: false }))
+                      }
+                    }}
+                    disabled={saving[key]}
+                    className={`text-xs rounded px-3 py-1.5 font-medium border transition-colors disabled:opacity-40 ${
+                      isEnabled
+                        ? 'bg-accent text-bg-base border-transparent hover:opacity-90'
+                        : 'bg-transparent text-text-secondary border-border hover:border-accent hover:text-text-primary'
+                    }`}
+                  >
+                    {saving[key] ? '…' : isEnabled ? 'Enabled' : 'Disabled'}
+                  </button>
+                </div>
+                <p className="text-text-muted text-xs">{meta.description}</p>
+                {errors[key] && <p className="text-destructive text-xs">{errors[key]}</p>}
+              </div>
+            )
+          }
+
           return (
             <div key={key} className="flex flex-col gap-1">
               <label className="text-text-muted text-xs uppercase tracking-wider">{meta.label}</label>
@@ -621,11 +659,124 @@ function VirtualLibraryRow({
 }
 
 // ---------------------------------------------------------------------------
-// Themes section
+// Themes section — helpers
 // ---------------------------------------------------------------------------
 
-/** Edit panel for creating / updating a theme. Isolated component so it can
- *  own its draft state and palette-extraction side effect. */
+interface TextBrightness {
+  secondary: number
+  muted: number
+  disabled: number
+}
+
+/**
+ * Default text brightness for a given overlay darkness (0=darkest, 100=lightest).
+ * Interpolates between standard dark and light text endpoint values.
+ */
+function computeDefaultTextBrightness(darkness: number): TextBrightness {
+  const t = darkness / 100
+  return {
+    secondary: Math.round(82 + t * (27 - 82)),
+    muted: 47,
+    disabled: Math.round(35 + t * (66 - 35)),
+  }
+}
+
+function hexToHsl(hex: string): [number, number, number] {
+  const r = parseInt(hex.slice(1, 3), 16) / 255
+  const g = parseInt(hex.slice(3, 5), 16) / 255
+  const b = parseInt(hex.slice(5, 7), 16) / 255
+  const max = Math.max(r, g, b), min = Math.min(r, g, b)
+  const l = (max + min) / 2
+  if (max === min) return [0, 0, l]
+  const d = max - min
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min)
+  let h = 0
+  if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) * 60
+  else if (max === g) h = ((b - r) / d + 2) * 60
+  else h = ((r - g) / d + 4) * 60
+  return [h, s, l]
+}
+
+/**
+ * Compute surface CSS vars from an overlay darkness slider (0=dark, 100=light)
+ * and an accent hex (for hue tinting). Opacity scales with distance from midpoint.
+ */
+function computeOverlayVars(accent: string, darkness: number, tb?: TextBrightness): Record<string, string> {
+  const isDark = darkness < 50
+  const { secondary, muted, disabled } = tb ?? computeDefaultTextBrightness(darkness)
+
+  const bToHex = (b: number) => {
+    const v = Math.round((b / 100) * 255)
+    return '#' + [v, v, v].map(n => n.toString(16).padStart(2, '0')).join('')
+  }
+
+  const t = Math.abs(darkness - 50) / 50
+  const opacity = 0.65 + t * 0.27
+  const [h] = hexToHsl(accent)
+
+  if (isDark) {
+    return {
+      '--bg-base':        `rgba(${hslToRgbStr(h, 0.15, 0.06)}, ${opacity.toFixed(2)})`,
+      '--bg-surface':     `rgba(${hslToRgbStr(h, 0.12, 0.08)}, ${(opacity - 0.05).toFixed(2)})`,
+      '--bg-panel':       `rgba(${hslToRgbStr(h, 0.18, 0.04)}, ${Math.min(opacity + 0.07, 0.97).toFixed(2)})`,
+      '--bg-elevated':    `rgba(${hslToRgbStr(h, 0.10, 0.10)}, ${(opacity - 0.10).toFixed(2)})`,
+      '--border':         `rgba(${hslToRgbStr(h, 0.10, 0.12)}, ${(opacity - 0.05).toFixed(2)})`,
+      '--surface-border': `rgba(${hslToRgbStr(h, 0.10, 0.12)}, ${(opacity - 0.05).toFixed(2)})`,
+      '--text-primary':   '#e8e8ec',
+      '--text-secondary': bToHex(secondary),
+      '--text-muted':     bToHex(muted),
+      '--text-disabled':  bToHex(disabled),
+    }
+  } else {
+    return {
+      '--bg-base':        `rgba(${hslToRgbStr(h, 0.10, 0.97)}, ${opacity.toFixed(2)})`,
+      '--bg-surface':     `rgba(${hslToRgbStr(h, 0.08, 0.99)}, ${(opacity - 0.04).toFixed(2)})`,
+      '--bg-panel':       `rgba(${hslToRgbStr(h, 0.12, 0.94)}, ${Math.min(opacity + 0.06, 0.98).toFixed(2)})`,
+      '--bg-elevated':    `rgba(${hslToRgbStr(h, 0.07, 0.96)}, ${(opacity - 0.08).toFixed(2)})`,
+      '--border':         `rgba(${hslToRgbStr(h, 0.12, 0.88)}, ${(opacity - 0.04).toFixed(2)})`,
+      '--surface-border': `rgba(${hslToRgbStr(h, 0.12, 0.88)}, ${(opacity - 0.04).toFixed(2)})`,
+      '--text-primary':   '#0f0f18',
+      '--text-secondary': bToHex(secondary),
+      '--text-muted':     bToHex(muted),
+      '--text-disabled':  bToHex(disabled),
+    }
+  }
+}
+
+function parseThemeVars(input: string): Record<string, string> {
+  const trimmed = input.trim()
+  try {
+    const parsed = JSON.parse(trimmed) as unknown
+    if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+      return Object.fromEntries(
+        Object.entries(parsed as Record<string, unknown>).map(([k, v]) => [k, String(v)])
+      )
+    }
+    throw new Error('Expected a JSON object')
+  } catch {
+    // fall through to flat YAML
+  }
+  const result: Record<string, string> = {}
+  for (const rawLine of trimmed.split('\n')) {
+    const line = rawLine.trim()
+    if (!line || line.startsWith('#')) continue
+    const colonIdx = line.indexOf(':')
+    if (colonIdx === -1) continue
+    const key = line.slice(0, colonIdx).trim()
+    if (!key.startsWith('--')) continue
+    const val = line.slice(colonIdx + 1).trim().replace(/^["']|["']$/g, '')
+    result[key] = val
+  }
+  if (Object.keys(result).length === 0) {
+    throw new Error('No CSS custom properties found (expected --var-name: value lines)')
+  }
+  return result
+}
+
+// ---------------------------------------------------------------------------
+// Themes section — edit panel
+// ---------------------------------------------------------------------------
+
 function ThemeEditPanel({
   title,
   initial,
@@ -639,118 +790,229 @@ function ThemeEditPanel({
   onCancel: () => void
   isPending: boolean
 }) {
-  const [draft, setDraft] = useState<UpsertTheme>(initial)
-  const skipFirstExtract = useRef(true)
-
-  // Auto-extract palette when the background URL changes (skip on initial mount
-  // so we don't clobber saved css_vars when opening an existing theme for edit).
-  useEffect(() => {
-    if (skipFirstExtract.current) {
-      skipFirstExtract.current = false
-      return
+  const [name, setName] = useState(initial.name)
+  const [bgFile, setBgFile] = useState<File | null>(null)
+  const [bgPreview, setBgPreview] = useState<string | null>(initial.background_url ?? null)
+  const [extractedAccent, setExtractedAccent] = useState<string | null>(initial.accent_color ?? null)
+  const [overlayDarkness, setOverlayDarkness] = useState(20)
+  const [textBrightness, setTextBrightness] = useState<TextBrightness>(() => computeDefaultTextBrightness(20))
+  const [varsText, setVarsText] = useState<string>(() => {
+    const existing = initial.css_vars as Record<string, string>
+    if (Object.keys(existing).length > 0) {
+      return Object.entries(existing).map(([k, v]) => `${k}: "${v}"`).join('\n')
     }
-    const url = draft.background_url
-    if (!url) return
+    return ''
+  })
+  const [parseError, setParseError] = useState<string | null>(null)
+
+  // Recompute overlay vars whenever slider or text brightness changes (only if palette extracted)
+  useEffect(() => {
+    const accent = extractedAccent
+    if (!accent) return
+    const vars = computeOverlayVars(accent, overlayDarkness, textBrightness)
+    setVarsText(Object.entries(vars).map(([k, v]) => `${k}: "${v}"`).join('\n'))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [overlayDarkness, extractedAccent, textBrightness])
+
+  function doExtract(src: string) {
     const img = new Image()
     img.crossOrigin = 'anonymous'
     img.onload = () => {
-      const palette = extractPalette(img)
-      if (!palette) return
-      setDraft(d => ({
-        ...d,
-        css_vars: palette.themeVars,
-        // Only suggest accent if the user hasn't already chosen one
-        accent_color: d.accent_color ?? palette.accent,
-      }))
+      const result = extractPalette(img)
+      if (!result) { setParseError('Could not extract palette from image.'); return }
+      setExtractedAccent(result.accent)
+      setParseError(null)
+      // Overlay effect will trigger via useEffect above
     }
-    img.src = url
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft.background_url])
+    img.onerror = () => setParseError('Could not load image for extraction.')
+    img.src = src
+  }
 
-  const hasPalette = Object.keys(draft.css_vars).length > 0
+  function handleBgSelect(f: File) {
+    if (bgPreview && bgPreview !== initial.background_url) URL.revokeObjectURL(bgPreview)
+    const url = URL.createObjectURL(f)
+    setBgFile(f)
+    setBgPreview(url)
+    doExtract(url)
+  }
+
+  function handleClearBg() {
+    if (bgPreview && bgPreview !== initial.background_url) URL.revokeObjectURL(bgPreview)
+    setBgFile(null)
+    setBgPreview(null)
+    setExtractedAccent(null)
+  }
+
+  function handleSave() {
+    let css_vars: Record<string, string> = {}
+    if (varsText.trim()) {
+      try {
+        css_vars = parseThemeVars(varsText)
+        setParseError(null)
+      } catch (e) {
+        setParseError(e instanceof Error ? e.message : 'Invalid CSS vars format.')
+        return
+      }
+    }
+    onSave({
+      name,
+      css_vars,
+      accent_color: extractedAccent ?? null,
+      background_url: bgFile ? null : (bgPreview ?? null), // bgFile will be uploaded separately
+      _bgFile: bgFile ?? undefined,
+    } as UpsertTheme & { _bgFile?: File })
+  }
 
   return (
     <div className="mb-5 bg-bg-panel border border-border rounded p-4 max-w-lg">
-      <p className="text-text-muted text-xs uppercase tracking-wider mb-4">{title}</p>
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-text-muted text-xs uppercase tracking-wider">{title}</p>
+        <button onClick={onCancel} className="text-xs text-text-muted hover:text-text-primary transition-colors">
+          Cancel
+        </button>
+      </div>
+
       <div className="flex flex-col gap-4">
-
         {/* Name */}
-        <label className="flex flex-col gap-1">
-          <span className="text-text-muted text-xs uppercase tracking-wider">Name</span>
-          <input
-            type="text"
-            value={draft.name}
-            onChange={e => setDraft(d => ({ ...d, name: e.target.value }))}
-            placeholder="My Theme"
-            autoFocus
-            className="bg-bg-base border border-border text-text-primary text-xs px-2 py-1.5 rounded focus:outline-none focus:border-accent"
-          />
-        </label>
+        <input
+          type="text"
+          value={name}
+          onChange={e => setName(e.target.value)}
+          placeholder="Theme name"
+          autoFocus
+          className="bg-bg-base border border-border text-text-primary text-xs px-2 py-1.5 rounded focus:outline-none focus:border-accent"
+        />
 
-        {/* Accent — named swatches + editable hex */}
-        <div className="flex flex-col gap-2">
-          <span className="text-text-muted text-xs uppercase tracking-wider">Accent Color</span>
-          <div className="flex flex-wrap gap-1.5">
-            {(Object.entries(ACCENT_COLORS) as [AccentName, string][]).map(([name, hex]) => (
-              <button
-                key={name}
-                type="button"
-                title={name}
-                onClick={() => setDraft(d => ({ ...d, accent_color: hex }))}
-                style={{ background: hex }}
-                className={`w-5 h-5 rounded-full transition-transform ${
-                  draft.accent_color === hex
-                    ? 'ring-2 ring-offset-1 ring-offset-bg-panel ring-white scale-110'
-                    : 'hover:scale-110 opacity-70 hover:opacity-100'
-                }`}
-              />
-            ))}
+        {/* Overlay darkness slider */}
+        <div className="space-y-1">
+          <div className="flex items-center justify-between text-[10px] text-text-disabled">
+            <span>Dark overlay</span>
+            <span>Overlay darkness</span>
+            <span>Light overlay</span>
           </div>
-          <div className="flex items-center gap-2">
-            <input
-              type="text"
-              value={draft.accent_color ?? ''}
-              onChange={e => setDraft(d => ({ ...d, accent_color: e.target.value || null }))}
-              placeholder="#4f8ef7"
-              className="w-28 bg-bg-base border border-border text-text-primary text-xs px-2 py-1 rounded focus:outline-none focus:border-accent font-mono"
-            />
-            {draft.accent_color && (
-              <span
-                className="inline-block w-4 h-4 rounded-full border border-border flex-shrink-0"
-                style={{ background: draft.accent_color }}
-              />
-            )}
-          </div>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={overlayDarkness}
+            onChange={e => setOverlayDarkness(Number(e.target.value))}
+            className="w-full accent-[var(--accent)]"
+          />
         </div>
 
-        {/* Background image + palette extraction */}
-        <ImageUpload
-          value={draft.background_url ?? ''}
-          onChange={url => setDraft(d => ({
-            ...d,
-            background_url: url || null,
-            // Clear palette when background is removed
-            css_vars: url ? d.css_vars : {},
-          }))}
-        />
-        {hasPalette && (
-          <p className="text-success text-xs -mt-2">Palette extracted from background.</p>
-        )}
+        {/* Advanced text tuning */}
+        <details>
+          <summary className="text-xs text-text-muted cursor-pointer select-none hover:text-text-secondary transition-colors">
+            Advanced text tuning
+          </summary>
+          <div className="mt-3 space-y-3 pl-1">
+            {(
+              [
+                { label: 'Secondary text', key: 'secondary' as const },
+                { label: 'Muted text',     key: 'muted'     as const },
+                { label: 'Disabled text',  key: 'disabled'  as const },
+              ]
+            ).map(({ label, key }) => {
+              const def = computeDefaultTextBrightness(overlayDarkness)[key]
+              return (
+                <div key={key} className="flex items-center gap-2">
+                  <span className="text-xs text-text-muted w-28 shrink-0">{label}</span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={textBrightness[key]}
+                    onChange={e => setTextBrightness(prev => ({ ...prev, [key]: Number(e.target.value) }))}
+                    className="flex-1 accent-[var(--accent)]"
+                  />
+                  <span className="text-xs text-text-disabled w-6 text-right">{textBrightness[key]}</span>
+                  <button
+                    type="button"
+                    onClick={() => setTextBrightness(prev => ({ ...prev, [key]: def }))}
+                    className="text-xs text-text-muted hover:text-text-secondary transition-colors px-1"
+                    title="Reset to default"
+                  >
+                    ↺
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        </details>
 
+        {/* CSS vars textarea */}
+        <div className="flex flex-col gap-1">
+          <textarea
+            value={varsText}
+            onChange={e => { setVarsText(e.target.value); setParseError(null) }}
+            placeholder={'# YAML or JSON\n--bg-base: "rgba(10, 12, 20, 0.85)"\n--accent: "#4f8ef7"'}
+            rows={5}
+            className="bg-bg-base border border-border text-text-primary text-xs px-2 py-1.5 rounded focus:outline-none focus:border-accent font-mono resize-y"
+          />
+          <p className="text-[10px] text-text-disabled">
+            Accepts flat YAML (--var-name: value) or JSON. Slider updates the vars automatically when a background image is loaded.
+          </p>
+        </div>
+
+        {/* Background image */}
+        <div className="flex flex-col gap-1.5">
+          <p className="text-[10px] text-text-secondary">Background image (optional — palette extracted automatically)</p>
+          {bgPreview ? (
+            <div className="flex items-start gap-2">
+              <img
+                src={bgPreview}
+                className="w-24 h-16 object-cover rounded border border-border flex-shrink-0"
+                alt=""
+              />
+              <div className="flex flex-col gap-1">
+                <button
+                  type="button"
+                  onClick={() => doExtract(bgPreview!)}
+                  className="text-xs px-2 py-0.5 rounded border border-border text-accent hover:bg-accent/10 transition-colors"
+                >
+                  Re-extract
+                </button>
+                <button
+                  type="button"
+                  onClick={handleClearBg}
+                  className="text-xs px-2 py-0.5 rounded border border-border text-text-muted hover:text-destructive transition-colors"
+                >
+                  Remove
+                </button>
+              </div>
+            </div>
+          ) : (
+            <label className="flex items-center gap-2 px-2 py-1.5 rounded border border-dashed border-border cursor-pointer hover:border-accent transition-colors">
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                className="hidden"
+                onChange={e => {
+                  const f = e.target.files?.[0]
+                  if (!f) return
+                  if (f.size > 10 * 1024 * 1024) { setParseError('Image must be under 10 MB.'); return }
+                  handleBgSelect(f)
+                  e.target.value = ''
+                }}
+              />
+              <span className="text-xs text-text-secondary">Choose image…</span>
+            </label>
+          )}
+          <p className="text-[10px] text-text-disabled">PNG, JPEG, GIF, or WebP · max 10 MB.</p>
+        </div>
+
+        {parseError && <p className="text-xs text-destructive">{parseError}</p>}
       </div>
 
       <div className="flex gap-2 mt-4">
         <button
-          onClick={() => onSave(draft)}
-          disabled={isPending || !draft.name.trim()}
+          onClick={handleSave}
+          disabled={isPending || !name.trim()}
           className="text-xs text-bg-base bg-accent rounded px-3 py-1 font-medium hover:opacity-90 disabled:opacity-50"
         >
-          {isPending ? 'Saving…' : 'Save'}
+          {isPending ? 'Saving…' : 'Save theme'}
         </button>
-        <button
-          onClick={onCancel}
-          className="text-xs text-text-muted hover:text-text-primary px-3 py-1"
-        >
+        <button onClick={onCancel} className="text-xs text-text-muted hover:text-text-primary px-3 py-1">
           Cancel
         </button>
       </div>
@@ -782,13 +1044,38 @@ function ThemesSection() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['themes'] }),
   })
 
-  const isSavePending = createMutation.isPending || updateMutation.isPending
+  const [uploading, setUploading] = useState(false)
+  const isSavePending = createMutation.isPending || updateMutation.isPending || uploading
 
-  async function handleSave(data: UpsertTheme) {
+  async function handleSave(data: UpsertTheme & { _bgFile?: File }) {
+    const { _bgFile, ...themeData } = data
+    let bgUrl = themeData.background_url
+
+    if (_bgFile) {
+      setUploading(true)
+      try {
+        const ext = _bgFile.name.split('.').pop()?.toLowerCase() ?? 'bin'
+        const safe = new File([_bgFile], `upload.${ext}`, { type: _bgFile.type })
+        const form = new FormData()
+        form.append('file', safe)
+        const resp = await fetch('/api/v1/uploads/images', {
+          method: 'POST',
+          body: form,
+          credentials: 'include',
+        })
+        if (!resp.ok) throw new Error('Image upload failed')
+        const json = await resp.json()
+        bgUrl = json.url
+      } finally {
+        setUploading(false)
+      }
+    }
+
+    const payload = { ...themeData, background_url: bgUrl }
     if (editing === 'new') {
-      await createMutation.mutateAsync(data)
+      await createMutation.mutateAsync(payload)
     } else if (editing != null) {
-      await updateMutation.mutateAsync({ id: editing.id, data })
+      await updateMutation.mutateAsync({ id: editing.id, data: payload })
     }
   }
 

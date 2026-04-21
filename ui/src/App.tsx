@@ -8,6 +8,8 @@ import { LibraryPage } from './pages/LibraryPage'
 import OrganizationPage from './pages/OrganizationPage'
 import InboxPage from './pages/InboxPage'
 import SettingsPage from './pages/SettingsPage'
+import AccountPage from './pages/AccountPage'
+import TwoFactorPage from './pages/TwoFactorPage'
 
 function useSetupStatus() {
   return useQuery({
@@ -39,6 +41,7 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/login/2fa" element={<TwoFactorPage />} />
       {/* Register is first-run only — redirect away once setup is done */}
       <Route path="/register" element={<Navigate to="/login" replace />} />
       <Route
@@ -52,6 +55,10 @@ function AppRoutes() {
       <Route
         path="/settings"
         element={user ? <SettingsPage /> : <Navigate to="/login" replace />}
+      />
+      <Route
+        path="/account"
+        element={user ? <AccountPage /> : <Navigate to="/login" replace />}
       />
       <Route
         path="/*"

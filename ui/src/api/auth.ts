@@ -41,6 +41,7 @@ export async function getMe(): Promise<User> {
 
 export interface SetupStatus {
   needs_setup: boolean
+  allow_registration: boolean
 }
 
 export async function getSetupStatus(): Promise<SetupStatus> {

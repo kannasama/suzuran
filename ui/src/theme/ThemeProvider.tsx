@@ -6,8 +6,7 @@ import { listThemes, type Theme } from '../api/themes'
 interface ThemeContextValue {
   baseTheme: BaseTheme
   accentColor: string | null
-  backgroundUrl: string | null
-  setTheme: (base: BaseTheme, accent?: string | null, bgUrl?: string | null) => void
+  setTheme: (base: BaseTheme, accent?: string | null) => void
   themes: Theme[]
   activeThemeId: number | null
   setActiveTheme: (id: number | null) => void
@@ -16,7 +15,6 @@ interface ThemeContextValue {
 const ThemeContext = createContext<ThemeContextValue>({
   baseTheme: 'dark',
   accentColor: null,
-  backgroundUrl: null,
   setTheme: () => {},
   themes: [],
   activeThemeId: null,
@@ -27,29 +25,16 @@ export function useTheme() {
   return useContext(ThemeContext)
 }
 
-interface ThemeProviderProps {
-  children: ReactNode
-  initialBase?: BaseTheme
-  initialAccent?: string | null
-  initialBackgroundUrl?: string | null
-}
-
-export function ThemeProvider({
-  children,
-  initialBase = 'dark',
-  initialAccent = null,
-  initialBackgroundUrl = null,
-}: ThemeProviderProps) {
-  const [baseTheme, setBaseTheme] = useState<BaseTheme>(initialBase)
-  const [accentColor, setAccentColor] = useState<string | null>(initialAccent)
-  const [backgroundUrl, setBackgroundUrl] = useState<string | null>(initialBackgroundUrl)
+export function ThemeProvider({ children }: { children: ReactNode }) {
+  const [baseTheme, setBaseTheme] = useState<BaseTheme>('dark')
+  const [accentColor, setAccentColor] = useState<string | null>(null)
 
   const [activeThemeId, setActiveThemeIdState] = useState<number | null>(() => {
     const stored = localStorage.getItem('suzuran:active-theme')
     return stored ? Number(stored) : null
   })
 
-  // Load themes from DB — retry: false so 401 on login page doesn't spam
+  // Load themes — retry: false so 401 on login page doesn't spam
   const { data: themes = [] } = useQuery({
     queryKey: ['themes'],
     queryFn: listThemes,
@@ -63,23 +48,21 @@ export function ThemeProvider({
   useEffect(() => {
     const tokens = baseTheme === 'dark' ? darkTokens : lightTokens
     const effectiveAccent = activeTheme?.accent_color ?? accentColor
-    const extraVars = activeTheme ? activeTheme.css_vars : null
+    const extraVars = activeTheme?.css_vars
+      ? (activeTheme.css_vars as Record<string, string>)
+      : null
     applyTokens(tokens, effectiveAccent, extraVars)
-    document.documentElement.classList.toggle('dark', baseTheme === 'dark')
   }, [baseTheme, accentColor, activeTheme])
 
-  // Apply background image from active theme or manual override
+  // Apply background image directly to body so semi-transparent surfaces show it through
   useEffect(() => {
-    const effectiveBgUrl = activeTheme?.background_url ?? backgroundUrl
-    const root = document.documentElement
-    if (effectiveBgUrl) {
-      root.style.setProperty('--theme-bg-image', `url('${effectiveBgUrl}')`)
-      root.classList.add('has-theme-bg')
+    const bgUrl = activeTheme?.background_url ?? null
+    if (bgUrl) {
+      document.body.style.backgroundImage = `url('${bgUrl}')`
     } else {
-      root.style.removeProperty('--theme-bg-image')
-      root.classList.remove('has-theme-bg')
+      document.body.style.backgroundImage = ''
     }
-  }, [backgroundUrl, activeTheme])
+  }, [activeTheme])
 
   function setActiveTheme(id: number | null) {
     setActiveThemeIdState(id)
@@ -90,17 +73,15 @@ export function ThemeProvider({
     }
   }
 
-  const setTheme = (base: BaseTheme, accent?: string | null, bgUrl?: string | null) => {
+  function setTheme(base: BaseTheme, accent?: string | null) {
     setBaseTheme(base)
     if (accent !== undefined) setAccentColor(accent)
-    if (bgUrl !== undefined) setBackgroundUrl(bgUrl)
   }
 
   return (
     <ThemeContext.Provider value={{
       baseTheme,
       accentColor,
-      backgroundUrl,
       setTheme,
       themes,
       activeThemeId,

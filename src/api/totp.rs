@@ -19,10 +19,29 @@ use crate::{
 
 pub fn router() -> Router<AppState> {
     Router::new()
+        .route("/status", axum::routing::get(status))
         .route("/enroll", post(enroll))
         .route("/verify", post(verify_enroll))
         .route("/complete", post(complete_2fa))
         .route("/disenroll", delete(disenroll))
+}
+
+#[derive(Serialize)]
+struct TotpStatusResponse {
+    enrolled: bool,
+}
+
+async fn status(
+    State(state): State<AppState>,
+    auth: AuthUser,
+) -> Result<Json<TotpStatusResponse>, AppError> {
+    let enrolled = state
+        .db
+        .find_totp_entry(auth.0.id)
+        .await?
+        .map(|e| e.verified)
+        .unwrap_or(false);
+    Ok(Json(TotpStatusResponse { enrolled }))
 }
 
 #[derive(Serialize)]

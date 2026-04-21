@@ -83,12 +83,18 @@ export function extractPalette(imgEl: HTMLImageElement, forceTone?: PaletteTone)
       isDark: true,
       appliedTone: forceTone ?? 'dark',
       themeVars: {
-        '--bg-base':    'rgba(10, 12, 20, 0.85)',
-        '--bg-surface': 'rgba(15, 18, 30, 0.80)',
-        '--bg-panel':   'rgba(11, 13, 22, 0.82)',
-        '--bg-hover':   'rgba(20, 24, 38, 0.78)',
-        '--border':     'rgba(30, 35, 51, 0.80)',
-        '--border-subtle': 'rgba(20, 24, 38, 0.75)',
+        '--bg-base':        'rgba(10, 12, 20, 0.85)',
+        '--bg-surface':     'rgba(15, 18, 30, 0.80)',
+        '--bg-panel':       'rgba(8, 10, 18, 0.92)',
+        '--bg-elevated':    'rgba(22, 26, 40, 0.75)',
+        '--bg-hover':       'rgba(20, 24, 38, 0.78)',
+        '--border':         'rgba(30, 35, 51, 0.80)',
+        '--border-subtle':  'rgba(20, 24, 38, 0.75)',
+        '--surface-border': 'rgba(30, 35, 51, 0.80)',
+        '--text-primary':   '#e8e8ec',
+        '--text-secondary': '#a0a0b0',
+        '--text-muted':     '#555566',
+        '--text-disabled':  '#3a3a4a',
       },
     }
   }
@@ -130,20 +136,34 @@ export function extractPalette(imgEl: HTMLImageElement, forceTone?: PaletteTone)
 
   const themeVars: Record<string, string> = appliedTone === 'dark'
     ? {
-        '--bg-base':       `rgba(${hslToRgbStr(hue, 0.15, 0.06)}, 0.85)`,
-        '--bg-surface':    `rgba(${hslToRgbStr(hue, 0.12, 0.08)}, 0.80)`,
-        '--bg-panel':      `rgba(${hslToRgbStr(hue, 0.13, 0.07)}, 0.82)`,
-        '--bg-hover':      `rgba(${hslToRgbStr(hue, 0.10, 0.10)}, 0.78)`,
-        '--border':        `rgba(${hslToRgbStr(hue, 0.10, 0.12)}, 0.80)`,
-        '--border-subtle': `rgba(${hslToRgbStr(hue, 0.10, 0.09)}, 0.75)`,
+        '--bg-base':        `rgba(${hslToRgbStr(hue, 0.15, 0.06)}, 0.85)`,
+        '--bg-surface':     `rgba(${hslToRgbStr(hue, 0.12, 0.08)}, 0.80)`,
+        // --bg-panel is used for the top bar — keep it more opaque so it reads
+        // as a distinct header even over a bright background image.
+        '--bg-panel':       `rgba(${hslToRgbStr(hue, 0.18, 0.04)}, 0.92)`,
+        '--bg-elevated':    `rgba(${hslToRgbStr(hue, 0.10, 0.10)}, 0.75)`,
+        '--bg-hover':       `rgba(${hslToRgbStr(hue, 0.10, 0.10)}, 0.78)`,
+        '--border':         `rgba(${hslToRgbStr(hue, 0.10, 0.12)}, 0.80)`,
+        '--border-subtle':  `rgba(${hslToRgbStr(hue, 0.10, 0.09)}, 0.75)`,
+        '--surface-border': `rgba(${hslToRgbStr(hue, 0.10, 0.12)}, 0.80)`,
+        '--text-primary':   '#e8e8ec',
+        '--text-secondary': '#a0a0b0',
+        '--text-muted':     '#555566',
+        '--text-disabled':  '#3a3a4a',
       }
     : {
-        '--bg-base':       `rgba(${hslToRgbStr(hue, 0.10, 0.97)}, 0.90)`,
-        '--bg-surface':    `rgba(${hslToRgbStr(hue, 0.08, 0.99)}, 0.86)`,
-        '--bg-panel':      `rgba(${hslToRgbStr(hue, 0.09, 0.96)}, 0.88)`,
-        '--bg-hover':      `rgba(${hslToRgbStr(hue, 0.07, 0.94)}, 0.84)`,
-        '--border':        `rgba(${hslToRgbStr(hue, 0.12, 0.88)}, 0.85)`,
-        '--border-subtle': `rgba(${hslToRgbStr(hue, 0.10, 0.91)}, 0.80)`,
+        '--bg-base':        `rgba(${hslToRgbStr(hue, 0.10, 0.97)}, 0.90)`,
+        '--bg-surface':     `rgba(${hslToRgbStr(hue, 0.08, 0.99)}, 0.86)`,
+        '--bg-panel':       `rgba(${hslToRgbStr(hue, 0.12, 0.94)}, 0.96)`,
+        '--bg-elevated':    `rgba(${hslToRgbStr(hue, 0.07, 0.96)}, 0.82)`,
+        '--bg-hover':       `rgba(${hslToRgbStr(hue, 0.07, 0.94)}, 0.84)`,
+        '--border':         `rgba(${hslToRgbStr(hue, 0.12, 0.88)}, 0.85)`,
+        '--border-subtle':  `rgba(${hslToRgbStr(hue, 0.10, 0.91)}, 0.80)`,
+        '--surface-border': `rgba(${hslToRgbStr(hue, 0.12, 0.88)}, 0.85)`,
+        '--text-primary':   '#0f0f18',
+        '--text-secondary': '#50506a',
+        '--text-muted':     '#9090a8',
+        '--text-disabled':  '#c0c0ce',
       }
 
   return { accent, isDark, appliedTone, themeVars }

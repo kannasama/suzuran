@@ -105,6 +105,13 @@ export function TopNav() {
                   <p className="text-xs text-text-muted capitalize">{user.role}</p>
                 </div>
                 <NavLink
+                  to="/account"
+                  onClick={() => setMenuOpen(false)}
+                  className="flex items-center px-3 py-1.5 text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
+                >
+                  Account
+                </NavLink>
+                <NavLink
                   to="/settings"
                   onClick={() => setMenuOpen(false)}
                   className="flex items-center px-3 py-1.5 text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"

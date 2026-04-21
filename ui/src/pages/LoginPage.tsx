@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { login, getMe } from '../api/auth'
+import { useQuery } from '@tanstack/react-query'
+import { login, getMe, getSetupStatus } from '../api/auth'
 import { useAuth } from '../contexts/AuthContext'
 
 export function LoginPage() {
@@ -11,6 +12,13 @@ export function LoginPage() {
   const navigate = useNavigate()
   const { setUser } = useAuth()
 
+  const { data: setup } = useQuery({
+    queryKey: ['setup-status'],
+    queryFn: getSetupStatus,
+    staleTime: Infinity,
+    retry: false,
+  })
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
     setError(null)
@@ -18,8 +26,7 @@ export function LoginPage() {
     try {
       const result = await login(username, password)
       if (result.two_factor_required) {
-        // TODO Phase 1.5 UI: redirect to 2FA page
-        setError('2FA required — 2FA UI not yet implemented')
+        navigate('/login/2fa', { state: { token: result.token } })
         return
       }
       const me = await getMe()
@@ -75,12 +82,14 @@ export function LoginPage() {
             {loading ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
-        <p className="text-text-muted text-xs mt-4 text-center">
-          No account?{' '}
-          <Link to="/register" className="text-accent hover:underline">
-            Register
-          </Link>
-        </p>
+        {setup?.allow_registration && (
+          <p className="text-text-muted text-xs mt-4 text-center">
+            No account?{' '}
+            <Link to="/register" className="text-accent hover:underline">
+              Register
+            </Link>
+          </p>
+        )}
       </div>
     </div>
   )
