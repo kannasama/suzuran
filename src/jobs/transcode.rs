@@ -58,6 +58,17 @@ pub fn build_ffmpeg_args(profile: &EncodingProfile) -> Vec<String> {
     if let Some(ch) = profile.channels {
         args.extend(["-ac".to_string(), ch.to_string()]);
     }
+    if profile.codec == "flac" {
+        match profile.bit_depth {
+            Some(16) => args.extend(["-sample_fmt".to_string(), "s16".to_string()]),
+            Some(24) => args.extend([
+                "-sample_fmt".to_string(), "s32".to_string(),
+                "-bits_per_raw_sample".to_string(), "24".to_string(),
+            ]),
+            Some(32) => args.extend(["-sample_fmt".to_string(), "s32".to_string()]),
+            _ => {}
+        }
+    }
     if let Some(adv) = &profile.advanced_args {
         args.extend(adv.split_whitespace().map(str::to_string));
     }
@@ -305,4 +316,62 @@ async fn handle_transcode(
         "source_track_id": source_track_id,
         "derived_track_id": derived_track.id,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+
+    fn profile(codec: &str, bit_depth: Option<i64>) -> EncodingProfile {
+        EncodingProfile {
+            id: 1,
+            name: "test".into(),
+            codec: codec.into(),
+            bitrate: None,
+            sample_rate: None,
+            channels: None,
+            bit_depth,
+            advanced_args: None,
+            created_at: Utc::now(),
+        }
+    }
+
+    #[test]
+    fn flac_16bit() {
+        let args = build_ffmpeg_args(&profile("flac", Some(16)));
+        assert!(args.contains(&"-sample_fmt".to_string()));
+        assert!(args.contains(&"s16".to_string()));
+        assert!(!args.contains(&"-bits_per_raw_sample".to_string()));
+    }
+
+    #[test]
+    fn flac_24bit() {
+        let args = build_ffmpeg_args(&profile("flac", Some(24)));
+        assert!(args.contains(&"-sample_fmt".to_string()));
+        assert!(args.contains(&"s32".to_string()));
+        assert!(args.contains(&"-bits_per_raw_sample".to_string()));
+        assert!(args.contains(&"24".to_string()));
+    }
+
+    #[test]
+    fn flac_32bit() {
+        let args = build_ffmpeg_args(&profile("flac", Some(32)));
+        assert!(args.contains(&"-sample_fmt".to_string()));
+        assert!(args.contains(&"s32".to_string()));
+        assert!(!args.contains(&"-bits_per_raw_sample".to_string()));
+    }
+
+    #[test]
+    fn flac_no_bit_depth_leaves_sample_fmt_unset() {
+        let args = build_ffmpeg_args(&profile("flac", None));
+        assert!(!args.contains(&"-sample_fmt".to_string()));
+    }
+
+    #[test]
+    fn non_flac_ignores_bit_depth() {
+        let args = build_ffmpeg_args(&profile("aac", Some(24)));
+        assert!(!args.contains(&"-sample_fmt".to_string()));
+        assert!(!args.contains(&"-bits_per_raw_sample".to_string()));
+    }
 }

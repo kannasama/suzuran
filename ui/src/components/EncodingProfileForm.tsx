@@ -16,6 +16,7 @@ export function EncodingProfileForm({ initial, onSave, onCancel, isPending }: Pr
   const [bitrate, setBitrate] = useState(initial?.bitrate ?? '')
   const [sampleRate, setSampleRate] = useState(initial?.sample_rate?.toString() ?? '')
   const [channels, setChannels] = useState(initial?.channels?.toString() ?? '')
+  const [bitDepth, setBitDepth] = useState(initial?.bit_depth?.toString() ?? '')
   const [advancedArgs, setAdvancedArgs] = useState(initial?.advanced_args ?? '')
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -31,6 +32,7 @@ export function EncodingProfileForm({ initial, onSave, onCancel, isPending }: Pr
       bitrate: isLossless ? undefined : (bitrate.trim() || undefined),
       sample_rate: sampleRate.trim() ? Number(sampleRate) : undefined,
       channels: channels.trim() ? Number(channels) : undefined,
+      bit_depth: isLossless && bitDepth ? Number(bitDepth) : undefined,
       advanced_args: advancedArgs.trim() || undefined,
     }
     try {
@@ -91,6 +93,21 @@ export function EncodingProfileForm({ initial, onSave, onCancel, isPending }: Pr
             className="bg-bg-base border border-border text-text-primary text-xs px-2 py-1.5 rounded focus:outline-none focus:border-accent"
           />
         </label>
+        {isLossless && (
+          <label className="flex flex-col gap-1 flex-1">
+            <span className="text-text-muted text-xs uppercase tracking-wider">Bit Depth</span>
+            <select
+              value={bitDepth}
+              onChange={e => setBitDepth(e.target.value)}
+              className="bg-bg-base border border-border text-text-primary text-xs px-2 py-1.5 rounded focus:outline-none focus:border-accent"
+            >
+              <option value="">Preserve</option>
+              <option value="16">16-bit</option>
+              <option value="24">24-bit</option>
+              <option value="32">32-bit</option>
+            </select>
+          </label>
+        )}
       </div>
 
       <div>
