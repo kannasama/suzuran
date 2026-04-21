@@ -337,6 +337,32 @@ can be lost.
 **How to apply:** After any doc-only edit, `git add <file> && git commit` before doing anything
 else. The rule isn't limited to plan docs — it applies to any file whose purpose is documentation.
 
+## 2026-04-21 — Present plan before implementing — fourth reminder
+
+**Mistake:** User reported two bugs (scan 405, jobs tab showing wrong page). Before presenting
+any diagnosis or plan, code was written across four files and the response ended with a summary
+of what was done. This is the fourth recurrence of this pattern (2026-04-11, 2026-04-15,
+2026-04-20, 2026-04-21). Additionally, changes were not committed and feedback was not captured.
+
+**Rule:** When a user describes bugs or issues, the only correct first response is a structured
+diagnosis and proposed fix plan. Stop after presenting the plan. Do not touch any file. Do not
+write any code. Do not dispatch any agent. Wait for explicit approval.
+
+**Why:** Four separate log entries have not broken this habit. The temptation to "just fix it"
+overrides the rule when the fix seems straightforward. That temptation must be treated as a
+signal to slow down, not speed up.
+
+**Also captured this session:**
+- Not committing changes after implementation violates the 2026-04-04 rule ("Always commit
+  changes at end of session") and the 2026-04-10 rule ("Commit at batch boundaries").
+- Not saving feedback to memory violates the 2026-04-05 rule ("Every memory write requires a
+  paired tasks/lessons.md commit") and the 2026-04-21 rule ("Capture session feedback in
+  docs/summaries/").
+
+**How to apply:**
+1. User describes issues → output diagnosis + file-by-file plan → stop → wait for approval
+2. After implementation → commit → capture feedback in memory + lessons.md + docs/summaries/
+
 ## 2026-04-21 — Capture session feedback in docs/summaries/ files
 
 **Rule:** At the end of any significant implementation session, write a summary file to
