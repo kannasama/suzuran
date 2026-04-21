@@ -83,6 +83,9 @@ async fn migrate_library_files(
                     continue;
                 }
                 if let Err(e) = tokio::fs::remove_file(&old_abs).await {
+                    // Copy landed at new_abs but original couldn't be removed.
+                    // Clean up the orphaned copy so the next run can retry cleanly.
+                    let _ = tokio::fs::remove_file(&new_abs).await;
                     errors.push(json!({
                         "track_id": track.id,
                         "message": format!("remove source after copy failed: {e}"),
