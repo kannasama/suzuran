@@ -44,6 +44,7 @@ hex = "0.4"
 # Media
 lofty = "0.21"
 walkdir = "2"
+encoding_rs = "0.8"
 mime_guess = "2"
 tokio-util = { version = "0.7", features = ["io"] }
 

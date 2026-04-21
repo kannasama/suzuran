@@ -4,7 +4,7 @@ use sha2::{Digest, Sha256};
 use tokio::process::Command;
 
 use crate::{
-    cue::parse_cue,
+    cue::{parse_cue, read_cue_file},
     dal::{Store, UpsertTrack},
     error::AppError,
     tagger,
@@ -47,9 +47,21 @@ async fn handle_cue_split(
         .parent()
         .ok_or_else(|| AppError::BadRequest("cue_path has no parent directory".into()))?;
 
-    let content = tokio::fs::read_to_string(cue_path)
-        .await
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("read CUE file: {e}")))?;
+    // Get library's tag encoding to handle SJIS CUE sheets
+    let tag_encoding = db
+        .get_library(library_id)
+        .await?
+        .map(|l| l.tag_encoding)
+        .unwrap_or_else(|| "utf8".into());
+
+    let cue_path_owned = cue_path.to_path_buf();
+    let tag_encoding_clone = tag_encoding.clone();
+    let content = tokio::task::spawn_blocking(move || {
+        read_cue_file(&cue_path_owned, &tag_encoding_clone)
+    })
+    .await
+    .map_err(|e| AppError::Internal(anyhow::anyhow!("spawn_blocking read_cue_file: {e}")))?
+    .map_err(|e| AppError::Internal(anyhow::anyhow!("read CUE file: {e}")))?;
 
     let sheet = parse_cue(&content)
         .map_err(|e| AppError::Internal(anyhow::anyhow!("parse CUE: {e}")))?;

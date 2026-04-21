@@ -71,6 +71,7 @@ pub struct Library {
     pub auto_transcode_on_ingest: bool,
     pub auto_organize_on_ingest: bool,
     pub normalize_on_ingest: bool,
+    pub tag_encoding: String,
     pub created_at: DateTime<Utc>,
 }
 

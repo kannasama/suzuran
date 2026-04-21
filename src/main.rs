@@ -50,11 +50,18 @@ async fn main() -> anyhow::Result<()> {
         .build()
         .context("Webauthn build failed")?;
 
-    let acoustid_key = std::env::var("ACOUSTID_KEY").unwrap_or_default();
-    if acoustid_key.is_empty() {
-        tracing::warn!("ACOUSTID_KEY is not set — AcoustID lookups will fail; set this in settings after first boot");
+    // If ACOUSTID_KEY is set in the environment, seed it into the settings table
+    // so it can be read dynamically per-job (and later managed via the UI).
+    if let Ok(key) = std::env::var("ACOUSTID_KEY") {
+        if !key.is_empty() {
+            if let Err(e) = db.set_setting("acoustid_api_key", &key).await {
+                tracing::warn!("failed to persist ACOUSTID_KEY to settings: {e}");
+            } else {
+                tracing::info!("ACOUSTID_KEY seeded into settings table");
+            }
+        }
     }
-    let mb_service = Arc::new(MusicBrainzService::new(acoustid_key));
+    let mb_service = Arc::new(MusicBrainzService::new());
     let freedb_service = Arc::new(FreedBService::new());
 
     let state = AppState::new(db.clone(), config.clone(), webauthn, mb_service.clone(), freedb_service.clone());

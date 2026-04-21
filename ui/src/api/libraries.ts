@@ -11,6 +11,7 @@ export interface Library {
   scan_interval_secs: number
   auto_transcode_on_ingest: boolean
   auto_organize_on_ingest: boolean
+  tag_encoding: string
 }
 
 export interface CreateLibraryInput {
@@ -26,6 +27,7 @@ export interface UpdateLibraryInput {
   scan_interval_secs: number
   auto_transcode_on_ingest: boolean
   auto_organize_on_ingest: boolean
+  tag_encoding: string
 }
 
 export async function listLibraries(): Promise<Library[]> {

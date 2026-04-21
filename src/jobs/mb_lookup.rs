@@ -49,9 +49,30 @@ impl super::JobHandler for MbLookupJobHandler {
 
         let duration = track.duration_secs.unwrap_or(0.0);
 
+        let acoustid_key = db
+            .get_setting("acoustid_api_key")
+            .await?
+            .map(|s| s.value)
+            .unwrap_or_default();
+
+        if acoustid_key.is_empty() {
+            tracing::warn!(track_id, "acoustid_api_key is not set — skipping AcoustID, falling back to FreeDB");
+            db.enqueue_job(
+                "freedb_lookup",
+                serde_json::json!({"track_id": track_id}),
+                4,
+            )
+            .await?;
+            return Ok(serde_json::json!({
+                "track_id": track_id,
+                "suggestions_created": 0,
+                "skipped": "no acoustid_api_key",
+            }));
+        }
+
         let results = self
             .mb_service
-            .acoustid_lookup(&fingerprint, duration)
+            .acoustid_lookup(&acoustid_key, &fingerprint, duration)
             .await
             .map_err(|e| AppError::Internal(anyhow::anyhow!("AcoustID: {e}")))?;
 

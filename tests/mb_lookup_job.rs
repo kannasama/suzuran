@@ -32,8 +32,8 @@ async fn test_mb_lookup_creates_suggestion() {
         .await;
 
     let (store, track_id) = common::setup_with_fingerprinted_track().await;
+    store.set_setting("acoustid_api_key", "test-key").await.unwrap();
     let mb_svc = Arc::new(MusicBrainzService::with_base_urls(
-        "test-key".into(),
         mb_server.uri(),
         acoustid_server.uri(),
     ));
@@ -89,8 +89,8 @@ async fn test_mb_lookup_below_threshold_creates_no_suggestion() {
         .await;
 
     let (store, track_id) = common::setup_with_fingerprinted_track().await;
+    store.set_setting("acoustid_api_key", "test-key").await.unwrap();
     let mb_svc = Arc::new(MusicBrainzService::with_base_urls(
-        "test-key".into(),
         "http://unused".into(),
         acoustid_server.uri(),
     ));
@@ -125,8 +125,8 @@ async fn test_mb_lookup_no_acoustid_results_enqueues_freedb() {
         .await;
 
     let (store, track_id) = common::setup_with_fingerprinted_track().await;
+    store.set_setting("acoustid_api_key", "test-key").await.unwrap();
     let mb_svc = Arc::new(MusicBrainzService::with_base_urls(
-        "test-key".into(),
         "http://unused".into(),
         acoustid_server.uri(),
     ));
@@ -148,7 +148,6 @@ async fn test_mb_lookup_no_acoustid_results_enqueues_freedb() {
 async fn test_mb_lookup_no_fingerprint_returns_error() {
     let (store, track_id) = common::setup_with_track().await; // no fingerprint
     let mb_svc = Arc::new(MusicBrainzService::with_base_urls(
-        "test-key".into(),
         "http://unused".into(),
         "http://unused".into(),
     ));

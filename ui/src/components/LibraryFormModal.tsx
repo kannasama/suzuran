@@ -17,6 +17,10 @@ interface Props {
 }
 
 const FORMATS = ['flac', 'aac', 'mp3', 'opus', 'wav'] as const
+const TAG_ENCODINGS = [
+  { value: 'utf8', label: 'UTF-8 (default)' },
+  { value: 'sjis', label: 'Shift-JIS (Japanese legacy)' },
+] as const
 
 export function LibraryFormModal({ library, libraries, onClose }: Props) {
   const isEdit = library !== undefined
@@ -27,6 +31,7 @@ export function LibraryFormModal({ library, libraries, onClose }: Props) {
   const [rootPath, setRootPath] = useState('')
   const [format, setFormat] = useState<string>('flac')
   const [parentId, setParentId] = useState<number | null>(null)
+  const [tagEncoding, setTagEncoding] = useState(library?.tag_encoding ?? 'utf8')
 
   const [error, setError] = useState<string | null>(null)
 
@@ -78,6 +83,7 @@ export function LibraryFormModal({ library, libraries, onClose }: Props) {
         scan_interval_secs: library!.scan_interval_secs,
         auto_transcode_on_ingest: library!.auto_transcode_on_ingest,
         auto_organize_on_ingest: library!.auto_organize_on_ingest,
+        tag_encoding: tagEncoding,
       })
     } else {
       createMutation.mutate({
@@ -178,6 +184,20 @@ export function LibraryFormModal({ library, libraries, onClose }: Props) {
               </label>
             </>
           )}
+
+          {/* Tag Encoding — shown in both create and edit modes */}
+          <label className="flex flex-col gap-1">
+            <span className="text-text-muted text-xs uppercase tracking-wider">Tag Encoding</span>
+            <select
+              value={tagEncoding}
+              onChange={e => setTagEncoding(e.target.value)}
+              className="bg-bg-base border border-border text-text-primary text-xs px-2 py-1.5 rounded focus:outline-none focus:border-accent"
+            >
+              {TAG_ENCODINGS.map(enc => (
+                <option key={enc.value} value={enc.value}>{enc.label}</option>
+              ))}
+            </select>
+          </label>
 
           {/* Inline error */}
           {error && (

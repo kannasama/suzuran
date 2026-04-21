@@ -165,6 +165,7 @@ pub trait Store: Send + Sync {
         auto_transcode_on_ingest: bool,
         auto_organize_on_ingest: bool,
         normalize_on_ingest: bool,
+        tag_encoding: &str,
     ) -> Result<Option<Library>, AppError>;
     async fn delete_library(&self, id: i64) -> Result<(), AppError>;
     async fn set_library_encoding_profile(

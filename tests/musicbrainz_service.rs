@@ -21,12 +21,11 @@ async fn test_acoustid_lookup_returns_scored_results() {
         .await;
 
     let svc = MusicBrainzService::with_base_urls(
-        "test-key".into(),
         "https://musicbrainz.org/ws/2".into(), // MB URL not used in this test
         server.uri(),
     );
 
-    let results = svc.acoustid_lookup("AQABz0kkdeRiJI...", 210.0).await.unwrap();
+    let results = svc.acoustid_lookup("test-key", "AQABz0kkdeRiJI...", 210.0).await.unwrap();
     assert_eq!(results.len(), 1);
     assert!((results[0].score - 0.96).abs() < 0.01);
     assert_eq!(results[0].recordings.as_ref().unwrap()[0].id, "rec-uuid-1");
@@ -45,11 +44,10 @@ async fn test_acoustid_lookup_empty_results() {
         .await;
 
     let svc = MusicBrainzService::with_base_urls(
-        "test-key".into(),
         "https://musicbrainz.org/ws/2".into(),
         server.uri(),
     );
-    let results = svc.acoustid_lookup("fp", 60.0).await.unwrap();
+    let results = svc.acoustid_lookup("test-key", "fp", 60.0).await.unwrap();
     assert_eq!(results.len(), 0);
 }
 
@@ -75,7 +73,6 @@ async fn test_get_recording_fetches_metadata() {
         .await;
 
     let svc = MusicBrainzService::with_base_urls(
-        "test-key".into(),
         server.uri(),
         "https://api.acoustid.org".into(),
     );
@@ -174,7 +171,6 @@ async fn test_get_recording_rate_limit_second_call_does_not_sleep_full_interval(
         .await;
 
     let svc = MusicBrainzService::with_base_urls(
-        "test-key".into(),
         server.uri(),
         "https://api.acoustid.org".into(),
     );

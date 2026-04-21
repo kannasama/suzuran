@@ -25,7 +25,7 @@ async fn spawn_test_server() -> String {
         uploads_dir: std::path::PathBuf::from("/tmp/suzuran-test-uploads"),
     };
 
-    let mb_service = Arc::new(MusicBrainzService::new(String::new()));
+    let mb_service = Arc::new(MusicBrainzService::new());
     let freedb_service = Arc::new(FreedBService::new());
     let state = AppState::new(Arc::new(store), config, webauthn, mb_service, freedb_service);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

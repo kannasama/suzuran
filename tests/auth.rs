@@ -34,7 +34,7 @@ async fn spawn_test_server() -> String {
         rp_origin: "http://localhost:3000".into(),
         uploads_dir: std::path::PathBuf::from("/tmp/suzuran-test-uploads"),
     };
-    let mb_service = Arc::new(MusicBrainzService::new(String::new()));
+    let mb_service = Arc::new(MusicBrainzService::new());
     let freedb_service = Arc::new(FreedBService::new());
     let state = AppState::new(Arc::new(store), config, test_webauthn(), mb_service, freedb_service);
     let app = build_router(state);

@@ -26,7 +26,7 @@ async fn spawn_test_server() -> String {
     };
 
     let db: Arc<dyn Store> = store.clone();
-    let mb_service = Arc::new(MusicBrainzService::new(String::new()));
+    let mb_service = Arc::new(MusicBrainzService::new());
     let freedb_service = Arc::new(FreedBService::new());
     let state = AppState::new(db.clone(), config, webauthn, mb_service.clone(), freedb_service.clone());
 

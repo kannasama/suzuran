@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 use walkdir::WalkDir;
 
 use crate::{
-    cue::parse_cue,
+    cue::{parse_cue, read_cue_file},
     dal::{Store, UpsertTrack},
     error::AppError,
     tagger,
@@ -35,12 +35,10 @@ pub async fn scan_library(
 ) -> Result<ScanResult, AppError> {
     let mut result = ScanResult { inserted: 0, updated: 0, removed: 0, errors: vec![] };
 
-    // Look up the library's format for use in auto-transcode compatibility checks.
-    let library_format = db
-        .get_library(library_id)
-        .await?
-        .map(|lib| lib.format)
-        .unwrap_or_default();
+    // Look up library metadata for format and tag encoding.
+    let library = db.get_library(library_id).await?;
+    let library_format = library.as_ref().map(|l| l.format.as_str()).unwrap_or("").to_string();
+    let tag_encoding = library.as_ref().map(|l| l.tag_encoding.as_str()).unwrap_or("utf8").to_string();
 
     // --- Pass 1: find CUE files and their paired audio ---
     let mut cue_backed_audio: HashSet<PathBuf> = HashSet::new();
@@ -49,7 +47,7 @@ pub async fn scan_library(
     for entry in WalkDir::new(root_path).follow_links(true).into_iter().filter_map(|e| e.ok()) {
         let p = entry.path().to_path_buf();
         if p.extension().and_then(|e| e.to_str()) == Some("cue") {
-            if let Ok(content) = std::fs::read_to_string(&p) {
+            if let Ok(content) = read_cue_file(&p, &tag_encoding) {
                 if let Ok(sheet) = parse_cue(&content) {
                     let audio = p.parent().unwrap_or(root_path).join(&sheet.audio_file);
                     if audio.exists() {
@@ -125,7 +123,7 @@ pub async fn scan_library(
         })
         .await;
 
-        let (tags_map, audio_props) = match tag_result {
+        let (mut tags_map, audio_props) = match tag_result {
             Ok(Ok(r)) => r,
             Ok(Err(e)) => {
                 result.errors.push(format!("{rel_path}: tag read error: {e}"));
@@ -136,6 +134,15 @@ pub async fn scan_library(
                 continue;
             }
         };
+
+        // Re-decode tag values if the library uses Shift-JIS encoding.
+        // Old ID3v2/Vorbis rippers often stored SJIS bytes in Latin-1 frames;
+        // lofty returns them as mojibake. Re-decode to recover the original text.
+        if tag_encoding == "sjis" {
+            for val in tags_map.values_mut() {
+                *val = tagger::redecode_latin1_as_sjis(val);
+            }
+        }
 
         let tags_json = serde_json::to_value(&tags_map).unwrap_or(serde_json::json!({}));
 

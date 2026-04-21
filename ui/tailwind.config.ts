@@ -23,7 +23,7 @@ export default {
           muted:     'var(--text-muted)',
         },
         accent: {
-          DEFAULT: 'var(--accent)',
+          DEFAULT: 'rgb(var(--accent-rgb))',
           muted:   'var(--accent-muted)',
         },
         destructive: 'var(--destructive)',

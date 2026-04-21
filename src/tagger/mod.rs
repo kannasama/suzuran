@@ -1,6 +1,22 @@
 use std::collections::HashMap;
 use std::path::Path;
 
+/// Re-interpret a string that was decoded as Latin-1 but actually contains
+/// Shift-JIS bytes. lofty returns ID3v2 Latin-1 text frames as a Rust String
+/// where each source byte ≤ 0xFF maps to the matching Unicode scalar; this
+/// function reverses that mapping, then decodes the recovered bytes as SJIS.
+/// Falls back to the original string if the bytes aren't valid SJIS.
+pub fn redecode_latin1_as_sjis(s: &str) -> String {
+    let bytes: Vec<u8> = s.chars()
+        .filter_map(|c| {
+            let code = c as u32;
+            if code < 256 { Some(code as u8) } else { None }
+        })
+        .collect();
+    let (result, _, had_errors) = encoding_rs::SHIFT_JIS.decode(&bytes);
+    if had_errors { s.to_string() } else { result.into_owned() }
+}
+
 use lofty::{
     config::WriteOptions,
     file::{AudioFile, TaggedFileExt},

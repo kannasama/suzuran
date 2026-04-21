@@ -47,7 +47,8 @@ async fn setup_normalize_library(
         lib.scan_interval_secs,
         lib.auto_transcode_on_ingest,
         lib.auto_organize_on_ingest,
-        true, // normalize_on_ingest
+        true,
+        "utf8",
     )
     .await
     .unwrap();
@@ -182,6 +183,7 @@ async fn test_normalize_skips_no_encoding_profile() {
         lib.auto_transcode_on_ingest,
         lib.auto_organize_on_ingest,
         true,
+        "utf8",
     )
     .await
     .unwrap();

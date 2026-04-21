@@ -7,7 +7,6 @@ const MB_RATE_LIMIT_MS: u64 = 1100; // MusicBrainz: max 1 req/sec
 #[derive(Clone)]
 pub struct MusicBrainzService {
     client: Client,
-    acoustid_key: String,
     mb_base: String,
     acoustid_base: String,
     last_mb_request: Arc<Mutex<Option<Instant>>>,
@@ -86,16 +85,21 @@ pub struct MbMedia {
     pub track_count: Option<u32>,
 }
 
+impl Default for MusicBrainzService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MusicBrainzService {
-    pub fn new(acoustid_key: String) -> Self {
+    pub fn new() -> Self {
         Self::with_base_urls(
-            acoustid_key,
             "https://musicbrainz.org/ws/2".into(),
             "https://api.acoustid.org".into(),
         )
     }
 
-    pub fn with_base_urls(acoustid_key: String, mb_base: String, acoustid_base: String) -> Self {
+    pub fn with_base_urls(mb_base: String, acoustid_base: String) -> Self {
         let client = Client::builder()
             .user_agent("suzuran/0.3 ( music-library-manager )")
             .timeout(Duration::from_secs(30))
@@ -103,7 +107,6 @@ impl MusicBrainzService {
             .expect("reqwest client build");
         Self {
             client,
-            acoustid_key,
             mb_base,
             acoustid_base,
             last_mb_request: Arc::new(Mutex::new(None)),
@@ -112,6 +115,7 @@ impl MusicBrainzService {
 
     pub async fn acoustid_lookup(
         &self,
+        key: &str,
         fingerprint: &str,
         duration: f64,
     ) -> anyhow::Result<Vec<AcoustIdResult>> {
@@ -119,7 +123,7 @@ impl MusicBrainzService {
         let resp: serde_json::Value = self.client
             .get(&url)
             .query(&[
-                ("client", self.acoustid_key.as_str()),
+                ("client", key),
                 ("fingerprint", fingerprint),
                 ("duration", &duration.round().to_string()),
                 ("meta", "recordings"),

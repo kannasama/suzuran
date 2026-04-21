@@ -1,3 +1,24 @@
+use std::path::Path;
+
+/// Read a CUE file from disk, decoding it as UTF-8 with a SJIS fallback.
+/// When `encoding` is `"sjis"` the bytes are decoded as Shift-JIS directly;
+/// otherwise UTF-8 is tried first, and if that fails SJIS is used as a fallback.
+pub fn read_cue_file(path: &Path, encoding: &str) -> anyhow::Result<String> {
+    let bytes = std::fs::read(path)?;
+    if encoding == "sjis" {
+        let (text, _, _) = encoding_rs::SHIFT_JIS.decode(&bytes);
+        return Ok(text.into_owned());
+    }
+    // Try UTF-8 first; fall back to SJIS on invalid sequences
+    match std::str::from_utf8(&bytes) {
+        Ok(s) => Ok(s.to_owned()),
+        Err(_) => {
+            let (text, _, _) = encoding_rs::SHIFT_JIS.decode(&bytes);
+            Ok(text.into_owned())
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct CueSheet {
     pub album_title: Option<String>,

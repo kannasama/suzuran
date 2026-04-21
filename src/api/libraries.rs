@@ -65,7 +65,11 @@ struct UpdateLibraryRequest {
     auto_organize_on_ingest: bool,
     #[serde(default)]
     normalize_on_ingest: bool,
+    #[serde(default = "default_utf8")]
+    tag_encoding: String,
 }
+
+fn default_utf8() -> String { "utf8".into() }
 
 async fn update_library(
     State(state): State<AppState>,
@@ -76,7 +80,7 @@ async fn update_library(
     state.db
         .update_library(id, &body.name, body.scan_enabled, body.scan_interval_secs,
             body.auto_transcode_on_ingest, body.auto_organize_on_ingest,
-            body.normalize_on_ingest)
+            body.normalize_on_ingest, &body.tag_encoding)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("library {id} not found")))
         .map(Json)
