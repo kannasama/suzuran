@@ -13,6 +13,17 @@ use crate::{
     state::AppState,
 };
 
+async fn create_library_dirs(root_path: &str) -> Result<(), AppError> {
+    for subdir in &["source", "ingest"] {
+        tokio::fs::create_dir_all(format!("{}/{}", root_path, subdir))
+            .await
+            .map_err(|e| AppError::Internal(anyhow::anyhow!(
+                "failed to create library directory {}/{}: {}", root_path, subdir, e
+            )))?;
+    }
+    Ok(())
+}
+
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(list_libraries).post(create_library))
@@ -50,6 +61,7 @@ async fn create_library(
     _admin: AdminUser,
     Json(body): Json<CreateLibraryRequest>,
 ) -> Result<(StatusCode, Json<Library>), AppError> {
+    create_library_dirs(&body.root_path).await?;
     let lib = state.db
         .create_library(&body.name, &body.root_path, &body.format)
         .await?;

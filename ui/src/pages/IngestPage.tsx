@@ -4,8 +4,10 @@ import { TopNav } from '../components/TopNav'
 import { TagDiffTable } from '../components/TagDiffTable'
 import { IngestSearchDialog } from '../components/IngestSearchDialog'
 import { ImageUpload } from '../components/ImageUpload'
+import { TrackEditPanel } from '../components/TrackEditPanel'
 import { tagSuggestionsApi } from '../api/tagSuggestions'
 import { getStagedTracks, submitTrack } from '../api/ingest'
+import { enqueueLookup } from '../api/tracks'
 import { listLibraryProfiles } from '../api/libraryProfiles'
 import { listSettings } from '../api/settings'
 import type { Track } from '../types/track'
@@ -51,6 +53,10 @@ export default function IngestPage() {
       qc.invalidateQueries({ queryKey: ['tag-suggestions'] })
       qc.invalidateQueries({ queryKey: ['inbox-count'] })
     },
+  })
+
+  const lookupMutation = useMutation({
+    mutationFn: (trackId: number) => enqueueLookup(trackId),
   })
 
   // Build a map of track_id → best pending suggestion
@@ -126,9 +132,11 @@ export default function IngestPage() {
                 onAccept={id => acceptMutation.mutate(id)}
                 onReject={id => rejectMutation.mutate(id)}
                 onSearch={t => setSearchTrack(t)}
+                onLookup={id => lookupMutation.mutate(id)}
                 onSubmitAlbum={key => setSubmitAlbum(key)}
                 acceptPending={acceptMutation.isPending ? acceptMutation.variables ?? null : null}
                 rejectPending={rejectMutation.isPending ? rejectMutation.variables ?? null : null}
+                lookupPending={lookupMutation.isPending ? lookupMutation.variables ?? null : null}
                 editingTrackId={editingTrackId}
                 onEdit={id => setEditingTrackId(id)}
                 onEditClose={() => setEditingTrackId(null)}
@@ -177,9 +185,11 @@ function AlbumGroup({
   onAccept,
   onReject,
   onSearch,
+  onLookup,
   onSubmitAlbum,
   acceptPending,
   rejectPending,
+  lookupPending,
   editingTrackId,
   onEdit,
   onEditClose,
@@ -190,9 +200,11 @@ function AlbumGroup({
   onAccept: (id: number) => void
   onReject: (id: number) => void
   onSearch: (t: Track) => void
+  onLookup: (id: number) => void
   onSubmitAlbum: (key: string) => void
   acceptPending: number | null
   rejectPending: number | null
+  lookupPending: number | null
   editingTrackId: number | null
   onEdit: (id: number) => void
   onEditClose: () => void
@@ -227,7 +239,7 @@ function AlbumGroup({
           onClick={() => onSubmitAlbum(albumKey)}
           className="text-xs bg-accent text-bg-base rounded px-3 py-1 font-medium hover:opacity-90 shrink-0"
         >
-          Submit Album
+          Import Album
         </button>
       </div>
 
@@ -260,19 +272,17 @@ function AlbumGroup({
                 {/* Actions */}
                 <div className="flex items-center gap-1 shrink-0">
                   {suggestion && (
-                    <>
-                      <button
-                        onClick={() => onAccept(suggestion.id)}
-                        disabled={acceptPending === suggestion.id}
-                        className="text-xs bg-accent text-bg-base rounded px-2 py-0.5 hover:opacity-90 disabled:opacity-50"
-                      >
-                        Accept
-                      </button>
-                    </>
+                    <button
+                      onClick={() => onAccept(suggestion.id)}
+                      disabled={acceptPending === suggestion.id}
+                      className="text-xs bg-accent text-bg-base rounded px-2 py-0.5 hover:opacity-90 disabled:opacity-50"
+                    >
+                      Accept
+                    </button>
                   )}
                   <button
                     onClick={() => isEditing ? onEditClose() : onEdit(track.id)}
-                    className={`text-xs border rounded px-2 py-0.5 hover:bg-bg-surface ${isEditing ? 'border-accent text-accent' : 'border-border'}`}
+                    className={`text-xs border rounded px-2 py-0.5 hover:bg-bg-surface ${isEditing ? 'border-accent text-accent' : 'border-border text-text-muted'}`}
                   >
                     Edit
                   </button>
@@ -280,16 +290,23 @@ function AlbumGroup({
                     <button
                       onClick={() => onReject(suggestion.id)}
                       disabled={rejectPending === suggestion.id}
-                      className="text-xs border border-border rounded px-2 py-0.5 hover:bg-bg-surface disabled:opacity-50"
+                      className="text-xs border border-border text-text-muted rounded px-2 py-0.5 hover:bg-bg-surface disabled:opacity-50"
                     >
                       Reject
                     </button>
                   )}
                   <button
                     onClick={() => onSearch(track)}
-                    className="text-xs border border-border rounded px-2 py-0.5 hover:bg-bg-surface"
+                    className="text-xs border border-border text-text-muted rounded px-2 py-0.5 hover:bg-bg-surface"
                   >
                     Search
+                  </button>
+                  <button
+                    onClick={() => onLookup(track.id)}
+                    disabled={lookupPending === track.id}
+                    className="text-xs border border-border text-text-muted rounded px-2 py-0.5 hover:bg-bg-surface disabled:opacity-50"
+                  >
+                    {lookupPending === track.id ? 'Queued…' : 'Lookup'}
                   </button>
                 </div>
               </div>
@@ -303,12 +320,19 @@ function AlbumGroup({
                 />
               )}
 
-              {/* Tag diff */}
-              {!isEditing && (
+              {/* Tag diff or no-results prompt */}
+              {!isEditing && suggestion && (
                 <TagDiffTable
                   trackId={track.id}
-                  suggestedTags={suggestion?.suggested_tags ?? {}}
+                  suggestedTags={suggestion.suggested_tags}
                 />
+              )}
+              {!isEditing && !suggestion && (
+                <p className="text-text-muted text-[11px] italic px-1">
+                  No lookup results — click <strong className="font-semibold not-italic text-text-secondary">Lookup</strong> to run fingerprint matching,{' '}
+                  <strong className="font-semibold not-italic text-text-secondary">Search</strong> to find manually, or{' '}
+                  <strong className="font-semibold not-italic text-text-secondary">Edit</strong> to enter tags directly.
+                </p>
               )}
             </div>
           )
@@ -319,112 +343,7 @@ function AlbumGroup({
 }
 
 // ---------------------------------------------------------------------------
-// Inline track tag edit panel
-// ---------------------------------------------------------------------------
-
-const EDIT_TAG_FIELDS = [
-  { key: 'title', label: 'Title' },
-  { key: 'artist', label: 'Artist' },
-  { key: 'albumartist', label: 'Album Artist' },
-  { key: 'album', label: 'Album' },
-  { key: 'tracknumber', label: 'Track #' },
-  { key: 'date', label: 'Date' },
-  { key: 'genre', label: 'Genre' },
-] as const
-
-function TrackEditPanel({
-  track,
-  suggestion,
-  onClose,
-}: {
-  track: Track
-  suggestion: TagSuggestion | undefined
-  onClose: () => void
-}) {
-  const qc = useQueryClient()
-
-  const initialTags = suggestion?.suggested_tags ?? {}
-  const trackFallback: Record<string, string> = {
-    title:       track.title       ?? '',
-    artist:      track.artist      ?? '',
-    albumartist: track.albumartist ?? '',
-    album:       track.album       ?? '',
-    tracknumber: track.tracknumber ?? '',
-    date:        track.date        ?? '',
-    genre:       track.genre       ?? '',
-  }
-  const [fields, setFields] = useState<Record<string, string>>(() =>
-    Object.fromEntries(
-      EDIT_TAG_FIELDS.map(({ key }) => [key, initialTags[key] ?? trackFallback[key] ?? ''])
-    )
-  )
-  const [saving, setSaving] = useState(false)
-  const [saveError, setSaveError] = useState<string | null>(null)
-
-  async function handleSave() {
-    setSaving(true)
-    setSaveError(null)
-    try {
-      const tags: Record<string, string> = {}
-      for (const { key } of EDIT_TAG_FIELDS) {
-        if (fields[key].trim() !== '') tags[key] = fields[key].trim()
-      }
-      await tagSuggestionsApi.create({
-        track_id: track.id,
-        // 'mb_search' is used as the closest valid source for manually-entered tags
-        // (no 'manual' source exists in the backend schema)
-        source: 'mb_search',
-        suggested_tags: tags,
-        confidence: 1.0,
-      })
-      qc.invalidateQueries({ queryKey: ['tag-suggestions'] })
-      onClose()
-    } catch (err) {
-      setSaveError(err instanceof Error ? err.message : 'Failed to save.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <div className="flex flex-col gap-2 p-3 bg-bg-panel border border-border rounded">
-      <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
-        {EDIT_TAG_FIELDS.map(({ key, label }) => (
-          <label key={key} className="flex flex-col gap-0.5">
-            <span className="text-text-muted text-[10px] uppercase tracking-wider">{label}</span>
-            <input
-              type="text"
-              value={fields[key]}
-              onChange={e => setFields(prev => ({ ...prev, [key]: e.target.value }))}
-              className="bg-bg-base border border-border text-text-primary text-xs px-2 py-1 rounded focus:outline-none focus:border-accent"
-            />
-          </label>
-        ))}
-      </div>
-      {saveError && <p className="text-destructive text-xs">{saveError}</p>}
-      <div className="flex justify-end gap-2">
-        <button
-          type="button"
-          onClick={onClose}
-          className="text-xs text-text-muted bg-bg-panel border border-border rounded px-3 py-1 hover:text-text-primary"
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={saving}
-          className="text-xs text-bg-base bg-accent rounded px-3 py-1 font-medium disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90"
-        >
-          {saving ? 'Saving…' : 'Save'}
-        </button>
-      </div>
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Submit pre-flight dialog
+// Import pre-flight dialog
 // ---------------------------------------------------------------------------
 
 function SubmitDialog({
@@ -535,7 +454,7 @@ function SubmitDialog({
       >
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border flex-shrink-0">
-          <span className="text-text-primary text-sm font-semibold">Submit — {albumKey}</span>
+          <span className="text-text-primary text-sm font-semibold">Import — {albumKey}</span>
           <button onClick={onClose} className="text-text-muted hover:text-text-primary text-sm leading-none">×</button>
         </div>
 
@@ -633,7 +552,7 @@ function SubmitDialog({
             disabled={submitting}
             className="text-xs bg-accent text-bg-base rounded px-3 py-1 font-medium hover:opacity-90 disabled:opacity-50"
           >
-            {submitting ? 'Submitting…' : `Submit ${tracks.length} track${tracks.length !== 1 ? 's' : ''}`}
+            {submitting ? 'Importing…' : `Import ${tracks.length} track${tracks.length !== 1 ? 's' : ''}`}
           </button>
         </div>
       </div>

@@ -5,12 +5,18 @@ use axum::{
     extract::{Path, State},
     http::{header, HeaderMap, StatusCode},
     response::Response,
-    routing::get,
+    routing::{get, post},
     Json, Router,
 };
 use tokio::io::AsyncSeekExt;
 
-use crate::{api::middleware::auth::AuthUser, error::AppError, models::Track, state::AppState};
+use crate::{
+    api::middleware::auth::AuthUser,
+    error::AppError,
+    jobs::FingerprintPayload,
+    models::Track,
+    state::AppState,
+};
 
 pub fn router() -> Router<AppState> {
     // Axum automatically handles HEAD requests from GET routes, stripping the body
@@ -18,6 +24,23 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/:id", get(get_track_meta))
         .route("/:id/stream", get(stream))
+        .route("/:id/lookup", post(enqueue_lookup))
+}
+
+async fn enqueue_lookup(
+    State(state): State<AppState>,
+    _auth: AuthUser,
+    Path(id): Path<i64>,
+) -> Result<StatusCode, AppError> {
+    state.db.get_track(id).await?
+        .ok_or_else(|| AppError::NotFound(format!("track {id} not found")))?;
+    state.db.enqueue_job(
+        "fingerprint",
+        serde_json::to_value(FingerprintPayload { track_id: id })
+            .map_err(|e| AppError::Internal(e.into()))?,
+        0,
+    ).await?;
+    Ok(StatusCode::ACCEPTED)
 }
 
 async fn get_track_meta(

@@ -1,11 +1,16 @@
-import { useState, useEffect, useRef } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useState, useEffect, useRef, useMemo } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { TopNav } from '../components/TopNav'
 import { LibraryTree } from '../components/LibraryTree'
+import { TrackEditPanel } from '../components/TrackEditPanel'
+import { IngestSearchDialog } from '../components/IngestSearchDialog'
 import { useAuth } from '../contexts/AuthContext'
 import { getLibrary, listLibraryTracks } from '../api/libraries'
+import { enqueueLookup } from '../api/tracks'
+import { tagSuggestionsApi } from '../api/tagSuggestions'
 import client from '../api/client'
 import type { Track } from '../types/track'
+import type { TagSuggestion } from '../types/tagSuggestion'
 
 interface ColumnDef {
   key: string
@@ -63,12 +68,16 @@ export function LibraryPage() {
   const isAdmin = user?.role === 'admin'
   const isLibraryAdmin = user?.role === 'admin' || user?.role === 'library_admin'
 
+  const qc = useQueryClient()
   const [selectedLibraryId, setSelectedLibraryId] = useState<number | null>(null)
   const [selectedVirtualLibraryId, setSelectedVirtualLibraryId] = useState<number | null>(null)
   const [scanQueued, setScanQueued] = useState(false)
   const [visibleColumns, setVisibleColumns] = useState<Set<string>>(loadColumnVisibility)
   const [showColumnPicker, setShowColumnPicker] = useState(false)
   const pickerRef = useRef<HTMLDivElement>(null)
+  const [expandedTrackId, setExpandedTrackId] = useState<number | null>(null)
+  const [editingTagsTrackId, setEditingTagsTrackId] = useState<number | null>(null)
+  const [searchTrack, setSearchTrack] = useState<Track | null>(null)
 
   useEffect(() => {
     if (!showColumnPicker) return
@@ -101,6 +110,39 @@ export function LibraryPage() {
     queryKey: ['library-tracks', selectedLibraryId],
     queryFn: () => listLibraryTracks(selectedLibraryId!),
     enabled: selectedLibraryId != null,
+  })
+
+  const { data: suggestions = [] } = useQuery({
+    queryKey: ['tag-suggestions'],
+    queryFn: () => tagSuggestionsApi.listPending(),
+    enabled: selectedLibraryId != null,
+  })
+
+  const suggestionsByTrack = useMemo(() => {
+    const map: Record<number, TagSuggestion> = {}
+    for (const s of suggestions) {
+      const ex = map[s.track_id]
+      if (!ex || s.confidence > ex.confidence) map[s.track_id] = s
+    }
+    return map
+  }, [suggestions])
+
+  const acceptMutation = useMutation({
+    mutationFn: (id: number) => tagSuggestionsApi.accept(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['tag-suggestions'] })
+      qc.invalidateQueries({ queryKey: ['inbox-count'] })
+      qc.invalidateQueries({ queryKey: ['library-tracks', selectedLibraryId] })
+    },
+  })
+
+  const rejectMutation = useMutation({
+    mutationFn: (id: number) => tagSuggestionsApi.reject(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['tag-suggestions'] }),
+  })
+
+  const lookupMutation = useMutation({
+    mutationFn: (trackId: number) => enqueueLookup(trackId),
   })
 
   async function handleScan() {
@@ -227,52 +269,193 @@ export function LibraryPage() {
               </div>
             ) : (
               tracks.map((track: Track) => (
-                <TrackRow key={track.id} track={track} visibleColumns={visibleColumns} />
+                <TrackRow
+                  key={track.id}
+                  track={track}
+                  visibleColumns={visibleColumns}
+                  suggestion={suggestionsByTrack[track.id]}
+                  isExpanded={expandedTrackId === track.id}
+                  isEditingTags={editingTagsTrackId === track.id}
+                  onToggleExpand={() => {
+                    setExpandedTrackId(prev => prev === track.id ? null : track.id)
+                    setEditingTagsTrackId(null)
+                  }}
+                  onSearch={() => setSearchTrack(track)}
+                  onLookup={() => lookupMutation.mutate(track.id)}
+                  onAccept={id => acceptMutation.mutate(id)}
+                  onReject={id => rejectMutation.mutate(id)}
+                  onEditTags={() => setEditingTagsTrackId(track.id)}
+                  onEditTagsClose={() => setEditingTagsTrackId(null)}
+                />
               ))
             )}
           </div>
         </main>
       </div>
+      {searchTrack != null && (
+        <IngestSearchDialog
+          track={searchTrack}
+          onClose={() => {
+            setSearchTrack(null)
+            qc.invalidateQueries({ queryKey: ['tag-suggestions'] })
+          }}
+        />
+      )}
     </div>
   )
 }
 
-function TrackRow({ track, visibleColumns }: { track: Track; visibleColumns: Set<string> }) {
+function TrackRow({
+  track,
+  visibleColumns,
+  suggestion,
+  isExpanded,
+  isEditingTags,
+  onToggleExpand,
+  onSearch,
+  onLookup,
+  onAccept,
+  onReject,
+  onEditTags,
+  onEditTagsClose,
+}: {
+  track: Track
+  visibleColumns: Set<string>
+  suggestion?: TagSuggestion
+  isExpanded: boolean
+  isEditingTags: boolean
+  onToggleExpand: () => void
+  onSearch: () => void
+  onLookup: () => void
+  onAccept: (id: number) => void
+  onReject: (id: number) => void
+  onEditTags: () => void
+  onEditTagsClose: () => void
+}) {
+  const pct = suggestion ? Math.round(suggestion.confidence * 100) : null
+
   return (
-    <div className="flex items-center gap-0 px-2 py-0.5 border-b border-border-subtle text-xs hover:bg-bg-row-hover">
-      <span className="w-5 shrink-0 text-text-muted text-[10px]"></span>
-      {visibleColumns.has('num') && (
-        <span className="w-6 shrink-0 text-text-muted font-mono">{track.tracknumber ?? '—'}</span>
+    <>
+      <div className={`flex items-center gap-0 px-2 py-0.5 border-b border-border-subtle text-xs hover:bg-bg-row-hover ${isExpanded ? 'bg-bg-surface' : ''}`}>
+        <span className="w-5 shrink-0 text-text-muted text-[10px]"></span>
+        {visibleColumns.has('num') && (
+          <span className="w-6 shrink-0 text-text-muted font-mono">{track.tracknumber ?? '—'}</span>
+        )}
+        {visibleColumns.has('title') && (
+          <span className="flex-[3] shrink-0 text-text-primary truncate pr-2">{track.title ?? '—'}</span>
+        )}
+        {visibleColumns.has('artist') && (
+          <span className="flex-[2] shrink-0 text-text-secondary truncate pr-2">{track.artist ?? '—'}</span>
+        )}
+        {visibleColumns.has('album') && (
+          <span className="flex-[2] shrink-0 text-text-secondary truncate pr-2">{track.album ?? '—'}</span>
+        )}
+        {visibleColumns.has('year') && (
+          <span className="w-10 shrink-0 text-text-muted">{track.date?.slice(0, 4) ?? '—'}</span>
+        )}
+        {visibleColumns.has('genre') && (
+          <span className="flex-1 shrink-0 text-text-muted truncate pr-2">{track.genre ?? '—'}</span>
+        )}
+        {visibleColumns.has('format') && (
+          <span className="w-12 shrink-0 text-text-muted font-mono uppercase text-[10px]">
+            {getFileExtension(track.relative_path)}
+          </span>
+        )}
+        {visibleColumns.has('bitrate') && (
+          <span className="w-14 shrink-0 text-text-muted font-mono">{formatBitrate(track.bitrate)}</span>
+        )}
+        {visibleColumns.has('duration') && (
+          <span className="w-10 shrink-0 text-text-muted font-mono">{formatDuration(track.duration_secs)}</span>
+        )}
+        {visibleColumns.has('actions') && (
+          <span className="w-16 shrink-0 flex items-center gap-1 justify-end">
+            {suggestion && (
+              <span
+                className={`text-[10px] font-mono ${pct! >= 80 ? 'text-green-400' : 'text-yellow-400'}`}
+                title={`Pending suggestion (${pct}% confidence)`}
+              >
+                {pct}%
+              </span>
+            )}
+            <button
+              onClick={onToggleExpand}
+              className={`text-xs border rounded px-1.5 py-0.5 transition-colors ${
+                isExpanded
+                  ? 'border-accent text-accent'
+                  : 'border-border text-text-muted hover:border-accent hover:text-text-secondary'
+              }`}
+              title="Track actions"
+            >
+              ⋯
+            </button>
+          </span>
+        )}
+      </div>
+
+      {isExpanded && (
+        <div className="border-b border-border bg-bg-surface px-3 py-2 flex flex-col gap-2">
+          {/* Action buttons */}
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={onLookup}
+              className="text-xs border border-border text-text-muted rounded px-2 py-0.5 hover:bg-bg-panel hover:border-accent hover:text-text-secondary"
+            >
+              Lookup
+            </button>
+            <button
+              onClick={onSearch}
+              className="text-xs border border-border text-text-muted rounded px-2 py-0.5 hover:bg-bg-panel hover:border-accent hover:text-text-secondary"
+            >
+              Search
+            </button>
+            <button
+              onClick={isEditingTags ? onEditTagsClose : onEditTags}
+              className={`text-xs border rounded px-2 py-0.5 ${
+                isEditingTags
+                  ? 'border-accent text-accent'
+                  : 'border-border text-text-muted hover:bg-bg-panel hover:border-accent hover:text-text-secondary'
+              }`}
+            >
+              Edit Tags
+            </button>
+          </div>
+
+          {/* Pending suggestion */}
+          {suggestion && !isEditingTags && (
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] uppercase tracking-wide text-text-muted font-mono">{suggestion.source}</span>
+                <span className={`text-[10px] font-mono ${pct! >= 80 ? 'text-green-400' : 'text-yellow-400'}`}>{pct}% confidence</span>
+                <button
+                  onClick={() => onAccept(suggestion.id)}
+                  className="text-xs bg-accent text-bg-base rounded px-2 py-0.5 hover:opacity-90 ml-auto"
+                >
+                  Accept
+                </button>
+                <button
+                  onClick={() => onReject(suggestion.id)}
+                  className="text-xs border border-border text-text-muted rounded px-2 py-0.5 hover:bg-bg-panel"
+                >
+                  Reject
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[11px]">
+                {Object.entries(suggestion.suggested_tags).slice(0, 8).map(([k, v]) => (
+                  <div key={k} className="flex gap-1.5 min-w-0">
+                    <span className="text-text-muted font-mono w-28 shrink-0 truncate">{k}</span>
+                    <span className="text-text-secondary truncate">{v}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Tag editor */}
+          {isEditingTags && (
+            <TrackEditPanel track={track} suggestion={suggestion} onClose={onEditTagsClose} />
+          )}
+        </div>
       )}
-      {visibleColumns.has('title') && (
-        <span className="flex-[3] shrink-0 text-text-primary truncate pr-2">{track.title ?? '—'}</span>
-      )}
-      {visibleColumns.has('artist') && (
-        <span className="flex-[2] shrink-0 text-text-secondary truncate pr-2">{track.artist ?? '—'}</span>
-      )}
-      {visibleColumns.has('album') && (
-        <span className="flex-[2] shrink-0 text-text-secondary truncate pr-2">{track.album ?? '—'}</span>
-      )}
-      {visibleColumns.has('year') && (
-        <span className="w-10 shrink-0 text-text-muted">{track.date?.slice(0, 4) ?? '—'}</span>
-      )}
-      {visibleColumns.has('genre') && (
-        <span className="flex-1 shrink-0 text-text-muted truncate pr-2">{track.genre ?? '—'}</span>
-      )}
-      {visibleColumns.has('format') && (
-        <span className="w-12 shrink-0 text-text-muted font-mono uppercase text-[10px]">
-          {getFileExtension(track.relative_path)}
-        </span>
-      )}
-      {visibleColumns.has('bitrate') && (
-        <span className="w-14 shrink-0 text-text-muted font-mono">{formatBitrate(track.bitrate)}</span>
-      )}
-      {visibleColumns.has('duration') && (
-        <span className="w-10 shrink-0 text-text-muted font-mono">{formatDuration(track.duration_secs)}</span>
-      )}
-      {visibleColumns.has('actions') && (
-        <span className="w-16 shrink-0"></span>
-      )}
-    </div>
+    </>
   )
 }

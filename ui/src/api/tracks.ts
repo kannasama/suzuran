@@ -6,3 +6,7 @@ export const tracksApi = {
     return client.get<Track>(`/tracks/${id}`).then(r => r.data);
   },
 };
+
+export function enqueueLookup(id: number): Promise<void> {
+  return client.post(`/tracks/${id}/lookup`).then(() => {});
+}
