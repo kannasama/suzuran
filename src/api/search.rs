@@ -42,9 +42,9 @@ async fn search_mb(
 #[derive(Deserialize)]
 struct FreedBSearchBody {
     disc_id: Option<String>,
-    #[allow(dead_code)]
+    /// Accepted for forward compatibility; CDDB protocol does not support text search
+    /// so artist/album are not forwarded to the service when disc_id is absent.
     artist: Option<String>,
-    #[allow(dead_code)]
     album: Option<String>,
 }
 
@@ -53,7 +53,8 @@ async fn search_freedb(
     _auth: AuthUser,
     Json(body): Json<FreedBSearchBody>,
 ) -> Result<Json<Vec<serde_json::Value>>, AppError> {
-    if let Some(disc_id) = body.disc_id {
+    let FreedBSearchBody { disc_id, artist: _, album: _ } = body;
+    if let Some(disc_id) = disc_id {
         let candidate = state.freedb_service
             .disc_lookup(&disc_id)
             .await
@@ -69,7 +70,7 @@ async fn search_freedb(
             .unwrap_or_default();
         Ok(Json(out))
     } else {
-        // No disc_id provided — return empty; text search not yet supported via CDDB protocol
+        // CDDB protocol only supports disc-ID lookup; artist/album text search is not available
         Ok(Json(vec![]))
     }
 }
