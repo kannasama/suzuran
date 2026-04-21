@@ -87,10 +87,8 @@ async fn test_process_staged_moves_file_to_source() {
     // Run the handler
     let payload = serde_json::to_value(ProcessStagedPayload {
         track_id: track.id,
-        tag_suggestion_id: None,
-        cover_art_url: None,
-        write_folder_art: false,
         profile_ids: vec![lib_profile.id],
+        ..Default::default()
     })
     .unwrap();
 
@@ -140,10 +138,7 @@ async fn test_process_staged_missing_track_returns_error() {
 
     let payload = serde_json::to_value(ProcessStagedPayload {
         track_id: 99999,
-        tag_suggestion_id: None,
-        cover_art_url: None,
-        write_folder_art: false,
-        profile_ids: vec![],
+        ..Default::default()
     })
     .unwrap();
 
@@ -179,10 +174,7 @@ async fn test_process_staged_already_active_returns_error() {
 
     let payload = serde_json::to_value(ProcessStagedPayload {
         track_id: track.id,
-        tag_suggestion_id: None,
-        cover_art_url: None,
-        write_folder_art: false,
-        profile_ids: vec![],
+        ..Default::default()
     })
     .unwrap();
 

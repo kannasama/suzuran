@@ -737,6 +737,90 @@ impl Store for SqliteStore {
         .map_err(AppError::Database)
     }
 
+    async fn find_active_source_track_by_mb_id(
+        &self,
+        library_id: i64,
+        mb_recording_id: &str,
+    ) -> Result<Option<Track>, AppError> {
+        sqlx::query_as::<_, Track>(
+            "SELECT * FROM tracks \
+             WHERE library_id = ?1 \
+               AND status = 'active' \
+               AND library_profile_id IS NULL \
+               AND json_extract(tags, '$.musicbrainz_recordingid') = ?2 \
+             LIMIT 1",
+        )
+        .bind(library_id)
+        .bind(mb_recording_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(AppError::Database)
+    }
+
+    async fn find_active_source_track_by_tags(
+        &self,
+        library_id: i64,
+        albumartist_lower: &str,
+        album_lower: &str,
+        disc: &str,
+        track_num: &str,
+    ) -> Result<Option<Track>, AppError> {
+        sqlx::query_as::<_, Track>(
+            "SELECT * FROM tracks \
+             WHERE library_id = ?1 \
+               AND status = 'active' \
+               AND library_profile_id IS NULL \
+               AND LOWER(COALESCE(albumartist, artist, '')) = ?2 \
+               AND LOWER(COALESCE(album, '')) = ?3 \
+               AND COALESCE(discnumber, '1') = ?4 \
+               AND (COALESCE(tracknumber, '0') = ?5 \
+                 OR COALESCE(tracknumber, '0') LIKE (?5 || '/%')) \
+             LIMIT 1",
+        )
+        .bind(library_id)
+        .bind(albumartist_lower)
+        .bind(album_lower)
+        .bind(disc)
+        .bind(track_num)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(AppError::Database)
+    }
+
+    async fn find_active_source_track_by_fingerprint(
+        &self,
+        library_id: i64,
+        fingerprint: &str,
+    ) -> Result<Option<Track>, AppError> {
+        sqlx::query_as::<_, Track>(
+            "SELECT * FROM tracks \
+             WHERE library_id = ?1 \
+               AND status = 'active' \
+               AND library_profile_id IS NULL \
+               AND acoustid_fingerprint = ?2 \
+             LIMIT 1",
+        )
+        .bind(library_id)
+        .bind(fingerprint)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(AppError::Database)
+    }
+
+    async fn set_track_library_profile(
+        &self,
+        track_id: i64,
+        library_profile_id: i64,
+    ) -> Result<(), AppError> {
+        sqlx::query("UPDATE tracks SET library_profile_id = ?2 WHERE id = ?1")
+            .bind(track_id)
+            .bind(library_profile_id)
+            .execute(&self.pool)
+            .await
+            .map(|_| ())
+            .map_err(AppError::Database)
+    }
+
     async fn enqueue_job(
         &self,
         job_type: &str,

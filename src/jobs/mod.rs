@@ -55,13 +55,20 @@ pub struct TranscodePayload {
 }
 
 /// Payload for the `process_staged` job type.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct ProcessStagedPayload {
     pub track_id: i64,
     pub tag_suggestion_id: Option<i64>,
     pub cover_art_url: Option<String>,
     pub write_folder_art: bool,
     pub profile_ids: Vec<i64>,
+    /// If set, the active track with this ID is being superseded by the staged track.
+    #[serde(default)]
+    pub supersede_track_id: Option<i64>,
+    /// Library profile whose derived directory the displaced file moves into.
+    /// None = discard the old file (user override).
+    #[serde(default)]
+    pub supersede_profile_id: Option<i64>,
 }
 
 /// Payload for the `normalize` job type.

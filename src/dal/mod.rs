@@ -289,6 +289,40 @@ pub trait Store: Send + Sync {
         duration_secs: f64,
     ) -> Result<(), AppError>;
 
+    /// Find an active, source-only (library_profile_id IS NULL) track in the given library
+    /// whose tags contain the specified MusicBrainz recording ID.
+    async fn find_active_source_track_by_mb_id(
+        &self,
+        library_id: i64,
+        mb_recording_id: &str,
+    ) -> Result<Option<Track>, AppError>;
+
+    /// Find an active, source-only track by the normalised tag tuple
+    /// (albumartist_lower, album_lower, disc, track_num).
+    /// disc/track_num should already be normalised by the caller.
+    async fn find_active_source_track_by_tags(
+        &self,
+        library_id: i64,
+        albumartist_lower: &str,
+        album_lower: &str,
+        disc: &str,
+        track_num: &str,
+    ) -> Result<Option<Track>, AppError>;
+
+    /// Find an active, source-only track by AcoustID fingerprint string.
+    async fn find_active_source_track_by_fingerprint(
+        &self,
+        library_id: i64,
+        fingerprint: &str,
+    ) -> Result<Option<Track>, AppError>;
+
+    /// Set a track's library_profile_id (used when a displaced track becomes a derived copy).
+    async fn set_track_library_profile(
+        &self,
+        track_id: i64,
+        library_profile_id: i64,
+    ) -> Result<(), AppError>;
+
     // ── encoding profiles ─────────────────────────────────────────
     async fn create_encoding_profile(&self, dto: UpsertEncodingProfile) -> Result<EncodingProfile, AppError>;
     async fn get_encoding_profile(&self, id: i64) -> Result<EncodingProfile, AppError>;

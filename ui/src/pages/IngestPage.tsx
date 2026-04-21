@@ -7,7 +7,12 @@ import { ImageUpload } from '../components/ImageUpload'
 import { TrackEditPanel } from '../components/TrackEditPanel'
 import { AlternativesPanel } from '../components/AlternativesPanel'
 import { tagSuggestionsApi } from '../api/tagSuggestions'
-import { getStagedTracks, submitTrack } from '../api/ingest'
+import {
+  getStagedTracks,
+  submitTrack,
+  checkSupersede,
+  type SupersedeMatchInfo,
+} from '../api/ingest'
 import { enqueueLookup } from '../api/tracks'
 import { listLibraryProfiles } from '../api/libraryProfiles'
 import { listSettings } from '../api/settings'
@@ -43,7 +48,6 @@ export default function IngestPage() {
   const [searchTrack, setSearchTrack] = useState<Track | null>(null)
   const [submitAlbum, setSubmitAlbum] = useState<string | null>(null)
   const [editingTrackId, setEditingTrackId] = useState<number | null>(null)
-  // Per-album custom art URLs (uploaded in the album header before import)
   const [albumArtUrls, setAlbumArtUrls] = useState<Record<string, string>>({})
 
   const { data: stagedTracks = [], isLoading: tracksLoading } = useQuery({
@@ -55,6 +59,22 @@ export default function IngestPage() {
     queryKey: ['tag-suggestions'],
     queryFn: () => tagSuggestionsApi.listPending(),
   })
+
+  // Supersede check — runs whenever staged tracks change
+  const { data: supersedeResults = [] } = useQuery({
+    queryKey: ['ingest-supersede', stagedTracks.map(t => t.id)],
+    queryFn: () =>
+      stagedTracks.length > 0
+        ? checkSupersede(stagedTracks.map(t => t.id))
+        : Promise.resolve([]),
+    enabled: stagedTracks.length > 0,
+  })
+
+  // Build map: track_id → SupersedeMatchInfo
+  const supersedeByTrack: Record<number, SupersedeMatchInfo> = {}
+  for (const r of supersedeResults) {
+    if (r.match) supersedeByTrack[r.track_id] = r.match
+  }
 
   const batchAccept = useMutation({
     mutationFn: () => tagSuggestionsApi.batchAccept(threshold / 100),
@@ -154,6 +174,7 @@ export default function IngestPage() {
                 albumKey={albumKey}
                 tracks={groups[albumKey]}
                 suggestionsByTrack={suggestionsByTrack}
+                supersedeByTrack={supersedeByTrack}
                 onAccept={id => acceptMutation.mutate(id)}
                 onReject={id => rejectMutation.mutate(id)}
                 onSearch={t => setSearchTrack(t)}
@@ -179,6 +200,7 @@ export default function IngestPage() {
           albumKey={submitAlbum}
           tracks={groups[submitAlbum]}
           suggestionsByTrack={suggestionsByTrack}
+          supersedeByTrack={supersedeByTrack}
           onClose={() => setSubmitAlbum(null)}
           onSubmitted={() => {
             setSubmitAlbum(null)
@@ -210,6 +232,7 @@ function AlbumGroup({
   albumKey,
   tracks,
   suggestionsByTrack,
+  supersedeByTrack,
   onAccept,
   onReject,
   onSearch,
@@ -227,6 +250,7 @@ function AlbumGroup({
   albumKey: string
   tracks: Track[]
   suggestionsByTrack: Record<number, TagSuggestion>
+  supersedeByTrack: Record<number, SupersedeMatchInfo>
   onAccept: (id: number) => void
   onReject: (id: number) => void
   onSearch: (t: Track) => void
@@ -249,6 +273,9 @@ function AlbumGroup({
   const [altTrackId, setAltTrackId] = useState<number | null>(null)
   const [editingAlbum, setEditingAlbum] = useState(false)
   const [showArtUpload, setShowArtUpload] = useState(false)
+  const [expandedSupersede, setExpandedSupersede] = useState<number | null>(null)
+
+  const supersedeCount = tracks.filter(t => supersedeByTrack[t.id]).length
 
   return (
     <div className="border border-border rounded bg-bg-panel">
@@ -270,6 +297,11 @@ function AlbumGroup({
           <span className="text-[10px] font-mono uppercase text-text-muted border border-border rounded px-1">
             {formatExt}
           </span>
+          {supersedeCount > 0 && (
+            <span className="text-[10px] font-mono uppercase text-sky-400 border border-sky-400/40 rounded px-1 shrink-0">
+              {supersedeCount} replac{supersedeCount !== 1 ? 'e' : 'es'} existing
+            </span>
+          )}
         </div>
         <button
           onClick={() => setShowArtUpload(v => !v)}
@@ -332,8 +364,10 @@ function AlbumGroup({
       <div className="flex flex-col divide-y divide-border">
         {tracks.map(track => {
           const suggestion = suggestionsByTrack[track.id]
+          const supersede = supersedeByTrack[track.id]
           const pct = suggestion ? Math.round(suggestion.confidence * 100) : null
           const isEditing = editingTrackId === track.id
+          const supersedeExpanded = expandedSupersede === track.id
           return (
             <div key={track.id} className="px-3 py-2 flex flex-col gap-2">
               {/* Track meta row */}
@@ -344,6 +378,20 @@ function AlbumGroup({
                 <span className="text-text-primary text-xs flex-1 truncate">
                   {track.title ?? track.relative_path.split('/').pop()}
                 </span>
+                {/* Supersede badge */}
+                {supersede && (
+                  <button
+                    onClick={() => setExpandedSupersede(supersedeExpanded ? null : track.id)}
+                    className={`text-[10px] font-mono uppercase rounded px-1 shrink-0 border ${
+                      supersede.profile_match
+                        ? 'text-sky-400 border-sky-400/40 hover:border-sky-400'
+                        : 'text-amber-400 border-amber-400/40 hover:border-amber-400'
+                    }`}
+                    title={supersede.profile_match ? 'Replaces existing — click to expand' : 'Replaces existing — no matching profile'}
+                  >
+                    {supersede.profile_match ? 'Replaces existing' : '⚠ Replaces existing'}
+                  </button>
+                )}
                 {pct != null && (
                   <span className={`text-[10px] font-mono shrink-0 ${pct >= 80 ? 'text-green-400' : 'text-yellow-400'}`}>
                     {pct}%
@@ -404,6 +452,11 @@ function AlbumGroup({
                 </div>
               </div>
 
+              {/* Supersede detail row */}
+              {supersedeExpanded && supersede && (
+                <SupersedeDetailRow supersede={supersede} />
+              )}
+
               {/* Inline edit panel */}
               {isEditing && (
                 <TrackEditPanel
@@ -438,6 +491,59 @@ function AlbumGroup({
             </div>
           )
         })}
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Supersede detail row (inline expand in track list)
+// ---------------------------------------------------------------------------
+
+function SupersedeDetailRow({ supersede }: { supersede: SupersedeMatchInfo }) {
+  const fmtQuality = (fmt: string, sr: number | null, bd: number | null, br: number | null) => {
+    const parts: string[] = [fmt.toUpperCase()]
+    if (sr) parts.push(`${(sr / 1000).toFixed(sr % 1000 === 0 ? 0 : 1)}kHz`)
+    if (bd) parts.push(`${bd}-bit`)
+    if (br) parts.push(`${br}kbps`)
+    return parts.join(' · ')
+  }
+
+  return (
+    <div className="rounded border border-sky-400/20 bg-sky-400/5 px-3 py-2 text-[11px] flex flex-col gap-1">
+      <div className="flex items-center gap-2 text-text-muted">
+        <span className="font-mono text-[10px] uppercase tracking-wide text-sky-400">Replaces existing</span>
+        <span className="text-[10px] text-text-muted/60">via {supersede.identity_method.replace('_', ' ')}</span>
+      </div>
+      <div className="flex items-center gap-3">
+        <div className="flex-1">
+          <div className="text-text-muted text-[10px] uppercase tracking-wide mb-0.5">Current</div>
+          <div className="font-mono text-text-secondary">
+            {fmtQuality(
+              supersede.active_track_format,
+              supersede.active_track_sample_rate,
+              supersede.active_track_bit_depth,
+              supersede.active_track_bitrate,
+            )}
+          </div>
+        </div>
+        <span className="text-text-muted">→</span>
+        <div className="flex-1">
+          {supersede.profile_match ? (
+            <>
+              <div className="text-text-muted text-[10px] uppercase tracking-wide mb-0.5">Moves to</div>
+              <div className="font-mono text-sky-400">
+                {supersede.profile_match.derived_dir_name}
+                <span className="text-text-muted ml-1">({supersede.profile_match.profile_name})</span>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="text-text-muted text-[10px] uppercase tracking-wide mb-0.5">Profile</div>
+              <div className="font-mono text-amber-400">No matching profile — resolve in Import dialog</div>
+            </>
+          )}
+        </div>
       </div>
     </div>
   )
@@ -552,10 +658,14 @@ function AlbumEditPanel({
 // Import pre-flight dialog
 // ---------------------------------------------------------------------------
 
+// Per-track supersede resolution state
+type SupersedeResolution = 'supersede' | 'skip' | 'discard'
+
 function SubmitDialog({
   albumKey,
   tracks,
   suggestionsByTrack,
+  supersedeByTrack,
   onClose,
   onSubmitted,
   presetArtUrl,
@@ -563,6 +673,7 @@ function SubmitDialog({
   albumKey: string
   tracks: Track[]
   suggestionsByTrack: Record<number, TagSuggestion>
+  supersedeByTrack: Record<number, SupersedeMatchInfo>
   onClose: () => void
   onSubmitted: () => void
   presetArtUrl: string
@@ -575,14 +686,12 @@ function SubmitDialog({
     queryFn: () => listLibraryProfiles(libraryId),
   })
 
-  // Gap 5: fetch settings to determine write_folder_art
   const { data: settings = [] } = useQuery({
     queryKey: ['settings'],
     queryFn: listSettings,
   })
   const folderArtFilename = settings.find(s => s.key === 'folder_art_filename')?.value ?? ''
 
-  // Pre-select profiles per spec: include_on_submit AND (auto_include_above_hz is null OR track.sample_rate >= auto_include_above_hz)
   const firstTrack = tracks[0]
   const sampleRate = firstTrack.sample_rate ?? null
 
@@ -600,11 +709,37 @@ function SubmitDialog({
     )
     setSelectedProfiles(defaults)
   }, [profiles])
+
   const [queued, setQueued] = useState(0)
   const [submitting, setSubmitting] = useState(false)
-  // Gap 4: uploaded art URL (overrides suggestion art when set)
-  // Initialise from presetArtUrl so art chosen in the album header carries over
   const [uploadedArtUrl, setUploadedArtUrl] = useState<string>(presetArtUrl)
+
+  // Per-track supersede resolution; default = 'supersede' if profile matched, else must be resolved
+  const [supersedeResolutions, setSupersedeResolutions] = useState<Record<number, SupersedeResolution>>({})
+
+  // Initialise resolutions when supersede data is available
+  useEffect(() => {
+    const initial: Record<number, SupersedeResolution> = {}
+    for (const track of tracks) {
+      const s = supersedeByTrack[track.id]
+      if (s) {
+        // Auto-select 'supersede' if there's a matching profile; unresolved (no default) if not
+        initial[track.id] = s.profile_match ? 'supersede' : ('supersede' as SupersedeResolution)
+      }
+    }
+    setSupersedeResolutions(initial)
+  }, [tracks.map(t => t.id).join(','), Object.keys(supersedeByTrack).join(',')])
+
+  // Tracks that have a supersede candidate
+  const supersedeTrackIds = tracks.filter(t => supersedeByTrack[t.id])
+  // Tracks that are unresolved (no matching profile and no explicit resolution yet)
+  const unresolvedWarnings = supersedeTrackIds.filter(t => {
+    const s = supersedeByTrack[t.id]
+    if (!s || s.profile_match) return false
+    const res = supersedeResolutions[t.id]
+    return !res || res === 'supersede' // 'supersede' without a profile = unresolved
+  })
+  const canImport = unresolvedWarnings.length === 0
 
   function toggleProfile(id: number) {
     setSelectedProfiles(prev => {
@@ -615,17 +750,12 @@ function SubmitDialog({
     })
   }
 
-  // Gather representative tags from best accepted/pending suggestion for first track
   const suggestion = suggestionsByTrack[firstTrack.id]
   const suggestedArtUrl = suggestion?.cover_art_url
-
-  // Gap 4: resolved art — uploaded takes precedence, fallback to suggestion, null = skip
   const [artSkipped, setArtSkipped] = useState(false)
   const selectedArtUrl: string | undefined = artSkipped
     ? undefined
     : (uploadedArtUrl || suggestedArtUrl || undefined)
-
-  // Gap 5: write_folder_art logic
   const writeFolderArt = selectedArtUrl != null && folderArtFilename !== ''
 
   async function handleConfirm() {
@@ -634,6 +764,22 @@ function SubmitDialog({
     let count = 0
     for (const track of tracks) {
       const s = suggestionsByTrack[track.id]
+      const sup = supersedeByTrack[track.id]
+      const res = supersedeResolutions[track.id]
+
+      let supersedeTrackId: number | undefined
+      let supersedeProfileId: number | null | undefined
+
+      if (sup && res !== 'skip') {
+        supersedeTrackId = sup.active_track_id
+        if (res === 'discard') {
+          supersedeProfileId = null // explicit discard
+        } else {
+          // 'supersede' — use matched profile if available
+          supersedeProfileId = sup.profile_match?.library_profile_id ?? null
+        }
+      }
+
       try {
         await submitTrack({
           track_id: track.id,
@@ -641,6 +787,8 @@ function SubmitDialog({
           cover_art_url: selectedArtUrl,
           write_folder_art: writeFolderArt,
           profile_ids: profileIds,
+          supersede_track_id: supersedeTrackId,
+          supersede_profile_id: supersedeProfileId,
         })
         count++
       } catch {
@@ -683,11 +831,10 @@ function SubmitDialog({
             </div>
           )}
 
-          {/* Art panel — Gap 4 */}
+          {/* Art panel */}
           <div>
             <p className="text-text-muted text-xs uppercase tracking-wider mb-2">Cover Art</p>
             <div className="flex items-start gap-3">
-              {/* Suggested thumbnail */}
               {suggestedArtUrl && !artSkipped && (
                 <img
                   src={uploadedArtUrl || suggestedArtUrl}
@@ -721,6 +868,105 @@ function SubmitDialog({
             )}
           </div>
 
+          {/* Supersedes section */}
+          {supersedeTrackIds.length > 0 && (
+            <div>
+              <p className="text-text-muted text-xs uppercase tracking-wider mb-2">Supersedes</p>
+              <div className="flex flex-col gap-2">
+                {supersedeTrackIds.map(track => {
+                  const sup = supersedeByTrack[track.id]!
+                  const res = supersedeResolutions[track.id]
+                  const hasProfile = !!sup.profile_match
+                  const isWarning = !hasProfile && (!res || res === 'supersede')
+                  return (
+                    <div
+                      key={track.id}
+                      className={`rounded border px-3 py-2 text-xs flex flex-col gap-1.5 ${
+                        isWarning ? 'border-amber-400/30 bg-amber-400/5' : 'border-sky-400/20 bg-sky-400/5'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-text-primary font-medium truncate">
+                          {track.title ?? track.relative_path.split('/').pop()}
+                        </span>
+                        <span className="text-[10px] text-text-muted shrink-0 font-mono">
+                          via {sup.identity_method.replace('_', ' ')}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 text-[11px] font-mono text-text-muted">
+                        <span>{sup.active_track_format.toUpperCase()}</span>
+                        {sup.active_track_sample_rate && <span>{(sup.active_track_sample_rate / 1000).toFixed(1)}kHz</span>}
+                        {sup.active_track_bitrate && <span>{sup.active_track_bitrate}kbps</span>}
+                        <span className="text-text-muted/40 mx-0.5">→</span>
+                        {sup.profile_match ? (
+                          <span className="text-sky-400">
+                            {sup.profile_match.derived_dir_name}
+                            <span className="text-text-muted ml-1">({sup.profile_match.profile_name})</span>
+                          </span>
+                        ) : (
+                          <span className="text-amber-400">No matching profile</span>
+                        )}
+                      </div>
+                      {/* Resolution controls */}
+                      <div className="flex items-center gap-2 pt-0.5">
+                        {hasProfile ? (
+                          <div className="flex items-center gap-2">
+                            <label className="flex items-center gap-1.5 cursor-pointer">
+                              <input
+                                type="radio"
+                                name={`sup-${track.id}`}
+                                checked={res === 'supersede' || !res}
+                                onChange={() => setSupersedeResolutions(prev => ({ ...prev, [track.id]: 'supersede' }))}
+                                className="accent-[color:var(--accent)]"
+                              />
+                              <span className="text-text-primary">Replace → {sup.profile_match!.derived_dir_name}</span>
+                            </label>
+                            <label className="flex items-center gap-1.5 cursor-pointer">
+                              <input
+                                type="radio"
+                                name={`sup-${track.id}`}
+                                checked={res === 'skip'}
+                                onChange={() => setSupersedeResolutions(prev => ({ ...prev, [track.id]: 'skip' }))}
+                                className="accent-[color:var(--accent)]"
+                              />
+                              <span className="text-text-muted">Keep existing</span>
+                            </label>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <label className="flex items-center gap-1.5 cursor-pointer">
+                              <input
+                                type="radio"
+                                name={`sup-${track.id}`}
+                                checked={res === 'skip'}
+                                onChange={() => setSupersedeResolutions(prev => ({ ...prev, [track.id]: 'skip' }))}
+                                className="accent-[color:var(--accent)]"
+                              />
+                              <span className="text-text-muted">Keep existing</span>
+                            </label>
+                            <label className="flex items-center gap-1.5 cursor-pointer">
+                              <input
+                                type="radio"
+                                name={`sup-${track.id}`}
+                                checked={res === 'discard'}
+                                onChange={() => setSupersedeResolutions(prev => ({ ...prev, [track.id]: 'discard' }))}
+                                className="accent-[color:var(--accent)]"
+                              />
+                              <span className="text-amber-400">Replace and discard old file</span>
+                            </label>
+                            {isWarning && (
+                              <span className="text-amber-400 text-[10px] ml-auto">Resolve required</span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Profile checklist */}
           {profiles.length > 0 && (
             <div>
@@ -750,6 +996,11 @@ function SubmitDialog({
         </div>
 
         <div className="flex justify-end gap-2 px-4 py-3 border-t border-border flex-shrink-0">
+          {!canImport && (
+            <span className="text-xs text-amber-400 flex items-center mr-auto">
+              Resolve {unresolvedWarnings.length} supersede warning{unresolvedWarnings.length !== 1 ? 's' : ''} to continue
+            </span>
+          )}
           <button
             onClick={onClose}
             className="text-xs text-text-muted bg-bg-panel border border-border rounded px-3 py-1 hover:text-text-primary"
@@ -758,7 +1009,7 @@ function SubmitDialog({
           </button>
           <button
             onClick={handleConfirm}
-            disabled={submitting}
+            disabled={submitting || !canImport}
             className="text-xs bg-accent text-bg-base rounded px-3 py-1 font-medium hover:opacity-90 disabled:opacity-50"
           >
             {submitting ? 'Importing…' : `Import ${tracks.length} track${tracks.length !== 1 ? 's' : ''}`}
@@ -768,4 +1019,3 @@ function SubmitDialog({
     </div>
   )
 }
-

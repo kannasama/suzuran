@@ -203,7 +203,70 @@ async fn handle_process_staged(
     store.update_track_path(track_id, &dest_relative, &new_hash).await?;
     store.set_track_status(track_id, "active").await?;
 
-    // 11. Enqueue transcode job for each profile
+    // 11. Handle supersede: displace the old active track if requested
+    if let Some(old_track_id) = staged_payload.supersede_track_id {
+        let old_track = store
+            .get_track(old_track_id)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("supersede target {old_track_id} not found")))?;
+
+        let old_abs = format!(
+            "{}/{}",
+            root_path,
+            old_track.relative_path.trim_start_matches('/')
+        );
+
+        match staged_payload.supersede_profile_id {
+            Some(profile_id) => {
+                // Move old file into the derived directory of the matching profile.
+                let profile = store.get_library_profile(profile_id).await?;
+
+                // Strip "source/" prefix from old relative path; prepend derived_dir_name.
+                let old_rest = old_track
+                    .relative_path
+                    .trim_start_matches("source/")
+                    .trim_start_matches('/');
+                let derived_relative = format!("{}/{}", profile.derived_dir_name, old_rest);
+                let derived_abs = format!("{}/{}", root_path, derived_relative);
+
+                if let Some(parent) = Path::new(&derived_abs).parent() {
+                    tokio::fs::create_dir_all(parent)
+                        .await
+                        .map_err(|e| AppError::Internal(anyhow::anyhow!("mkdir derived dir: {e}")))?;
+                }
+
+                // rename with EXDEV fallback (OS error 18 = cross-device link)
+                if let Err(e) = tokio::fs::rename(&old_abs, &derived_abs).await {
+                    if e.raw_os_error() == Some(18) {
+                        tokio::fs::copy(&old_abs, &derived_abs)
+                            .await
+                            .map_err(|e| AppError::Internal(anyhow::anyhow!("copy for EXDEV: {e}")))?;
+                        tokio::fs::remove_file(&old_abs)
+                            .await
+                            .map_err(|e| AppError::Internal(anyhow::anyhow!("remove after EXDEV copy: {e}")))?;
+                    } else {
+                        return Err(AppError::Internal(anyhow::anyhow!("move old file: {e}")));
+                    }
+                }
+
+                let derived_hash = hash_file(Path::new(&derived_abs))
+                    .await
+                    .map_err(|e| AppError::Internal(anyhow::anyhow!("hash displaced file: {e}")))?;
+
+                store.update_track_path(old_track_id, &derived_relative, &derived_hash).await?;
+                store.set_track_library_profile(old_track_id, profile_id).await?;
+                // The old track remains "active" — it is now a derived copy of the new source.
+                store.create_track_link(track_id, old_track_id).await?;
+            }
+            None => {
+                // Override/discard: delete the old file and mark it removed.
+                let _ = tokio::fs::remove_file(&old_abs).await;
+                store.set_track_status(old_track_id, "removed").await?;
+            }
+        }
+    }
+
+    // 13. Enqueue transcode job for each profile
     for profile_id in &staged_payload.profile_ids {
         let transcode_payload = serde_json::to_value(TranscodePayload {
             track_id,
