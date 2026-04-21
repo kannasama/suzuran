@@ -2,6 +2,16 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Session Start
+
+At the beginning of every session, before responding to any request:
+1. Read `tasks/lessons.md` — this is the authoritative, git-tracked record of all process rules,
+   lessons, and user feedback. It mirrors the machine-local memory files and must be checked first.
+2. Check `tasks/codebase-filemap.md` if the session involves code work.
+
+Do not skip step 1 even if the task seems simple. The rules in `tasks/lessons.md` override default
+behavior and have been established through repeated correction.
+
 ## Project
 
 **suzuran** — a self-hosted music library manager (beets alternative). Rust/Axum backend + React/Vite/Tailwind SPA, deployed as a Docker image. Core features: multi-format library management, MusicBrainz tagging, rule-based file organization, and audio transcoding. See `docs/plans/2026-04-16-suzuran-design.md` for the full system design.
