@@ -27,6 +27,13 @@ services:
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
       PORT: 3000
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      # WebAuthn passkey configuration.
+      # RP_ID must be the hostname you use to access the app (no port, no protocol).
+      # RP_ORIGIN must be the full origin: protocol + hostname + port if non-standard.
+      # Example for local access: RP_ID=localhost  RP_ORIGIN=http://localhost:3000
+      # Example for LAN access:   RP_ID=192.168.1.10  RP_ORIGIN=http://192.168.1.10:3000
+      RP_ID: ${RP_ID:-localhost}
+      RP_ORIGIN: ${RP_ORIGIN:-http://localhost:3000}
       # Set UPLOADS_DIR if you want uploaded images stored outside the default /app/uploads
       # UPLOADS_DIR: /app/uploads
     volumes:
