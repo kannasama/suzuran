@@ -353,7 +353,8 @@ feedback record travels with the repo and is available to all contributors and f
 **How to apply:**
 - When a user provides feedback mid-session (corrections, approvals of non-obvious choices,
   strong preferences), note it in the Feedback Captured section — not only in memory files
-- Commit the summary file as part of the session's final cleanup (alongside the merge commit
-  or as a standalone docs commit)
-- If the session is ongoing and feedback arrives before the summary is written, hold it and
-  flush everything into the summary at the end
+- **Iteration feedback** (user clears context and provides feedback on a build, reports a bug,
+  reacts to a deployed change): append to an existing summary for that topic, or create a new
+  one named `YYYY-MM-DD-<topic>-feedback.md` — do not wait until end of session
+- Commit the summary file immediately after writing — not deferred to end of session
+- If no summary exists yet for the topic, create one even if the only content is the feedback section
