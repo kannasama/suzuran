@@ -7,6 +7,7 @@ pub mod jobs;
 pub mod libraries;
 pub mod library_profiles;
 pub mod middleware;
+pub mod migrate;
 pub mod organization_rules;
 pub mod search;
 pub mod settings;
@@ -41,6 +42,7 @@ pub fn api_router(_state: AppState) -> Router<AppState> {
         .nest("/library-profiles", library_profiles::router())
         .nest("/ingest", ingest::router())
         .nest("/search", search::router())
+        .nest("/admin", migrate::router())
         .merge(transcode::router())
         .merge(art::router())
 }
