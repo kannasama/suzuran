@@ -54,6 +54,27 @@ async fn handle_cue_split(
         .ok_or_else(|| AppError::NotFound(format!("library {library_id} not found")))?;
     let tag_encoding = library.tag_encoding.clone();
 
+    // Compute the output directory: replace leading "ingest" component with "source"
+    let library_root = Path::new(&library.root_path);
+    let source_out_dir = {
+        let cue_rel_dir = cue_dir.strip_prefix(library_root).unwrap_or(cue_dir);
+        let cue_rel_str = cue_rel_dir.to_string_lossy();
+        let source_rel = if cue_rel_str == "ingest" {
+            "source".to_string()
+        } else if let Some(rest) = cue_rel_str.strip_prefix("ingest/") {
+            format!("source/{}", rest)
+        } else {
+            // CUE file not in ingest/ — keep original directory as fallback
+            cue_rel_str.to_string()
+        };
+        library_root.join(&source_rel)
+    };
+
+    // Ensure the output directory exists
+    tokio::fs::create_dir_all(&source_out_dir)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("create_dir_all source_out_dir: {e}")))?;
+
     let cue_path_owned = cue_path.to_path_buf();
     let tag_encoding_clone = tag_encoding.clone();
     let content = tokio::task::spawn_blocking(move || {
@@ -86,7 +107,7 @@ async fn handle_cue_split(
     for (i, track) in sheet.tracks.iter().enumerate() {
         let title = track.title.clone().unwrap_or_else(|| format!("Track {}", track.number));
         let out_filename = format!("{:02} - {}.{}", track.number, sanitize_filename(&title), ext);
-        let out_path = cue_dir.join(&out_filename);
+        let out_path = source_out_dir.join(&out_filename);
 
         // Idempotency: skip if output file already exists
         if out_path.exists() {
@@ -179,7 +200,6 @@ async fn handle_cue_split(
         .unwrap_or_else(|_| (tags.clone(), tagger::AudioProperties::default()));
 
         // Build relative path from library root
-        let library_root = Path::new(&library.root_path);
         let relative_path = out_path
             .strip_prefix(library_root)
             .map(|p| p.to_string_lossy().to_string())
@@ -247,6 +267,10 @@ async fn handle_cue_split(
 
         tracks_created += 1;
     }
+
+    // Remove original CUE+audio from ingest/ after all tracks are successfully split
+    let _ = tokio::fs::remove_file(cue_path).await;  // ignore error — file may already be gone
+    let _ = tokio::fs::remove_file(&audio_path).await;
 
     Ok(serde_json::json!({ "tracks_created": tracks_created }))
 }
