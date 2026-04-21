@@ -470,6 +470,20 @@ impl Store for SqliteStore {
             .map_err(AppError::Database)
     }
 
+    async fn set_library_org_rule(
+        &self,
+        library_id: i64,
+        organization_rule_id: Option<i64>,
+    ) -> Result<(), AppError> {
+        sqlx::query("UPDATE libraries SET organization_rule_id = ?1 WHERE id = ?2")
+            .bind(organization_rule_id)
+            .bind(library_id)
+            .execute(&self.pool)
+            .await
+            .map(|_| ())
+            .map_err(AppError::Database)
+    }
+
     async fn list_child_libraries(&self, parent_id: i64) -> Result<Vec<Library>, AppError> {
         sqlx::query_as::<_, Library>(
             "SELECT * FROM libraries WHERE parent_library_id = ?1 ORDER BY id",

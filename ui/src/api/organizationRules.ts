@@ -13,7 +13,6 @@ export interface OrgRule {
 
 export interface CreateRuleRequest {
   name: string
-  library_id: number | null
   priority: number
   conditions: unknown | null
   path_template: string
@@ -32,7 +31,7 @@ export async function createRule(data: CreateRuleRequest): Promise<OrgRule> {
   return res.data
 }
 
-export async function updateRule(id: number, data: Omit<CreateRuleRequest, 'library_id'>): Promise<OrgRule> {
+export async function updateRule(id: number, data: CreateRuleRequest): Promise<OrgRule> {
   const res = await client.put<OrgRule>(`/organization-rules/${id}`, data)
   return res.data
 }

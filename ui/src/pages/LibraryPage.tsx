@@ -40,6 +40,7 @@ function loadColumnVisibility(): Set<string> {
 export function LibraryPage() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
+  const isLibraryAdmin = user?.role === 'admin' || user?.role === 'library_admin'
 
   const [selectedLibraryId, setSelectedLibraryId] = useState<number | null>(null)
   const [selectedVirtualLibraryId, setSelectedVirtualLibraryId] = useState<number | null>(null)
@@ -79,6 +80,7 @@ export function LibraryPage() {
         <aside className="w-44 flex-shrink-0 bg-bg-panel border-r border-border overflow-y-auto">
           <LibraryTree
             isAdmin={isAdmin}
+            isLibraryAdmin={isLibraryAdmin}
             selectedLibraryId={selectedLibraryId}
             onSelectLibrary={id => { setSelectedLibraryId(id); setSelectedVirtualLibraryId(null) }}
             selectedVirtualLibraryId={selectedVirtualLibraryId}

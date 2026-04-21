@@ -8,6 +8,7 @@ import {
   type UpdateLibraryInput,
 } from '../api/libraries'
 import { listEncodingProfiles } from '../api/encodingProfiles'
+import { listRules } from '../api/organizationRules'
 
 interface Props {
   /** When provided, the modal is in edit mode for this library */
@@ -36,12 +37,20 @@ export function LibraryFormModal({ library, libraries, onClose }: Props) {
   const [encodingProfileId, setEncodingProfileId] = useState<number | null>(
     library?.encoding_profile_id ?? null
   )
+  const [organizationRuleId, setOrganizationRuleId] = useState<number | null>(
+    library?.organization_rule_id ?? null
+  )
 
   const [error, setError] = useState<string | null>(null)
 
   const { data: encodingProfiles = [] } = useQuery({
     queryKey: ['encoding-profiles'],
     queryFn: listEncodingProfiles,
+  })
+
+  const { data: orgRules = [] } = useQuery({
+    queryKey: ['org-rules'],
+    queryFn: () => listRules(),
   })
 
   const createMutation = useMutation({
@@ -89,6 +98,7 @@ export function LibraryFormModal({ library, libraries, onClose }: Props) {
         tag_encoding: tagEncoding,
         ingest_dir: ingestDirVal,
         encoding_profile_id: encodingProfileId,
+        organization_rule_id: organizationRuleId,
       })
     } else {
       createMutation.mutate({
@@ -98,6 +108,7 @@ export function LibraryFormModal({ library, libraries, onClose }: Props) {
         parent_library_id: parentId,
         ingest_dir: ingestDirVal,
         encoding_profile_id: encodingProfileId,
+        organization_rule_id: organizationRuleId,
       })
     }
   }
@@ -215,6 +226,21 @@ export function LibraryFormModal({ library, libraries, onClose }: Props) {
               <option value="">— None —</option>
               {encodingProfiles.map(p => (
                 <option key={p.id} value={p.id}>{p.name} ({p.codec.toUpperCase()})</option>
+              ))}
+            </select>
+          </label>
+
+          {/* Organization Rule */}
+          <label className="flex flex-col gap-1">
+            <span className="text-text-muted text-xs uppercase tracking-wider">Organization Rule</span>
+            <select
+              value={organizationRuleId ?? ''}
+              onChange={e => setOrganizationRuleId(e.target.value === '' ? null : Number(e.target.value))}
+              className="bg-bg-base border border-border text-text-primary text-xs px-2 py-1.5 rounded focus:outline-none focus:border-accent"
+            >
+              <option value="">— None —</option>
+              {orgRules.map(r => (
+                <option key={r.id} value={r.id}>{r.name}</option>
               ))}
             </select>
           </label>

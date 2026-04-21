@@ -14,6 +14,7 @@ export interface Library {
   normalize_on_ingest: boolean
   tag_encoding: string
   ingest_dir: string | null
+  organization_rule_id: number | null
 }
 
 export interface CreateLibraryInput {
@@ -23,6 +24,7 @@ export interface CreateLibraryInput {
   parent_library_id: number | null
   ingest_dir?: string | null
   encoding_profile_id?: number | null
+  organization_rule_id?: number | null
 }
 
 export interface UpdateLibraryInput {
@@ -35,6 +37,7 @@ export interface UpdateLibraryInput {
   tag_encoding: string
   ingest_dir: string | null
   encoding_profile_id: number | null
+  organization_rule_id: number | null
 }
 
 export async function listLibraries(): Promise<Library[]> {

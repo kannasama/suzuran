@@ -77,7 +77,7 @@ export function TopNav() {
       </NavLink>
       {navItem('/issues', 'Issues')}
       {navItem('/jobs', 'Jobs')}
-      {user?.role === 'admin' && navItem('/organization', 'Organization')}
+      {(user?.role === 'admin' || user?.role === 'library_admin') && navItem('/organization', 'Organization')}
 
       <div className="ml-auto flex items-center">
         {user && (

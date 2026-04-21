@@ -3,7 +3,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { TopNav } from '../components/TopNav'
 import { EncodingProfileForm } from '../components/EncodingProfileForm'
 import { ArtProfileForm } from '../components/ArtProfileForm'
-import { VirtualLibraryForm } from '../components/VirtualLibraryForm'
 import {
   listEncodingProfiles,
   createEncodingProfile,
@@ -17,15 +16,6 @@ import {
   deleteArtProfile,
 } from '../api/artProfiles'
 import {
-  listVirtualLibraries,
-  createVirtualLibrary,
-  updateVirtualLibrary,
-  deleteVirtualLibrary,
-  getSources,
-  setSources,
-  triggerSync,
-} from '../api/virtualLibraries'
-import {
   listThemes,
   createTheme,
   updateTheme,
@@ -38,9 +28,8 @@ import { useTheme } from '../theme/ThemeProvider'
 import { extractPalette, hslToRgbStr } from '../utils/extractPalette'
 import type { EncodingProfile, UpsertEncodingProfile } from '../types/encodingProfile'
 import type { ArtProfile, UpsertArtProfile } from '../types/artProfile'
-import type { VirtualLibrary, UpsertVirtualLibrary } from '../types/virtualLibrary'
 
-type ActiveTab = 'general' | 'encoding' | 'art' | 'virtual' | 'themes'
+type ActiveTab = 'general' | 'encoding' | 'art' | 'themes'
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('general')
@@ -54,7 +43,6 @@ export default function SettingsPage() {
           <TabButton label="General" active={activeTab === 'general'} onClick={() => setActiveTab('general')} />
           <TabButton label="Encoding Profiles" active={activeTab === 'encoding'} onClick={() => setActiveTab('encoding')} />
           <TabButton label="Art Profiles" active={activeTab === 'art'} onClick={() => setActiveTab('art')} />
-          <TabButton label="Virtual Libraries" active={activeTab === 'virtual'} onClick={() => setActiveTab('virtual')} />
           <TabButton label="Themes" active={activeTab === 'themes'} onClick={() => setActiveTab('themes')} />
         </div>
 
@@ -62,7 +50,6 @@ export default function SettingsPage() {
           {activeTab === 'general' && <GeneralSettingsSection />}
           {activeTab === 'encoding' && <EncodingProfilesSection />}
           {activeTab === 'art' && <ArtProfilesSection />}
-          {activeTab === 'virtual' && <VirtualLibrariesSection />}
           {activeTab === 'themes' && <ThemesSection />}
         </div>
       </main>
@@ -482,179 +469,6 @@ function ArtProfilesSection() {
         </table>
       ) : null}
     </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Virtual Libraries section
-// ---------------------------------------------------------------------------
-
-function VirtualLibrariesSection() {
-  const qc = useQueryClient()
-  const { data: vlibs = [], isLoading } = useQuery({
-    queryKey: ['virtual-libraries'],
-    queryFn: listVirtualLibraries,
-  })
-  const [editing, setEditing] = useState<VirtualLibrary | 'new' | null>(null)
-  const [syncingId, setSyncingId] = useState<number | null>(null)
-
-  const createMutation = useMutation({
-    mutationFn: (data: UpsertVirtualLibrary) => createVirtualLibrary(data),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['virtual-libraries'] }); setEditing(null) },
-  })
-
-  const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: UpsertVirtualLibrary }) => updateVirtualLibrary(id, data),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['virtual-libraries'] }); setEditing(null) },
-  })
-
-  const deleteMutation = useMutation({
-    mutationFn: (id: number) => deleteVirtualLibrary(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['virtual-libraries'] }),
-  })
-
-  const isSavePending = createMutation.isPending || updateMutation.isPending
-
-  async function handleSave(
-    data: UpsertVirtualLibrary,
-    sources: Array<{ library_id: number; priority: number }>,
-  ) {
-    if (editing === 'new') {
-      const created = await createMutation.mutateAsync(data)
-      await setSources(created.id, sources)
-      qc.invalidateQueries({ queryKey: ['virtual-libraries'] })
-    } else if (editing != null) {
-      await updateMutation.mutateAsync({ id: editing.id, data })
-      await setSources(editing.id, sources)
-      qc.invalidateQueries({ queryKey: ['virtual-libraries'] })
-    }
-  }
-
-  async function handleSync(id: number) {
-    setSyncingId(id)
-    try {
-      await triggerSync(id)
-    } finally {
-      setSyncingId(null)
-    }
-  }
-
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-5">
-        <h1 className="text-text-primary font-semibold text-sm">Virtual Libraries</h1>
-        {editing == null && (
-          <button
-            onClick={() => setEditing('new')}
-            className="text-xs text-bg-base bg-accent rounded px-3 py-1 font-medium hover:opacity-90"
-          >
-            + New Virtual Library
-          </button>
-        )}
-      </div>
-
-      {editing != null && (
-        <div className="mb-5 bg-bg-panel border border-border rounded p-4 max-w-lg">
-          <p className="text-text-muted text-xs uppercase tracking-wider mb-3">
-            {editing === 'new' ? 'New Virtual Library' : `Edit: ${editing.name}`}
-          </p>
-          <VirtualLibraryForm
-            initial={editing === 'new' ? undefined : editing}
-            onSave={handleSave}
-            onCancel={() => setEditing(null)}
-            isPending={isSavePending}
-          />
-        </div>
-      )}
-
-      {isLoading ? (
-        <p className="text-text-muted text-xs">Loading…</p>
-      ) : vlibs.length === 0 && editing == null ? (
-        <div className="flex flex-col items-center justify-center py-16 gap-2">
-          <p className="text-text-muted text-xs">No virtual libraries defined.</p>
-          <p className="text-text-muted text-xs">Virtual libraries aggregate tracks from multiple source libraries via symlinks or hardlinks.</p>
-        </div>
-      ) : vlibs.length > 0 ? (
-        <table className="w-full text-xs border-collapse">
-          <thead>
-            <tr className="border-b border-border text-text-muted text-[11px] uppercase tracking-wider">
-              <th className="text-left pb-2 pr-4 font-medium">Name</th>
-              <th className="text-left pb-2 pr-4 font-medium">Link Type</th>
-              <th className="text-left pb-2 pr-4 font-medium">Root Path</th>
-              <th className="text-left pb-2 pr-4 font-medium">Sources</th>
-              <th className="pb-2"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {vlibs.map(v => (
-              <VirtualLibraryRow
-                key={v.id}
-                vlib={v}
-                isSyncing={syncingId === v.id}
-                onEdit={() => setEditing(v)}
-                onDelete={() => {
-                  if (window.confirm(`Delete virtual library "${v.name}"?`)) {
-                    deleteMutation.mutate(v.id)
-                  }
-                }}
-                onSync={() => handleSync(v.id)}
-              />
-            ))}
-          </tbody>
-        </table>
-      ) : null}
-    </div>
-  )
-}
-
-function VirtualLibraryRow({
-  vlib,
-  isSyncing,
-  onEdit,
-  onDelete,
-  onSync,
-}: {
-  vlib: VirtualLibrary
-  isSyncing: boolean
-  onEdit: () => void
-  onDelete: () => void
-  onSync: () => void
-}) {
-  const { data: sources = [] } = useQuery({
-    queryKey: ['virtual-library-sources', vlib.id],
-    queryFn: () => getSources(vlib.id),
-  })
-
-  return (
-    <tr className="border-b border-border-subtle hover:bg-bg-row-hover">
-      <td className="py-1.5 pr-4 text-text-primary font-medium">{vlib.name}</td>
-      <td className="py-1.5 pr-4 text-text-muted font-mono">{vlib.link_type}</td>
-      <td className="py-1.5 pr-4 text-text-muted font-mono truncate max-w-[200px]">{vlib.root_path}</td>
-      <td className="py-1.5 pr-4 text-text-muted">{sources.length}</td>
-      <td className="py-1.5 pl-2">
-        <div className="flex gap-2 justify-end">
-          <button
-            onClick={onEdit}
-            className="text-text-muted hover:text-text-primary"
-          >
-            Edit
-          </button>
-          <button
-            onClick={onSync}
-            disabled={isSyncing}
-            className="text-text-muted hover:text-text-secondary disabled:opacity-40"
-          >
-            {isSyncing ? 'Syncing…' : 'Sync'}
-          </button>
-          <button
-            onClick={onDelete}
-            className="text-text-muted hover:text-destructive"
-          >
-            Delete
-          </button>
-        </div>
-      </td>
-    </tr>
   )
 }
 

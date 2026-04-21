@@ -8,7 +8,7 @@ use serde::Deserialize;
 use std::collections::HashMap;
 
 use crate::{
-    api::middleware::{admin::AdminUser, auth::AuthUser},
+    api::middleware::{auth::AuthUser, library_admin::LibraryAdminUser},
     error::AppError,
     jobs::OrganizePayload,
     models::OrganizationRule,
@@ -55,7 +55,6 @@ async fn get_rule(
 #[derive(Deserialize)]
 struct CreateRuleRequest {
     name: String,
-    library_id: Option<i64>,
     priority: i32,
     conditions: Option<serde_json::Value>,
     path_template: String,
@@ -64,14 +63,14 @@ struct CreateRuleRequest {
 
 async fn create_rule(
     State(state): State<AppState>,
-    _admin: AdminUser,
+    _auth: LibraryAdminUser,
     Json(body): Json<CreateRuleRequest>,
 ) -> Result<(StatusCode, Json<OrganizationRule>), AppError> {
     let rule = state
         .db
         .create_organization_rule(
             &body.name,
-            body.library_id,
+            None,
             body.priority,
             body.conditions,
             &body.path_template,
@@ -92,7 +91,7 @@ struct UpdateRuleRequest {
 
 async fn update_rule(
     State(state): State<AppState>,
-    _admin: AdminUser,
+    _auth: LibraryAdminUser,
     Path(id): Path<i64>,
     Json(body): Json<UpdateRuleRequest>,
 ) -> Result<Json<OrganizationRule>, AppError> {
@@ -113,7 +112,7 @@ async fn update_rule(
 
 async fn delete_rule(
     State(state): State<AppState>,
-    _admin: AdminUser,
+    _auth: LibraryAdminUser,
     Path(id): Path<i64>,
 ) -> Result<StatusCode, AppError> {
     state.db.delete_organization_rule(id).await?;
@@ -128,7 +127,7 @@ struct PreviewApplyRequest {
 
 async fn preview(
     State(state): State<AppState>,
-    _admin: AdminUser,
+    _auth: LibraryAdminUser,
     Json(body): Json<PreviewApplyRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let rules = state
@@ -167,7 +166,7 @@ async fn preview(
 
 async fn apply(
     State(state): State<AppState>,
-    _admin: AdminUser,
+    _auth: LibraryAdminUser,
     Json(body): Json<PreviewApplyRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let mut enqueued = 0i64;

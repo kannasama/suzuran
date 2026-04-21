@@ -52,11 +52,12 @@ async fn organize_moves_file_and_updates_path() {
         bit_depth: None, has_embedded_art: false,
     }).await.unwrap();
 
-    db.create_organization_rule(
+    let rule = db.create_organization_rule(
         "Default", None, 0, None,
         "{albumartist}/{date} - {album}/{tracknumber:02} - {title}",
         true,
     ).await.unwrap();
+    db.set_library_org_rule(lib.id, Some(rule.id)).await.unwrap();
 
     let handler = OrganizeJobHandler;
     let payload = serde_json::to_value(OrganizePayload { track_id: track.id, dry_run: false }).unwrap();
@@ -100,7 +101,8 @@ async fn organize_dry_run_does_not_move() {
         bit_depth: None, has_embedded_art: false,
     }).await.unwrap();
 
-    db.create_organization_rule("Default", None, 0, None, "{albumartist}/{date}/{title}", true).await.unwrap();
+    let rule = db.create_organization_rule("Default", None, 0, None, "{albumartist}/{date}/{title}", true).await.unwrap();
+    db.set_library_org_rule(lib.id, Some(rule.id)).await.unwrap();
 
     let handler = OrganizeJobHandler;
     let payload = serde_json::to_value(OrganizePayload { track_id: track.id, dry_run: true }).unwrap();

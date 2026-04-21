@@ -7,7 +7,7 @@ use axum::{
 use serde::Deserialize;
 
 use crate::{
-    api::middleware::{admin::AdminUser, auth::AuthUser},
+    api::middleware::{auth::AuthUser, library_admin::LibraryAdminUser},
     error::AppError,
     models::{UpsertVirtualLibrary, VirtualLibrary, VirtualLibrarySource},
     state::AppState,
@@ -51,14 +51,14 @@ struct SourceEntry {
 
 async fn list_virtual_libraries(
     State(state): State<AppState>,
-    _auth: AuthUser,
+    _auth: LibraryAdminUser,
 ) -> Result<Json<Vec<VirtualLibrary>>, AppError> {
     Ok(Json(state.db.list_virtual_libraries().await?))
 }
 
 async fn get_virtual_library(
     State(state): State<AppState>,
-    _auth: AuthUser,
+    _auth: LibraryAdminUser,
     Path(id): Path<i64>,
 ) -> Result<Json<VirtualLibrary>, AppError> {
     state.db.get_virtual_library(id).await.map(Json)
@@ -66,7 +66,7 @@ async fn get_virtual_library(
 
 async fn create_virtual_library(
     State(state): State<AppState>,
-    _admin: AdminUser,
+    _auth: LibraryAdminUser,
     Json(body): Json<VirtualLibraryBody>,
 ) -> Result<(StatusCode, Json<VirtualLibrary>), AppError> {
     let vlib = state.db.create_virtual_library(body.into()).await?;
@@ -75,7 +75,7 @@ async fn create_virtual_library(
 
 async fn update_virtual_library(
     State(state): State<AppState>,
-    _admin: AdminUser,
+    _auth: LibraryAdminUser,
     Path(id): Path<i64>,
     Json(body): Json<VirtualLibraryBody>,
 ) -> Result<Json<VirtualLibrary>, AppError> {
@@ -88,7 +88,7 @@ async fn update_virtual_library(
 
 async fn delete_virtual_library(
     State(state): State<AppState>,
-    _admin: AdminUser,
+    _auth: LibraryAdminUser,
     Path(id): Path<i64>,
 ) -> Result<StatusCode, AppError> {
     state.db.delete_virtual_library(id).await?;
@@ -97,7 +97,7 @@ async fn delete_virtual_library(
 
 async fn get_sources(
     State(state): State<AppState>,
-    _auth: AuthUser,
+    _auth: LibraryAdminUser,
     Path(id): Path<i64>,
 ) -> Result<Json<Vec<VirtualLibrarySource>>, AppError> {
     Ok(Json(state.db.list_virtual_library_sources(id).await?))
@@ -105,7 +105,7 @@ async fn get_sources(
 
 async fn set_sources(
     State(state): State<AppState>,
-    _admin: AdminUser,
+    _auth: LibraryAdminUser,
     Path(id): Path<i64>,
     Json(body): Json<Vec<SourceEntry>>,
 ) -> Result<StatusCode, AppError> {

@@ -41,7 +41,6 @@ export default function OrganizationPage() {
               <tr className="border-b border-border text-text-muted text-[11px] uppercase tracking-wider">
                 <th className="text-left pb-2 pr-4 font-medium">Priority</th>
                 <th className="text-left pb-2 pr-4 font-medium">Name</th>
-                <th className="text-left pb-2 pr-4 font-medium">Library</th>
                 <th className="text-left pb-2 pr-4 font-medium">Template</th>
                 <th className="text-left pb-2 pr-4 font-medium">Enabled</th>
                 <th className="pb-2"></th>
@@ -52,7 +51,6 @@ export default function OrganizationPage() {
                 <tr key={rule.id} className="border-b border-border-subtle hover:bg-bg-row-hover">
                   <td className="py-1.5 pr-4 text-text-muted">{rule.priority}</td>
                   <td className="py-1.5 pr-4 text-text-primary font-medium">{rule.name}</td>
-                  <td className="py-1.5 pr-4 text-text-muted">{rule.library_id == null ? 'Global' : `#${rule.library_id}`}</td>
                   <td className="py-1.5 pr-4 font-mono text-text-muted max-w-xs truncate">{rule.path_template}</td>
                   <td className="py-1.5 pr-4">
                     <span className={`text-[9px] px-1.5 py-0.5 rounded ${rule.enabled ? 'bg-accent-muted text-accent' : 'bg-bg-panel text-text-muted'}`}>

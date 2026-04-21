@@ -45,6 +45,7 @@ struct CreateLibraryRequest {
     parent_library_id: Option<i64>,
     ingest_dir: Option<String>,
     encoding_profile_id: Option<i64>,
+    organization_rule_id: Option<i64>,
 }
 
 async fn create_library(
@@ -57,9 +58,11 @@ async fn create_library(
         .await?;
     state.db.set_library_ingest_dir(lib.id, body.ingest_dir.as_deref()).await?;
     state.db.set_library_encoding_profile(lib.id, body.encoding_profile_id).await?;
+    state.db.set_library_org_rule(lib.id, body.organization_rule_id).await?;
     Ok((StatusCode::CREATED, Json(Library {
         ingest_dir: body.ingest_dir,
         encoding_profile_id: body.encoding_profile_id,
+        organization_rule_id: body.organization_rule_id,
         ..lib
     })))
 }
@@ -77,6 +80,7 @@ struct UpdateLibraryRequest {
     tag_encoding: String,
     ingest_dir: Option<String>,
     encoding_profile_id: Option<i64>,
+    organization_rule_id: Option<i64>,
 }
 
 fn default_utf8() -> String { "utf8".into() }
@@ -95,9 +99,11 @@ async fn update_library(
         .ok_or_else(|| AppError::NotFound(format!("library {id} not found")))?;
     state.db.set_library_ingest_dir(id, body.ingest_dir.as_deref()).await?;
     state.db.set_library_encoding_profile(id, body.encoding_profile_id).await?;
+    state.db.set_library_org_rule(id, body.organization_rule_id).await?;
     Ok(Json(Library {
         ingest_dir: body.ingest_dir,
         encoding_profile_id: body.encoding_profile_id,
+        organization_rule_id: body.organization_rule_id,
         ..lib
     }))
 }

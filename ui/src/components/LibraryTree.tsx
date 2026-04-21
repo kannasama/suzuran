@@ -1,12 +1,14 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { listLibraries, deleteLibrary, type Library } from '../api/libraries'
-import { listVirtualLibraries } from '../api/virtualLibraries'
+import { listVirtualLibraries, deleteVirtualLibrary, triggerSync } from '../api/virtualLibraries'
 import type { VirtualLibrary } from '../types/virtualLibrary'
 import { LibraryFormModal } from './LibraryFormModal'
+import { VirtualLibraryFormModal } from './VirtualLibraryFormModal'
 
 interface Props {
   isAdmin: boolean
+  isLibraryAdmin: boolean
   selectedLibraryId: number | null
   onSelectLibrary: (id: number) => void
   selectedVirtualLibraryId: number | null
@@ -15,6 +17,7 @@ interface Props {
 
 export function LibraryTree({
   isAdmin,
+  isLibraryAdmin,
   selectedLibraryId,
   onSelectLibrary,
   selectedVirtualLibraryId,
@@ -30,10 +33,14 @@ export function LibraryTree({
   const { data: virtualLibraries = [] } = useQuery({
     queryKey: ['virtual-libraries'],
     queryFn: listVirtualLibraries,
+    enabled: isLibraryAdmin,
   })
 
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [editingLibrary, setEditingLibrary] = useState<Library | null>(null)
+  const [showCreateVLibModal, setShowCreateVLibModal] = useState(false)
+  const [editingVirtualLibrary, setEditingVirtualLibrary] = useState<VirtualLibrary | null>(null)
+  const [syncingId, setSyncingId] = useState<number | null>(null)
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => deleteLibrary(id),
@@ -41,6 +48,22 @@ export function LibraryTree({
       queryClient.invalidateQueries({ queryKey: ['libraries'] })
     },
   })
+
+  const deleteVLibMutation = useMutation({
+    mutationFn: (id: number) => deleteVirtualLibrary(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['virtual-libraries'] })
+    },
+  })
+
+  async function handleSyncVLib(id: number) {
+    setSyncingId(id)
+    try {
+      await triggerSync(id)
+    } finally {
+      setSyncingId(null)
+    }
+  }
 
   function handleDelete(lib: Library) {
     if (!window.confirm(`Delete library "${lib.name}"? This cannot be undone.`)) return
@@ -117,17 +140,42 @@ export function LibraryTree({
         ))}
 
         {/* Virtual Libraries section */}
-        {virtualLibraries.length > 0 && (
+        {isLibraryAdmin && (
           <>
-            <div className="px-2 py-1 mt-1 border-b border-border-subtle border-t border-t-border-subtle flex items-center">
+            <div className="px-2 py-1 mt-1 border-b border-border-subtle border-t border-t-border-subtle flex items-center gap-1">
               <span className="text-text-muted uppercase text-[11px] tracking-wider flex-1">Virtual</span>
+              <button
+                onClick={() => setShowCreateVLibModal(true)}
+                title="Add virtual library"
+                className="text-text-muted hover:text-accent leading-none px-0.5"
+              >
+                +
+              </button>
             </div>
+            {virtualLibraries.length === 0 && (
+              <div className="px-2 py-2 text-text-muted text-xs">
+                <button
+                  onClick={() => setShowCreateVLibModal(true)}
+                  className="text-accent hover:underline"
+                >
+                  Add your first virtual library.
+                </button>
+              </div>
+            )}
             {virtualLibraries.map(vl => (
               <VirtualLibraryRow
                 key={vl.id}
                 virtualLibrary={vl}
                 isSelected={selectedVirtualLibraryId === vl.id}
+                isSyncing={syncingId === vl.id}
                 onSelect={() => onSelectVirtualLibrary(vl.id)}
+                onEdit={() => setEditingVirtualLibrary(vl)}
+                onDelete={() => {
+                  if (window.confirm(`Delete virtual library "${vl.name}"?`)) {
+                    deleteVLibMutation.mutate(vl.id)
+                  }
+                }}
+                onSync={() => handleSyncVLib(vl.id)}
               />
             ))}
           </>
@@ -146,6 +194,17 @@ export function LibraryTree({
           library={editingLibrary}
           libraries={libraries}
           onClose={() => setEditingLibrary(null)}
+        />
+      )}
+      {showCreateVLibModal && (
+        <VirtualLibraryFormModal
+          onClose={() => setShowCreateVLibModal(false)}
+        />
+      )}
+      {editingVirtualLibrary && (
+        <VirtualLibraryFormModal
+          virtualLibrary={editingVirtualLibrary}
+          onClose={() => setEditingVirtualLibrary(null)}
         />
       )}
     </>
@@ -203,13 +262,17 @@ function LibraryRow({ library, isSelected, isAdmin, onSelect, onEdit, onDelete, 
 interface VirtualRowProps {
   virtualLibrary: VirtualLibrary
   isSelected: boolean
+  isSyncing: boolean
   onSelect: () => void
+  onEdit: () => void
+  onDelete: () => void
+  onSync: () => void
 }
 
-function VirtualLibraryRow({ virtualLibrary, isSelected, onSelect }: VirtualRowProps) {
+function VirtualLibraryRow({ virtualLibrary, isSelected, isSyncing, onSelect, onEdit, onDelete, onSync }: VirtualRowProps) {
   return (
     <div
-      className={`flex items-center gap-1 pl-2 pr-1 py-0.5 cursor-pointer border-l-2 ${
+      className={`group flex items-center gap-1 pl-2 pr-1 py-0.5 cursor-pointer border-l-2 ${
         isSelected
           ? 'bg-accent-muted border-accent text-accent'
           : 'text-text-secondary hover:bg-bg-hover border-transparent'
@@ -219,6 +282,30 @@ function VirtualLibraryRow({ virtualLibrary, isSelected, onSelect }: VirtualRowP
       <span className="flex-1 truncate">{virtualLibrary.name}</span>
       <span className="text-text-muted uppercase text-[9px] tracking-wider shrink-0">
         {virtualLibrary.link_type === 'symlink' ? 'sym' : 'hard'}
+      </span>
+      <span className="hidden group-hover:flex items-center gap-0.5 shrink-0">
+        <button
+          onClick={e => { e.stopPropagation(); onEdit() }}
+          title="Edit"
+          className="text-text-muted hover:text-text-primary px-0.5 leading-none"
+        >
+          ✎
+        </button>
+        <button
+          onClick={e => { e.stopPropagation(); onSync() }}
+          disabled={isSyncing}
+          title="Sync"
+          className="text-text-muted hover:text-text-primary px-0.5 leading-none disabled:opacity-40"
+        >
+          ↻
+        </button>
+        <button
+          onClick={e => { e.stopPropagation(); onDelete() }}
+          title="Delete"
+          className="text-text-muted hover:text-destructive px-0.5 leading-none"
+        >
+          ×
+        </button>
       </span>
     </div>
   )

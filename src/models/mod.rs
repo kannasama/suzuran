@@ -73,6 +73,7 @@ pub struct Library {
     pub normalize_on_ingest: bool,
     pub tag_encoding: String,
     pub ingest_dir: Option<String>,
+    pub organization_rule_id: Option<i64>,
     pub created_at: DateTime<Utc>,
 }
 

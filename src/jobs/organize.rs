@@ -32,13 +32,15 @@ impl JobHandler for OrganizeJobHandler {
             })
             .unwrap_or_default();
 
-        // Load rules (global + library-scoped), priority-sorted ascending
-        let rules_rows = db.list_organization_rules(Some(track.library_id)).await?;
-        let rule_pairs: Vec<(Option<Value>, String)> = rules_rows
-            .into_iter()
-            .filter(|r| r.enabled)
-            .map(|r| (r.conditions, r.path_template))
-            .collect();
+        // Load the single rule the library subscribes to (if any)
+        let rule_pairs: Vec<(Option<Value>, String)> = if let Some(rule_id) = library.organization_rule_id {
+            match db.get_organization_rule(rule_id).await? {
+                Some(r) if r.enabled => vec![(r.conditions, r.path_template)],
+                _ => vec![],
+            }
+        } else {
+            vec![]
+        };
 
         let new_relative = apply_rules(&rule_pairs, &tags);
 

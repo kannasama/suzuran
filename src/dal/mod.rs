@@ -178,6 +178,11 @@ pub trait Store: Send + Sync {
         library_id: i64,
         ingest_dir: Option<&str>,
     ) -> Result<(), AppError>;
+    async fn set_library_org_rule(
+        &self,
+        library_id: i64,
+        organization_rule_id: Option<i64>,
+    ) -> Result<(), AppError>;
 
     // ── jobs ─────────────────────────────────────────────────────
     async fn enqueue_job(
