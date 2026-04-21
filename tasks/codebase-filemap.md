@@ -171,6 +171,10 @@ docker compose logs -f app
 | `0018_virtual_libraries.sql` | `virtual_libraries` (BIGSERIAL id, name, root_path, link_type CHECK symlink/hardlink, created_at), `virtual_library_sources` (composite PK, priority, FK to libraries), `virtual_library_tracks` (composite PK, link_path, FK to tracks ON DELETE CASCADE), `idx_vls_priority` index |
 | `0019_jobs_add_virtual_sync.sql` | Expands `job_type` CHECK constraint to include `virtual_sync` via ALTER TABLE DROP/ADD CONSTRAINT |
 | `0020_libraries_tag_encoding.sql` | `ALTER TABLE libraries ADD COLUMN tag_encoding TEXT NOT NULL DEFAULT 'utf8'` |
+| `0021_settings_allow_registration.sql` | Seeds `allow_registration = 'true'` into settings |
+| `0022_libraries_ingest_dir.sql` | `ALTER TABLE libraries ADD COLUMN IF NOT EXISTS ingest_dir TEXT` (later dropped by 0028) |
+| `0023_libraries_org_rule.sql` | `ALTER TABLE libraries ADD COLUMN IF NOT EXISTS organization_rule_id BIGINT REFERENCES organization_rules` |
+| `0024_fix_integer_to_bigint.sql` | Alters art_profiles (max_width_px, max_height_px, max_size_bytes, quality) and encoding_profiles (sample_rate, channels, bit_depth) columns from INTEGER to BIGINT |
 | `0025_library_profiles.sql` | Drops parent_library_id, encoding_profile_id, auto_transcode_on_ingest, normalize_on_ingest from libraries; creates `library_profiles` table (id, library_id, encoding_profile_id, derived_dir_name, include_on_submit, auto_include_above_hz, created_at) |
 | `0026_tracks_ingest_columns.sql` | Adds `tracks.status` CHECK(staged/active/removed) DEFAULT active; adds `tracks.library_profile_id` FK → library_profiles |
 | `0027_redesign_remaining.sql` | Drops `track_links.encoding_profile_id`; adds surrogate id + library_profile_id to virtual_library_sources; adds `process_staged` to jobs CHECK; seeds `folder_art_filename` setting |
@@ -200,6 +204,10 @@ docker compose logs -f app
 | `0018_virtual_libraries.sql` | `virtual_libraries` (INTEGER id AUTOINCREMENT, name, root_path, link_type CHECK symlink/hardlink, created_at TEXT), `virtual_library_sources` (composite PK, priority, FK to libraries), `virtual_library_tracks` (composite PK, link_path, FK to tracks ON DELETE CASCADE), `idx_vls_priority` index |
 | `0019_jobs_add_virtual_sync.sql` | Recreates `jobs` table to add `virtual_sync` to the `job_type` CHECK constraint |
 | `0020_libraries_tag_encoding.sql` | `ALTER TABLE libraries ADD COLUMN tag_encoding TEXT NOT NULL DEFAULT 'utf8'` |
+| `0021_settings_allow_registration.sql` | Seeds `allow_registration = 'true'` into settings |
+| `0022_libraries_ingest_dir.sql` | `ALTER TABLE libraries ADD COLUMN ingest_dir TEXT` (later dropped by 0028) |
+| `0023_libraries_org_rule.sql` | `ALTER TABLE libraries ADD COLUMN organization_rule_id INTEGER REFERENCES organization_rules` |
+| `0024_fix_integer_to_bigint.sql` | No-op on SQLite (INTEGER is already 64-bit); migration file recreates no tables |
 | `0025_library_profiles.sql` | Drops parent_library_id, encoding_profile_id, auto_transcode_on_ingest, normalize_on_ingest from libraries; creates `library_profiles` table (SQLite types) |
 | `0026_tracks_ingest_columns.sql` | Adds `tracks.status` CHECK(staged/active/removed) DEFAULT active; adds `tracks.library_profile_id` FK → library_profiles |
 | `0027_redesign_remaining.sql` | Drops `track_links.encoding_profile_id` (table recreate); adds surrogate id + library_profile_id to virtual_library_sources; adds `process_staged` to jobs CHECK; seeds `folder_art_filename` setting |
@@ -210,8 +218,8 @@ docker compose logs -f app
 | Directory | Owns |
 |-----------|------|
 | `docs/plans/` | Implementation plans — date-prefixed kebab-case filenames; latest: `2026-04-21-library-ingest-redesign.md` |
-| `migrations/postgres/` | Postgres SQL migrations (0001–0020, 0025–0028) |
-| `migrations/sqlite/` | SQLite SQL migrations (0001–0020, 0025–0028) |
+| `migrations/postgres/` | Postgres SQL migrations (0001–0028) |
+| `migrations/sqlite/` | SQLite SQL migrations (0001–0028) |
 | `resources/` | App assets (logos, icons, etc.) |
 | `scripts/` | Developer tooling scripts |
 | `secrets/` | Local secret files (gitignored except README) |
