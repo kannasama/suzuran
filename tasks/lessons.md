@@ -300,6 +300,28 @@ subphase branches as an option; this project does not use them.
 **How to apply:** When starting a new phase, create only the phase branch (e.g. `git checkout -b 0.3 main`).
 Commit subphase work directly to it. No subphase branch needed.
 
+## 2026-04-20 — Present plan before implementing — third reminder
+
+**Mistake:** User described bug fixes. Code was written and committed before any plan or
+diagnosis was presented for review. This is the third time this pattern has recurred across
+sessions despite two prior entries in this file (2026-04-11, 2026-04-15).
+
+**Rule:** No code, no file edits, no agent dispatches until a plan has been presented and the
+user has explicitly approved it. This applies to:
+- Bug fixes, even "obvious" ones
+- Any request involving more than a trivial one-liner
+- Cases where the user says "fix these" or lists issues — that is a request to plan, not execute
+
+**Why:** The user has flagged this more than once. Every recurrence adds correction overhead
+and erodes trust in the workflow. The rule exists precisely because the temptation to
+"just fix it" is strong and consistently wrong.
+
+**How to apply:** When a user describes problems or requests changes:
+1. Output a structured diagnosis and proposed approach (what changes, which files, why)
+2. End the response — do not write any code
+3. Wait for explicit approval before touching any file
+Use `/write-plan` and `/execute-plan` skills. The plan-then-approve gate is not optional.
+
 ## 2026-04-16 — Commit all documentation changes immediately, not just plan docs
 
 **Pattern:** CHANGELOG.md was updated but not committed. The existing rule in memory was scoped
