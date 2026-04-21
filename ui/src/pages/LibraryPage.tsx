@@ -53,7 +53,7 @@ export function LibraryPage() {
           </div>
 
           {/* Column headers */}
-          <div className="flex items-center gap-0 px-2 py-1 bg-bg-panel border-b border-border text-text-muted text-[9px] uppercase tracking-wider flex-shrink-0">
+          <div className="flex items-center gap-0 px-2 py-1 bg-bg-panel border-b border-border text-text-muted text-[11px] uppercase tracking-wider flex-shrink-0">
             <span className="w-5"></span>
             <span className="w-6">#</span>
             <span className="flex-[3]">Title</span>

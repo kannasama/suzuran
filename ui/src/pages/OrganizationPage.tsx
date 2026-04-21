@@ -38,7 +38,7 @@ export default function OrganizationPage() {
         ) : (
           <table className="w-full text-xs border-collapse">
             <thead>
-              <tr className="border-b border-border text-text-muted text-[9px] uppercase tracking-wider">
+              <tr className="border-b border-border text-text-muted text-[11px] uppercase tracking-wider">
                 <th className="text-left pb-2 pr-4 font-medium">Priority</th>
                 <th className="text-left pb-2 pr-4 font-medium">Name</th>
                 <th className="text-left pb-2 pr-4 font-medium">Library</th>
