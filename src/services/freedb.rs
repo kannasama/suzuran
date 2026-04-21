@@ -149,6 +149,7 @@ impl Default for FreedBService {
 /// Extract (category, disc_id) pairs from gnudb.org search result HTML.
 /// Links appear as: href="/gnudb/CATEGORY/DISCID"
 fn parse_search_html(html: &str) -> Vec<(String, String)> {
+    let mut seen = std::collections::HashSet::new();
     let mut results = Vec::new();
     for cap in html.split("href=\"/gnudb/") {
         let fragment = cap;
@@ -156,11 +157,13 @@ fn parse_search_html(html: &str) -> Vec<(String, String)> {
             let path = &fragment[..end];
             let parts: Vec<&str> = path.splitn(2, '/').collect();
             if parts.len() == 2 && !parts[0].is_empty() && !parts[1].is_empty() {
-                results.push((parts[0].to_string(), parts[1].to_string()));
+                let entry = (parts[0].to_string(), parts[1].to_string());
+                if seen.insert(entry.clone()) {
+                    results.push(entry);
+                }
             }
         }
     }
-    results.dedup();
     results
 }
 
