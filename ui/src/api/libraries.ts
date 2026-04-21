@@ -11,7 +11,9 @@ export interface Library {
   scan_interval_secs: number
   auto_transcode_on_ingest: boolean
   auto_organize_on_ingest: boolean
+  normalize_on_ingest: boolean
   tag_encoding: string
+  ingest_dir: string | null
 }
 
 export interface CreateLibraryInput {
@@ -19,6 +21,8 @@ export interface CreateLibraryInput {
   root_path: string
   format: string
   parent_library_id: number | null
+  ingest_dir?: string | null
+  encoding_profile_id?: number | null
 }
 
 export interface UpdateLibraryInput {
@@ -27,7 +31,10 @@ export interface UpdateLibraryInput {
   scan_interval_secs: number
   auto_transcode_on_ingest: boolean
   auto_organize_on_ingest: boolean
+  normalize_on_ingest?: boolean
   tag_encoding: string
+  ingest_dir: string | null
+  encoding_profile_id: number | null
 }
 
 export async function listLibraries(): Promise<Library[]> {

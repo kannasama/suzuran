@@ -72,6 +72,7 @@ pub struct Library {
     pub auto_organize_on_ingest: bool,
     pub normalize_on_ingest: bool,
     pub tag_encoding: String,
+    pub ingest_dir: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 

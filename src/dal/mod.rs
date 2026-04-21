@@ -173,6 +173,11 @@ pub trait Store: Send + Sync {
         library_id: i64,
         encoding_profile_id: Option<i64>,
     ) -> Result<(), AppError>;
+    async fn set_library_ingest_dir(
+        &self,
+        library_id: i64,
+        ingest_dir: Option<&str>,
+    ) -> Result<(), AppError>;
 
     // ── jobs ─────────────────────────────────────────────────────
     async fn enqueue_job(

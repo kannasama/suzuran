@@ -451,6 +451,20 @@ impl Store for PgStore {
             .map_err(AppError::Database)
     }
 
+    async fn set_library_ingest_dir(
+        &self,
+        library_id: i64,
+        ingest_dir: Option<&str>,
+    ) -> Result<(), AppError> {
+        sqlx::query("UPDATE libraries SET ingest_dir = $1 WHERE id = $2")
+            .bind(ingest_dir)
+            .bind(library_id)
+            .execute(&self.pool)
+            .await
+            .map(|_| ())
+            .map_err(AppError::Database)
+    }
+
     async fn list_child_libraries(&self, parent_id: i64) -> Result<Vec<Library>, AppError> {
         sqlx::query_as::<_, Library>(
             "SELECT * FROM libraries WHERE parent_library_id = $1 ORDER BY id",

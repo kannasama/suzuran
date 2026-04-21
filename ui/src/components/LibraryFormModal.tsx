@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   createLibrary,
   updateLibrary,
@@ -7,6 +7,7 @@ import {
   type CreateLibraryInput,
   type UpdateLibraryInput,
 } from '../api/libraries'
+import { listEncodingProfiles } from '../api/encodingProfiles'
 
 interface Props {
   /** When provided, the modal is in edit mode for this library */
@@ -26,14 +27,22 @@ export function LibraryFormModal({ library, libraries, onClose }: Props) {
   const isEdit = library !== undefined
   const queryClient = useQueryClient()
 
-  // Create mode state
   const [name, setName] = useState(library?.name ?? '')
   const [rootPath, setRootPath] = useState('')
   const [format, setFormat] = useState<string>('flac')
   const [parentId, setParentId] = useState<number | null>(null)
   const [tagEncoding, setTagEncoding] = useState(library?.tag_encoding ?? 'utf8')
+  const [ingestDir, setIngestDir] = useState(library?.ingest_dir ?? '')
+  const [encodingProfileId, setEncodingProfileId] = useState<number | null>(
+    library?.encoding_profile_id ?? null
+  )
 
   const [error, setError] = useState<string | null>(null)
+
+  const { data: encodingProfiles = [] } = useQuery({
+    queryKey: ['encoding-profiles'],
+    queryFn: listEncodingProfiles,
+  })
 
   const createMutation = useMutation({
     mutationFn: (input: CreateLibraryInput) => createLibrary(input),
@@ -42,11 +51,7 @@ export function LibraryFormModal({ library, libraries, onClose }: Props) {
       onClose()
     },
     onError: (err: unknown) => {
-      if (err instanceof Error) {
-        setError(err.message)
-      } else {
-        setError('An unexpected error occurred.')
-      }
+      setError(err instanceof Error ? err.message : 'An unexpected error occurred.')
     },
   })
 
@@ -57,11 +62,7 @@ export function LibraryFormModal({ library, libraries, onClose }: Props) {
       onClose()
     },
     onError: (err: unknown) => {
-      if (err instanceof Error) {
-        setError(err.message)
-      } else {
-        setError('An unexpected error occurred.')
-      }
+      setError(err instanceof Error ? err.message : 'An unexpected error occurred.')
     },
   })
 
@@ -76,6 +77,8 @@ export function LibraryFormModal({ library, libraries, onClose }: Props) {
     e.preventDefault()
     setError(null)
 
+    const ingestDirVal = ingestDir.trim() || null
+
     if (isEdit) {
       updateMutation.mutate({
         name: name.trim(),
@@ -84,6 +87,8 @@ export function LibraryFormModal({ library, libraries, onClose }: Props) {
         auto_transcode_on_ingest: library!.auto_transcode_on_ingest,
         auto_organize_on_ingest: library!.auto_organize_on_ingest,
         tag_encoding: tagEncoding,
+        ingest_dir: ingestDirVal,
+        encoding_profile_id: encodingProfileId,
       })
     } else {
       createMutation.mutate({
@@ -91,12 +96,12 @@ export function LibraryFormModal({ library, libraries, onClose }: Props) {
         root_path: rootPath.trim(),
         format,
         parent_library_id: parentId,
+        ingest_dir: ingestDirVal,
+        encoding_profile_id: encodingProfileId,
       })
     }
   }
 
-  // Candidate parents: all libraries that are themselves roots (no parent), excluding
-  // the library being edited
   const parentCandidates = libraries.filter(
     l => l.parent_library_id === null && l.id !== library?.id,
   )
@@ -185,7 +190,7 @@ export function LibraryFormModal({ library, libraries, onClose }: Props) {
             </>
           )}
 
-          {/* Tag Encoding — shown in both create and edit modes */}
+          {/* Tag Encoding */}
           <label className="flex flex-col gap-1">
             <span className="text-text-muted text-xs uppercase tracking-wider">Tag Encoding</span>
             <select
@@ -197,6 +202,36 @@ export function LibraryFormModal({ library, libraries, onClose }: Props) {
                 <option key={enc.value} value={enc.value}>{enc.label}</option>
               ))}
             </select>
+          </label>
+
+          {/* Encoding Profile */}
+          <label className="flex flex-col gap-1">
+            <span className="text-text-muted text-xs uppercase tracking-wider">Encoding Profile</span>
+            <select
+              value={encodingProfileId ?? ''}
+              onChange={e => setEncodingProfileId(e.target.value === '' ? null : Number(e.target.value))}
+              className="bg-bg-base border border-border text-text-primary text-xs px-2 py-1.5 rounded focus:outline-none focus:border-accent"
+            >
+              <option value="">— None —</option>
+              {encodingProfiles.map(p => (
+                <option key={p.id} value={p.id}>{p.name} ({p.codec.toUpperCase()})</option>
+              ))}
+            </select>
+          </label>
+
+          {/* Ingest Directory */}
+          <label className="flex flex-col gap-1">
+            <span className="text-text-muted text-xs uppercase tracking-wider">Ingest Directory</span>
+            <input
+              type="text"
+              value={ingestDir}
+              onChange={e => setIngestDir(e.target.value)}
+              placeholder="/mnt/incoming  (optional)"
+              className="bg-bg-base border border-border text-text-primary text-xs px-2 py-1.5 rounded focus:outline-none focus:border-accent font-mono"
+            />
+            <span className="text-text-muted text-xs">
+              Drop files here; they will be moved into this library after processing.
+            </span>
           </label>
 
           {/* Inline error */}

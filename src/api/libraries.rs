@@ -43,6 +43,8 @@ struct CreateLibraryRequest {
     root_path: String,
     format: String,
     parent_library_id: Option<i64>,
+    ingest_dir: Option<String>,
+    encoding_profile_id: Option<i64>,
 }
 
 async fn create_library(
@@ -53,7 +55,13 @@ async fn create_library(
     let lib = state.db
         .create_library(&body.name, &body.root_path, &body.format, body.parent_library_id)
         .await?;
-    Ok((StatusCode::CREATED, Json(lib)))
+    state.db.set_library_ingest_dir(lib.id, body.ingest_dir.as_deref()).await?;
+    state.db.set_library_encoding_profile(lib.id, body.encoding_profile_id).await?;
+    Ok((StatusCode::CREATED, Json(Library {
+        ingest_dir: body.ingest_dir,
+        encoding_profile_id: body.encoding_profile_id,
+        ..lib
+    })))
 }
 
 #[derive(Deserialize)]
@@ -67,6 +75,8 @@ struct UpdateLibraryRequest {
     normalize_on_ingest: bool,
     #[serde(default = "default_utf8")]
     tag_encoding: String,
+    ingest_dir: Option<String>,
+    encoding_profile_id: Option<i64>,
 }
 
 fn default_utf8() -> String { "utf8".into() }
@@ -77,13 +87,19 @@ async fn update_library(
     Path(id): Path<i64>,
     Json(body): Json<UpdateLibraryRequest>,
 ) -> Result<Json<Library>, AppError> {
-    state.db
+    let lib = state.db
         .update_library(id, &body.name, body.scan_enabled, body.scan_interval_secs,
             body.auto_transcode_on_ingest, body.auto_organize_on_ingest,
             body.normalize_on_ingest, &body.tag_encoding)
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("library {id} not found")))
-        .map(Json)
+        .ok_or_else(|| AppError::NotFound(format!("library {id} not found")))?;
+    state.db.set_library_ingest_dir(id, body.ingest_dir.as_deref()).await?;
+    state.db.set_library_encoding_profile(id, body.encoding_profile_id).await?;
+    Ok(Json(Library {
+        ingest_dir: body.ingest_dir,
+        encoding_profile_id: body.encoding_profile_id,
+        ..lib
+    }))
 }
 
 async fn delete_library(
