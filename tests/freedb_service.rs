@@ -1,5 +1,5 @@
 use suzuran_server::services::freedb::{parse_xmcd, FreedBCandidate, FreedBService};
-use wiremock::matchers::{method, query_param};
+use wiremock::matchers::{method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 #[tokio::test]
@@ -113,6 +113,41 @@ async fn test_to_tag_map_no_optional_fields() {
     assert!(!tags.contains_key("date"));
     assert!(!tags.contains_key("genre"));
     assert_eq!(tags["totaltracks"], "1");
+}
+
+#[tokio::test]
+async fn test_text_search_returns_results() {
+    let server = MockServer::start().await;
+
+    // Mock the web search HTML endpoint
+    let search_html = r#"<html><body>
+<a href="/gnudb/rock/a50e1d13">Test Artist / Test Album</a>
+</body></html>"#;
+
+    Mock::given(method("GET"))
+        .and(path("/search/search"))
+        .and(query_param("keywords", "Artist Album"))
+        .and(query_param("type", "0"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(search_html))
+        .mount(&server)
+        .await;
+
+    // Mock the subsequent cddb read call for the discovered disc
+    Mock::given(method("GET"))
+        .and(query_param("cmd", "cddb read rock a50e1d13"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(
+            "200 OK\nDTITLE=Artist / Album\nDYEAR=2000\nDGENRE=Rock\nTTITLE0=Song One\nTTITLE1=Song Two\n.\n",
+        ))
+        .mount(&server)
+        .await;
+
+    let svc = FreedBService::with_base_url(server.uri());
+    let candidates = svc.text_search("Artist", "Album").await.unwrap();
+    assert_eq!(candidates.len(), 1);
+    assert!(!candidates[0].artist.is_empty());
+    assert!(!candidates[0].album.is_empty());
+    assert_eq!(candidates[0].artist, "Artist");
+    assert_eq!(candidates[0].album, "Album");
 }
 
 #[test]

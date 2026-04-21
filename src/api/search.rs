@@ -53,7 +53,7 @@ async fn search_freedb(
     _auth: AuthUser,
     Json(body): Json<FreedBSearchBody>,
 ) -> Result<Json<Vec<serde_json::Value>>, AppError> {
-    let FreedBSearchBody { disc_id, artist: _, album: _ } = body;
+    let FreedBSearchBody { disc_id, artist, album } = body;
     if let Some(disc_id) = disc_id {
         let candidate = state.freedb_service
             .disc_lookup(&disc_id)
@@ -70,7 +70,22 @@ async fn search_freedb(
             .unwrap_or_default();
         Ok(Json(out))
     } else {
-        // CDDB protocol only supports disc-ID lookup; artist/album text search is not available
-        Ok(Json(vec![]))
+        let artist = artist.unwrap_or_default();
+        let album = album.unwrap_or_default();
+        if artist.is_empty() && album.is_empty() {
+            return Ok(Json(vec![]));
+        }
+        let candidates = state.freedb_service
+            .text_search(&artist, &album)
+            .await
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("FreeDB text search: {e}")))?;
+        let out = candidates.into_iter().map(|c| serde_json::json!({
+            "artist": c.artist,
+            "album": c.album,
+            "year": c.year,
+            "genre": c.genre,
+            "tracks": c.tracks,
+        })).collect();
+        Ok(Json(out))
     }
 }
