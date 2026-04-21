@@ -68,6 +68,8 @@ pub struct ProcessStagedPayload {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct NormalizePayload {
     pub track_id: i64,
+    /// Encoding profile to convert to. If absent, the job skips and chains to mb_lookup.
+    pub encoding_profile_id: Option<i64>,
 }
 
 /// Payload for the `art_process` job type.

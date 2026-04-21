@@ -6,7 +6,7 @@ use suzuran_server::dal::{Store, UpsertEncodingProfile, UpsertTrack};
 use suzuran_server::jobs::normalize::NormalizeJobHandler;
 use suzuran_server::jobs::JobHandler;
 
-/// Helper: create an in-memory DB with a library and an encoding profile attached.
+/// Helper: create an in-memory DB with a library, an encoding profile, and a track.
 /// Returns (store, library_id, track_id, encoding_profile_id).
 async fn setup_normalize_library(
     track_ext: &str,
@@ -14,13 +14,11 @@ async fn setup_normalize_library(
 ) -> (Arc<dyn Store>, i64, i64, i64) {
     let db = common::make_db().await;
 
-    // Create library
     let lib = db
         .create_library("NormTest", "/tmp/normtest", "flac")
         .await
         .unwrap();
 
-    // Create an encoding profile
     let profile = db
         .create_encoding_profile(UpsertEncodingProfile {
             name: format!("{codec} profile"),
@@ -34,7 +32,6 @@ async fn setup_normalize_library(
         .await
         .unwrap();
 
-    // Create a track in that library
     let relative_path = format!("song.{track_ext}");
     let track = db
         .upsert_track(UpsertTrack {
@@ -55,7 +52,7 @@ async fn setup_normalize_library(
     (db, lib.id, track.id, profile.id)
 }
 
-// ─── test: skips when library has no encoding profile ─────────────────────────
+// ─── test: skips when no encoding_profile_id in payload ──────────────────────
 
 #[tokio::test]
 async fn test_normalize_skips_no_encoding_profile() {
@@ -79,6 +76,7 @@ async fn test_normalize_skips_no_encoding_profile() {
         .unwrap();
 
     let handler = NormalizeJobHandler::new(db.clone());
+    // No encoding_profile_id in payload → should skip
     let result = handler
         .run(db.clone(), serde_json::json!({"track_id": track.id}))
         .await
@@ -99,13 +97,13 @@ async fn test_normalize_skips_no_encoding_profile() {
 
 #[tokio::test]
 async fn test_normalize_skips_already_correct_format() {
-    // FLAC track in a FLAC-profiled library — no conversion needed
-    let (db, _lib_id, track_id, _ep_id) =
+    // FLAC track with a FLAC profile — no conversion needed
+    let (db, _lib_id, track_id, ep_id) =
         setup_normalize_library("flac", "flac").await;
 
     let handler = NormalizeJobHandler::new(db.clone());
     let result = handler
-        .run(db.clone(), serde_json::json!({"track_id": track_id}))
+        .run(db.clone(), serde_json::json!({"track_id": track_id, "encoding_profile_id": ep_id}))
         .await
         .unwrap();
 
@@ -121,26 +119,17 @@ async fn test_normalize_skips_already_correct_format() {
     assert!(!mb_jobs.is_empty(), "mb_lookup should be enqueued even for skipped normalization");
 }
 
-// ─── test: fingerprint job chains to normalize when flag is set ───────────────
+// ─── test: normalize chains to mb_lookup in all skip paths ───────────────────
 
 #[tokio::test]
-async fn test_fingerprint_chains_to_normalize_when_flag_set() {
-    // We can test the decision logic without actually running fpcalc by examining
-    // what happens when the track format == profile codec.
-    // This test sets up the DB state and verifies the chaining logic in the fingerprint
-    // module by looking at the normalize job enqueue in NormalizeJobHandler's skip paths.
-    //
-    // Full fpcalc integration is not tested here (requires real audio + fpcalc binary).
-    // This test exercises the normalize handler skip-when-already-correct-format path
-    // and confirms the mb_lookup job is produced downstream.
-
-    let (db, _lib_id, track_id, _ep_id) =
+async fn test_normalize_chains_to_mb_lookup() {
+    // FLAC track + FLAC profile → skip (already correct format) → mb_lookup enqueued
+    let (db, _lib_id, track_id, ep_id) =
         setup_normalize_library("flac", "flac").await;
 
-    // For a FLAC track in a FLAC-library: normalize skips, mb_lookup enqueued
     let handler = NormalizeJobHandler::new(db.clone());
     let result = handler
-        .run(db.clone(), serde_json::json!({"track_id": track_id}))
+        .run(db.clone(), serde_json::json!({"track_id": track_id, "encoding_profile_id": ep_id}))
         .await
         .unwrap();
 
