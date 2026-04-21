@@ -26,7 +26,7 @@ async fn scanner_inserts_new_files() {
     let db = make_db().await;
     let (dir, root) = make_temp_library().await;
 
-    let lib = db.create_library("Test", root.to_str().unwrap(), "flac", None).await.unwrap();
+    let lib = db.create_library("Test", root.to_str().unwrap(), "flac").await.unwrap();
 
     let result = scan_library(&db, lib.id, &root).await.unwrap();
     assert_eq!(result.inserted, 2, "should insert 2 files");
@@ -46,7 +46,7 @@ async fn scanner_removes_deleted_files() {
     fs::write(root.join("track01.flac"), b"").await.unwrap();
     fs::write(root.join("track02.flac"), b"").await.unwrap();
 
-    let lib = db.create_library("Test", root.to_str().unwrap(), "flac", None).await.unwrap();
+    let lib = db.create_library("Test", root.to_str().unwrap(), "flac").await.unwrap();
     scan_library(&db, lib.id, &root).await.unwrap();
 
     // Remove one file
@@ -68,7 +68,7 @@ async fn scanner_skips_unchanged_files() {
 
     fs::write(root.join("track01.flac"), b"data").await.unwrap();
 
-    let lib = db.create_library("Test", root.to_str().unwrap(), "flac", None).await.unwrap();
+    let lib = db.create_library("Test", root.to_str().unwrap(), "flac").await.unwrap();
     scan_library(&db, lib.id, &root).await.unwrap();
 
     // Second scan — file unchanged

@@ -87,26 +87,10 @@ async fn test_transcode_skips_lossy_to_lossless() {
 async fn test_transcode_missing_source_track() {
     let store = common::setup_store().await;
 
-    // Create a target library with an encoding profile
-    use suzuran_server::dal::{Store, UpsertEncodingProfile};
+    // Create a target library (encoding profile management moved to library_profiles)
+    use suzuran_server::dal::Store;
     let tgt_lib = store
-        .create_library("Target", "/music/target", "aac", None)
-        .await
-        .unwrap();
-    let profile = store
-        .create_encoding_profile(UpsertEncodingProfile {
-            name: "AAC 256k".into(),
-            codec: "aac".into(),
-            bitrate: Some("256k".into()),
-            sample_rate: None,
-            channels: None,
-            bit_depth: None,
-            advanced_args: None,
-        })
-        .await
-        .unwrap();
-    store
-        .set_library_encoding_profile(tgt_lib.id, Some(profile.id))
+        .create_library("Target", "/music/target", "aac")
         .await
         .unwrap();
 

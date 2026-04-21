@@ -79,7 +79,7 @@ async fn login_admin(base: &str) -> reqwest::Client {
 /// Create a library and track in the store. Returns `track_id`.
 async fn seed_track(store: &Arc<dyn Store>) -> i64 {
     let lib = store
-        .create_library("Test", "/music", "flac", None)
+        .create_library("Test", "/music", "flac")
         .await
         .unwrap();
     let track = store

@@ -87,7 +87,7 @@ async fn seed_track(store: &Arc<dyn Store>) -> (i64, TempDir) {
     tokio::fs::write(&track_file, common::TAGGED_FLAC).await.unwrap();
 
     let lib = store
-        .create_library("Test", root.to_str().unwrap(), "flac", None)
+        .create_library("Test", root.to_str().unwrap(), "flac")
         .await
         .unwrap();
     let track = store
@@ -242,7 +242,7 @@ async fn test_list_filtered_by_track_id() {
     let client = login_admin(&base).await;
 
     let (track_id, _dir) = seed_track(&store).await;
-    let lib2 = store.create_library("L2", "/music2", "flac", None).await.unwrap();
+    let lib2 = store.create_library("L2", "/music2", "flac").await.unwrap();
     let track2 = store
         .upsert_track(UpsertTrack {
             library_id: lib2.id,

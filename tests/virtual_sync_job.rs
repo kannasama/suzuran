@@ -91,11 +91,11 @@ async fn test_virtual_sync_priority_order() {
     tokio::fs::write(src2.path().join("01.flac"), b"src2").await.unwrap();
 
     let lib1 = store
-        .create_library("L1", src1.path().to_str().unwrap(), "flac", None)
+        .create_library("L1", src1.path().to_str().unwrap(), "flac")
         .await
         .unwrap();
     let lib2 = store
-        .create_library("L2", src2.path().to_str().unwrap(), "flac", None)
+        .create_library("L2", src2.path().to_str().unwrap(), "flac")
         .await
         .unwrap();
 
@@ -167,7 +167,7 @@ async fn test_virtual_sync_is_idempotent() {
 
     tokio::fs::write(src_dir.path().join("01.flac"), b"dummy").await.unwrap();
     let lib = store
-        .create_library("L", src_dir.path().to_str().unwrap(), "flac", None)
+        .create_library("L", src_dir.path().to_str().unwrap(), "flac")
         .await
         .unwrap();
     store

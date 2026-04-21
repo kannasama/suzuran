@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 
-use crate::{dal::{Store, UpsertArtProfile, UpsertEncodingProfile, UpsertTrack, UpsertVirtualLibrary}, error::AppError, models::{ArtProfile, EncodingProfile, Job, Library, OrganizationRule, Session, Setting, TagSuggestion, Theme, TotpEntry, Track, TrackLink, UpsertTagSuggestion, User, VirtualLibrary, VirtualLibrarySource, VirtualLibraryTrack, WebauthnChallenge, WebauthnCredential}};
+use crate::{dal::{Store, UpsertArtProfile, UpsertEncodingProfile, UpsertTrack, UpsertVirtualLibrary, VirtualLibrarySourceInput}, error::AppError, models::{ArtProfile, EncodingProfile, Job, Library, LibraryProfile, OrganizationRule, Session, Setting, TagSuggestion, Theme, TotpEntry, Track, TrackLink, UpsertLibraryProfile, UpsertTagSuggestion, User, VirtualLibrary, VirtualLibrarySource, VirtualLibraryTrack, WebauthnChallenge, WebauthnCredential}};
 use sqlx::SqlitePool;
 
 pub struct SqliteStore {
@@ -410,50 +410,33 @@ impl Store for SqliteStore {
     }
 
     async fn create_library(
-        &self, name: &str, root_path: &str, format: &str, parent_library_id: Option<i64>,
+        &self, name: &str, root_path: &str, format: &str,
     ) -> Result<Library, AppError> {
         sqlx::query_as::<_, Library>(
-            "INSERT INTO libraries (name, root_path, format, parent_library_id)
-             VALUES (?1, ?2, ?3, ?4) RETURNING *",
+            "INSERT INTO libraries (name, root_path, format)
+             VALUES (?1, ?2, ?3) RETURNING *",
         )
-        .bind(name).bind(root_path).bind(format).bind(parent_library_id)
+        .bind(name).bind(root_path).bind(format)
         .fetch_one(&self.pool).await.map_err(AppError::Database)
     }
 
     async fn update_library(
         &self, id: i64, name: &str, scan_enabled: bool, scan_interval_secs: i64,
-        auto_transcode_on_ingest: bool, auto_organize_on_ingest: bool,
-        normalize_on_ingest: bool, tag_encoding: &str,
+        auto_organize_on_ingest: bool, tag_encoding: &str,
     ) -> Result<Option<Library>, AppError> {
         sqlx::query_as::<_, Library>(
             "UPDATE libraries SET name=?1, scan_enabled=?2, scan_interval_secs=?3,
-             auto_transcode_on_ingest=?4, auto_organize_on_ingest=?5,
-             normalize_on_ingest=?6, tag_encoding=?7
-             WHERE id=?8 RETURNING *",
+             auto_organize_on_ingest=?4, tag_encoding=?5
+             WHERE id=?6 RETURNING *",
         )
         .bind(name).bind(scan_enabled).bind(scan_interval_secs)
-        .bind(auto_transcode_on_ingest).bind(auto_organize_on_ingest)
-        .bind(normalize_on_ingest).bind(tag_encoding).bind(id)
+        .bind(auto_organize_on_ingest).bind(tag_encoding).bind(id)
         .fetch_optional(&self.pool).await.map_err(AppError::Database)
     }
 
     async fn delete_library(&self, id: i64) -> Result<(), AppError> {
         sqlx::query("DELETE FROM libraries WHERE id = ?1")
             .bind(id).execute(&self.pool).await.map(|_| ()).map_err(AppError::Database)
-    }
-
-    async fn set_library_encoding_profile(
-        &self,
-        library_id: i64,
-        encoding_profile_id: Option<i64>,
-    ) -> Result<(), AppError> {
-        sqlx::query("UPDATE libraries SET encoding_profile_id = ?1 WHERE id = ?2")
-            .bind(encoding_profile_id)
-            .bind(library_id)
-            .execute(&self.pool)
-            .await
-            .map(|_| ())
-            .map_err(AppError::Database)
     }
 
     async fn set_library_ingest_dir(
@@ -484,14 +467,66 @@ impl Store for SqliteStore {
             .map_err(AppError::Database)
     }
 
-    async fn list_child_libraries(&self, parent_id: i64) -> Result<Vec<Library>, AppError> {
-        sqlx::query_as::<_, Library>(
-            "SELECT * FROM libraries WHERE parent_library_id = ?1 ORDER BY id",
+    async fn create_library_profile(&self, p: &UpsertLibraryProfile) -> Result<LibraryProfile, AppError> {
+        sqlx::query_as::<_, LibraryProfile>(
+            "INSERT INTO library_profiles (library_id, encoding_profile_id, derived_dir_name, include_on_submit, auto_include_above_hz)
+             VALUES (?1, ?2, ?3, ?4, ?5) RETURNING *",
         )
-        .bind(parent_id)
+        .bind(p.library_id)
+        .bind(p.encoding_profile_id)
+        .bind(&p.derived_dir_name)
+        .bind(p.include_on_submit)
+        .bind(p.auto_include_above_hz)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(AppError::Database)
+    }
+
+    async fn get_library_profile(&self, id: i64) -> Result<LibraryProfile, AppError> {
+        sqlx::query_as::<_, LibraryProfile>("SELECT * FROM library_profiles WHERE id = ?1")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or_else(|| AppError::NotFound(format!("library_profile {id}")))
+    }
+
+    async fn list_library_profiles(&self, library_id: i64) -> Result<Vec<LibraryProfile>, AppError> {
+        sqlx::query_as::<_, LibraryProfile>(
+            "SELECT * FROM library_profiles WHERE library_id = ?1 ORDER BY id",
+        )
+        .bind(library_id)
         .fetch_all(&self.pool)
         .await
         .map_err(AppError::Database)
+    }
+
+    async fn update_library_profile(&self, id: i64, p: &UpsertLibraryProfile) -> Result<LibraryProfile, AppError> {
+        sqlx::query_as::<_, LibraryProfile>(
+            "UPDATE library_profiles SET encoding_profile_id=?1, derived_dir_name=?2, include_on_submit=?3, auto_include_above_hz=?4
+             WHERE id=?5 RETURNING *",
+        )
+        .bind(p.encoding_profile_id)
+        .bind(&p.derived_dir_name)
+        .bind(p.include_on_submit)
+        .bind(p.auto_include_above_hz)
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(AppError::Database)?
+        .ok_or_else(|| AppError::NotFound(format!("library_profile {id}")))
+    }
+
+    async fn delete_library_profile(&self, id: i64) -> Result<(), AppError> {
+        let result = sqlx::query("DELETE FROM library_profiles WHERE id = ?1")
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map_err(AppError::Database)?;
+        if result.rows_affected() == 0 {
+            return Err(AppError::NotFound(format!("library_profile {id}")));
+        }
+        Ok(())
     }
 
     async fn list_organization_rules(&self, library_id: Option<i64>) -> Result<Vec<OrganizationRule>, AppError> {
@@ -584,9 +619,41 @@ impl Store for SqliteStore {
 
     async fn list_tracks_by_library(&self, library_id: i64) -> Result<Vec<Track>, AppError> {
         sqlx::query_as::<_, Track>(
-            "SELECT * FROM tracks WHERE library_id = ?1 ORDER BY albumartist, album, discnumber, tracknumber",
+            "SELECT * FROM tracks WHERE library_id = ?1 AND status = 'active' ORDER BY albumartist, album, discnumber, tracknumber",
         )
         .bind(library_id).fetch_all(&self.pool).await.map_err(AppError::Database)
+    }
+
+    async fn set_track_status(&self, id: i64, status: &str) -> Result<(), AppError> {
+        sqlx::query("UPDATE tracks SET status = ?2 WHERE id = ?1")
+            .bind(id)
+            .bind(status)
+            .execute(&self.pool)
+            .await
+            .map(|_| ())
+            .map_err(AppError::Database)
+    }
+
+    async fn list_tracks_by_status(&self, library_id: i64, status: &str) -> Result<Vec<Track>, AppError> {
+        sqlx::query_as::<_, Track>(
+            "SELECT * FROM tracks WHERE library_id = ?1 AND status = ?2 ORDER BY id",
+        )
+        .bind(library_id)
+        .bind(status)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(AppError::Database)
+    }
+
+    async fn list_tracks_by_profile(&self, library_id: i64, library_profile_id: Option<i64>) -> Result<Vec<Track>, AppError> {
+        sqlx::query_as::<_, Track>(
+            "SELECT * FROM tracks WHERE library_id = ?1 AND library_profile_id IS ?2 ORDER BY id",
+        )
+        .bind(library_id)
+        .bind(library_profile_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(AppError::Database)
     }
 
     async fn get_track(&self, id: i64) -> Result<Option<Track>, AppError> {
@@ -607,14 +674,14 @@ impl Store for SqliteStore {
             "INSERT INTO tracks (library_id, relative_path, file_hash, title, artist, albumartist,
              album, tracknumber, discnumber, totaldiscs, totaltracks, date, genre, composer,
              label, catalognumber, tags, duration_secs, bitrate, sample_rate, channels, bit_depth,
-             has_embedded_art, last_scanned_at)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,datetime('now'))
+             has_embedded_art, status, library_profile_id, last_scanned_at)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25,datetime('now'))
              ON CONFLICT (library_id, relative_path) DO UPDATE SET
                file_hash=?3, title=?4, artist=?5, albumartist=?6, album=?7, tracknumber=?8,
                discnumber=?9, totaldiscs=?10, totaltracks=?11, date=?12, genre=?13, composer=?14,
                label=?15, catalognumber=?16, tags=?17, duration_secs=?18, bitrate=?19,
                sample_rate=?20, channels=?21, bit_depth=?22, has_embedded_art=?23,
-               last_scanned_at=datetime('now')
+               status=?24, library_profile_id=?25, last_scanned_at=datetime('now')
              RETURNING *",
         )
         .bind(t.library_id).bind(&t.relative_path).bind(&t.file_hash)
@@ -623,6 +690,7 @@ impl Store for SqliteStore {
         .bind(&t.date).bind(&t.genre).bind(&t.composer).bind(&t.label).bind(&t.catalognumber)
         .bind(&t.tags).bind(t.duration_secs).bind(t.bitrate).bind(t.sample_rate)
         .bind(t.channels).bind(t.bit_depth).bind(t.has_embedded_art)
+        .bind(&t.status).bind(t.library_profile_id)
         .fetch_one(&self.pool).await.map_err(AppError::Database)
     }
 
@@ -1023,16 +1091,14 @@ impl Store for SqliteStore {
         &self,
         source_id: i64,
         derived_id: i64,
-        encoding_profile_id: Option<i64>,
     ) -> Result<TrackLink, AppError> {
         sqlx::query_as::<_, TrackLink>(
-            "INSERT INTO track_links (source_track_id, derived_track_id, encoding_profile_id)
-             VALUES (?1, ?2, ?3)
+            "INSERT INTO track_links (source_track_id, derived_track_id)
+             VALUES (?1, ?2)
              RETURNING *",
         )
         .bind(source_id)
         .bind(derived_id)
-        .bind(encoding_profile_id)
         .fetch_one(&self.pool)
         .await
         .map_err(AppError::Database)
@@ -1169,23 +1235,24 @@ impl Store for SqliteStore {
             .map_err(AppError::Database)
     }
 
-    async fn set_virtual_library_sources(&self, id: i64, sources: &[(i64, i64)]) -> Result<(), AppError> {
+    async fn set_virtual_library_sources(&self, virtual_library_id: i64, sources: Vec<VirtualLibrarySourceInput>) -> Result<(), AppError> {
         let mut tx = self.pool.begin().await.map_err(AppError::Database)?;
 
         sqlx::query("DELETE FROM virtual_library_sources WHERE virtual_library_id = ?1")
-            .bind(id)
+            .bind(virtual_library_id)
             .execute(&mut *tx)
             .await
             .map_err(AppError::Database)?;
 
-        for (library_id, priority) in sources {
+        for src in sources {
             sqlx::query(
-                "INSERT INTO virtual_library_sources (virtual_library_id, library_id, priority)
-                 VALUES (?1, ?2, ?3)",
+                "INSERT INTO virtual_library_sources (virtual_library_id, library_id, priority, library_profile_id)
+                 VALUES (?1, ?2, ?3, ?4)",
             )
-            .bind(id)
-            .bind(library_id)
-            .bind(priority)
+            .bind(virtual_library_id)
+            .bind(src.library_id)
+            .bind(src.priority as i64)
+            .bind(src.library_profile_id)
             .execute(&mut *tx)
             .await
             .map_err(AppError::Database)?;

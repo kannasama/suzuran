@@ -5,7 +5,7 @@ use webauthn_rs::WebauthnBuilder;
 use suzuran_server::{
     build_router,
     config::Config,
-    dal::{sqlite::SqliteStore, Store, UpsertEncodingProfile, UpsertTrack},
+    dal::{sqlite::SqliteStore, Store, UpsertTrack},
     services::{freedb::FreedBService, musicbrainz::MusicBrainzService},
     state::AppState,
 };
@@ -165,7 +165,7 @@ pub async fn setup_store() -> Arc<dyn Store> {
 pub async fn setup_with_fingerprinted_track() -> (Arc<dyn Store>, i64) {
     let db = make_db().await;
     let lib = db
-        .create_library("Test", "/music", "flac", None)
+        .create_library("Test", "/music", "flac")
         .await
         .unwrap();
 
@@ -194,6 +194,8 @@ pub async fn setup_with_fingerprinted_track() -> (Arc<dyn Store>, i64) {
             channels: None,
             bit_depth: None,
             has_embedded_art: false,
+            status: "active".into(),
+            library_profile_id: None,
         })
         .await
         .unwrap();
@@ -211,7 +213,7 @@ pub async fn setup_with_fingerprinted_track() -> (Arc<dyn Store>, i64) {
 pub async fn setup_with_discid_track(disc_id: &str, track_number: u32) -> (Arc<dyn Store>, i64) {
     let db = make_db().await;
     let lib = db
-        .create_library("Test", "/music", "flac", None)
+        .create_library("Test", "/music", "flac")
         .await
         .unwrap();
 
@@ -243,6 +245,8 @@ pub async fn setup_with_discid_track(disc_id: &str, track_number: u32) -> (Arc<d
             channels: None,
             bit_depth: None,
             has_embedded_art: false,
+            status: "active".into(),
+            library_profile_id: None,
         })
         .await
         .unwrap();
@@ -286,7 +290,7 @@ pub async fn setup_with_audio_track() -> (Arc<dyn Store>, i64, TempDir) {
 
     let db = make_db().await;
     let lib = db
-        .create_library("Test", root.to_str().unwrap(), "flac", None)
+        .create_library("Test", root.to_str().unwrap(), "flac")
         .await
         .unwrap();
 
@@ -321,6 +325,8 @@ pub async fn setup_with_audio_track() -> (Arc<dyn Store>, i64, TempDir) {
             channels: Some(1),
             bit_depth: None,
             has_embedded_art: false,
+            status: "active".into(),
+            library_profile_id: None,
         })
         .await
         .unwrap();
@@ -370,7 +376,7 @@ FILE "album.flac" WAVE
 
     let db = make_db().await;
     let lib = db
-        .create_library("CUE Test", root.to_str().unwrap(), "flac", None)
+        .create_library("CUE Test", root.to_str().unwrap(), "flac")
         .await
         .unwrap();
 
@@ -382,7 +388,7 @@ FILE "album.flac" WAVE
 pub async fn setup_with_track() -> (Arc<dyn Store>, i64) {
     let db = make_db().await;
     let lib = db
-        .create_library("Test", "/music", "flac", None)
+        .create_library("Test", "/music", "flac")
         .await
         .unwrap();
 
@@ -411,6 +417,8 @@ pub async fn setup_with_track() -> (Arc<dyn Store>, i64) {
             channels: None,
             bit_depth: None,
             has_embedded_art: false,
+            status: "active".into(),
+            library_profile_id: None,
         })
         .await
         .unwrap();
@@ -427,7 +435,7 @@ pub async fn setup_transcode_scenario_no_profile() -> (Arc<dyn Store>, i64, i64)
     let db = make_db().await;
 
     let src_lib = db
-        .create_library("Source", "/music/source", "flac", None)
+        .create_library("Source", "/music/source", "flac")
         .await
         .unwrap();
 
@@ -448,10 +456,10 @@ pub async fn setup_transcode_scenario_no_profile() -> (Arc<dyn Store>, i64, i64)
         .unwrap();
 
     let tgt_lib = db
-        .create_library("Target AAC", "/music/target", "aac", None)
+        .create_library("Target AAC", "/music/target", "aac")
         .await
         .unwrap();
-    // target library intentionally has no encoding_profile_id
+    // target library intentionally has no library profile
 
     (db, track.id, tgt_lib.id)
 }
@@ -466,7 +474,7 @@ pub async fn setup_transcode_lossy_to_lossless_scenario() -> (Arc<dyn Store>, i6
     let db = make_db().await;
 
     let src_lib = db
-        .create_library("Source AAC", "/music/source_aac", "aac", None)
+        .create_library("Source AAC", "/music/source_aac", "aac")
         .await
         .unwrap();
 
@@ -487,25 +495,7 @@ pub async fn setup_transcode_lossy_to_lossless_scenario() -> (Arc<dyn Store>, i6
         .unwrap();
 
     let tgt_lib = db
-        .create_library("Target FLAC", "/music/target_flac", "flac", None)
-        .await
-        .unwrap();
-
-    // Create a FLAC encoding profile and attach to target library
-    let flac_profile = db
-        .create_encoding_profile(UpsertEncodingProfile {
-            name: "FLAC Lossless".into(),
-            codec: "flac".into(),
-            bitrate: None,
-            sample_rate: None,
-            channels: None,
-            bit_depth: None,
-            advanced_args: None,
-        })
-        .await
-        .unwrap();
-
-    db.set_library_encoding_profile(tgt_lib.id, Some(flac_profile.id))
+        .create_library("Target FLAC", "/music/target_flac", "flac")
         .await
         .unwrap();
 

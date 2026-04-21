@@ -8,7 +8,7 @@ async fn test_create_and_query_track_link() {
 
     // Create a library
     let lib = store
-        .create_library("test", "/tmp/test", "flac", None)
+        .create_library("test", "/tmp/test", "flac")
         .await
         .unwrap();
 
@@ -38,6 +38,8 @@ async fn test_create_and_query_track_link() {
             channels: None,
             bit_depth: None,
             has_embedded_art: false,
+            status: "active".into(),
+            library_profile_id: None,
         })
         .await
         .unwrap();
@@ -68,12 +70,14 @@ async fn test_create_and_query_track_link() {
             channels: None,
             bit_depth: None,
             has_embedded_art: false,
+            status: "active".into(),
+            library_profile_id: None,
         })
         .await
         .unwrap();
 
     store
-        .create_track_link(src.id, derived.id, None)
+        .create_track_link(src.id, derived.id)
         .await
         .unwrap();
 

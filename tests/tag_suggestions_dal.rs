@@ -9,7 +9,7 @@ async fn make_db() -> Arc<dyn Store> {
 
 async fn make_db_with_track() -> (Arc<dyn Store>, i64) {
     let db = make_db().await;
-    let lib = db.create_library("Test", "/music", "flac", None).await.unwrap();
+    let lib = db.create_library("Test", "/music", "flac").await.unwrap();
     let track = db.upsert_track(suzuran_server::dal::UpsertTrack {
         library_id: lib.id,
         relative_path: "test/track01.flac".into(),

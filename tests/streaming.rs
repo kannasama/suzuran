@@ -50,7 +50,7 @@ async fn spawn_test_server() -> (String, reqwest::Client) {
     let file_path = dir.path().join("test.mp3");
     tokio::fs::write(&file_path, file_content).await.unwrap();
 
-    let lib = store.create_library("Test", dir.path().to_str().unwrap(), "mp3", None).await.unwrap();
+    let lib = store.create_library("Test", dir.path().to_str().unwrap(), "mp3").await.unwrap();
 
     store.upsert_track(UpsertTrack {
         library_id: lib.id,

@@ -37,7 +37,7 @@ async fn test_wavpack_file_ingested() {
     let db = make_db().await;
     let (dir, root) = make_temp_library_with_file("silence.wv", SILENCE_WV).await;
 
-    let lib = db.create_library("Test", root.to_str().unwrap(), "wv", None).await.unwrap();
+    let lib = db.create_library("Test", root.to_str().unwrap(), "wv").await.unwrap();
     scan_library(&db, lib.id, &root).await.unwrap();
 
     let tracks = db.list_tracks_by_library(lib.id).await.unwrap();
@@ -50,7 +50,7 @@ async fn test_ape_file_ingested() {
     let db = make_db().await;
     let (dir, root) = make_temp_library_with_file("silence.ape", SILENCE_APE).await;
 
-    let lib = db.create_library("Test", root.to_str().unwrap(), "ape", None).await.unwrap();
+    let lib = db.create_library("Test", root.to_str().unwrap(), "ape").await.unwrap();
     scan_library(&db, lib.id, &root).await.unwrap();
 
     let tracks = db.list_tracks_by_library(lib.id).await.unwrap();
@@ -63,7 +63,7 @@ async fn test_tta_file_ingested() {
     let db = make_db().await;
     let (dir, root) = make_temp_library_with_file("silence.tta", SILENCE_TTA).await;
 
-    let lib = db.create_library("Test", root.to_str().unwrap(), "tta", None).await.unwrap();
+    let lib = db.create_library("Test", root.to_str().unwrap(), "tta").await.unwrap();
     scan_library(&db, lib.id, &root).await.unwrap();
 
     let tracks = db.list_tracks_by_library(lib.id).await.unwrap();

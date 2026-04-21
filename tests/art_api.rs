@@ -161,7 +161,7 @@ async fn art_embed_enqueues_job() {
     let client = login_admin(&base).await;
 
     let lib = store
-        .create_library("Test", "/music", "flac", None)
+        .create_library("Test", "/music", "flac")
         .await
         .unwrap();
     let track = store
@@ -197,7 +197,7 @@ async fn art_extract_enqueues_job() {
     let client = login_admin(&base).await;
 
     let lib = store
-        .create_library("Test2", "/music2", "flac", None)
+        .create_library("Test2", "/music2", "flac")
         .await
         .unwrap();
     let track = store
@@ -232,7 +232,7 @@ async fn art_standardize_library_enqueues_for_tracks_with_art() {
     let client = login_admin(&base).await;
 
     let lib = store
-        .create_library("Test3", "/music3", "flac", None)
+        .create_library("Test3", "/music3", "flac")
         .await
         .unwrap();
 

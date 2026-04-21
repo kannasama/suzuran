@@ -1,5 +1,5 @@
 mod common;
-use suzuran_server::dal::{UpsertTrack, UpsertVirtualLibrary};
+use suzuran_server::dal::{UpsertTrack, UpsertVirtualLibrary, VirtualLibrarySourceInput};
 
 #[tokio::test]
 async fn test_virtual_library_crud_and_sources() {
@@ -17,11 +17,14 @@ async fn test_virtual_library_crud_and_sources() {
     assert_eq!(all.len(), 1);
 
     // Create two real libraries to use as sources
-    let lib1 = store.create_library("FLAC", "/tmp/flac", "flac", None).await.unwrap();
-    let lib2 = store.create_library("AAC", "/tmp/aac", "aac", None).await.unwrap();
+    let lib1 = store.create_library("FLAC", "/tmp/flac", "flac").await.unwrap();
+    let lib2 = store.create_library("AAC", "/tmp/aac", "aac").await.unwrap();
 
     // Set sources with priority ordering
-    store.set_virtual_library_sources(vlib.id, &[(lib1.id, 1), (lib2.id, 2)]).await.unwrap();
+    store.set_virtual_library_sources(vlib.id, vec![
+        VirtualLibrarySourceInput { library_id: lib1.id, priority: 1, library_profile_id: None },
+        VirtualLibrarySourceInput { library_id: lib2.id, priority: 2, library_profile_id: None },
+    ]).await.unwrap();
 
     let sources = store.list_virtual_library_sources(vlib.id).await.unwrap();
     assert_eq!(sources.len(), 2);
@@ -45,7 +48,7 @@ async fn test_virtual_library_tracks() {
     }).await.unwrap();
 
     // Create a library + track for FK
-    let lib = store.create_library("src", "/tmp/src", "flac", None).await.unwrap();
+    let lib = store.create_library("src", "/tmp/src", "flac").await.unwrap();
     let track = store.upsert_track(UpsertTrack {
         library_id: lib.id,
         relative_path: "a.flac".into(),

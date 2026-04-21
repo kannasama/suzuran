@@ -48,7 +48,7 @@ async fn setup_with_audio_track() -> (Arc<dyn Store>, i64, TempDir) {
 
     let db = make_db().await;
     let lib = db
-        .create_library("Test", root.to_str().unwrap(), "flac", None)
+        .create_library("Test", root.to_str().unwrap(), "flac")
         .await
         .unwrap();
 
@@ -138,7 +138,7 @@ async fn test_fingerprint_nonexistent_track_returns_error() {
 async fn test_update_track_fingerprint_dal() {
     let db = make_db().await;
     let lib = db
-        .create_library("Test", "/music", "flac", None)
+        .create_library("Test", "/music", "flac")
         .await
         .unwrap();
     let track = db
@@ -220,7 +220,7 @@ async fn test_scan_enqueues_fingerprint_jobs() {
     fs::write(root.join("track02.flac"), b"").await.unwrap();
 
     let lib = db
-        .create_library("Test", root.to_str().unwrap(), "flac", None)
+        .create_library("Test", root.to_str().unwrap(), "flac")
         .await
         .unwrap();
 
