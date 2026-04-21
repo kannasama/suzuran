@@ -180,6 +180,7 @@ docker compose logs -f app
 | `0027_redesign_remaining.sql` | Drops `track_links.encoding_profile_id`; adds surrogate id + library_profile_id to virtual_library_sources; adds `process_staged` to jobs CHECK; seeds `folder_art_filename` setting |
 | `0028_drop_ingest_dir.sql` | Drops `libraries.ingest_dir` |
 | `0029_tracks_duration_secs_float8.sql` | `ALTER TABLE tracks ALTER COLUMN duration_secs TYPE DOUBLE PRECISION` — fixes FLOAT4/FLOAT8 mismatch with Rust `Option<f64>` |
+| `0030_fix_integer_to_bigint_2.sql` | Widens `tracks.bit_depth`, `virtual_library_sources.priority`, `library_profiles.auto_include_above_hz` from INTEGER to BIGINT to match Rust `i64` fields |
 
 ### `migrations/sqlite/`
 
@@ -214,6 +215,7 @@ docker compose logs -f app
 | `0027_redesign_remaining.sql` | Drops `track_links.encoding_profile_id` (table recreate); adds surrogate id + library_profile_id to virtual_library_sources; adds `process_staged` to jobs CHECK; seeds `folder_art_filename` setting |
 | `0028_drop_ingest_dir.sql` | Drops `libraries.ingest_dir` (table recreate) |
 | `0029_tracks_duration_secs_float8.sql` | No-op — SQLite REAL is already 8-byte; exists to keep migration numbers in sync with Postgres |
+| `0030_fix_integer_to_bigint_2.sql` | No-op — SQLite INTEGER is already 64-bit; exists to keep migration numbers in sync with Postgres |
 
 ## Directories
 
