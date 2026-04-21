@@ -336,3 +336,24 @@ can be lost.
 
 **How to apply:** After any doc-only edit, `git add <file> && git commit` before doing anything
 else. The rule isn't limited to plan docs — it applies to any file whose purpose is documentation.
+
+## 2026-04-21 — Capture session feedback in docs/summaries/ files
+
+**Rule:** At the end of any significant implementation session, write a summary file to
+`docs/summaries/YYYY-MM-DD-<topic>.md` using the project's date-prefixed kebab-case convention.
+
+The summary must include:
+- What was implemented (per batch/task)
+- Key decisions and rationale
+- A "Feedback Captured" section listing corrections, notable approvals, and guidance from the user
+
+**Why:** Memory files are machine-local. `docs/summaries/` is git-tracked and portable — the
+feedback record travels with the repo and is available to all contributors and future sessions.
+
+**How to apply:**
+- When a user provides feedback mid-session (corrections, approvals of non-obvious choices,
+  strong preferences), note it in the Feedback Captured section — not only in memory files
+- Commit the summary file as part of the session's final cleanup (alongside the merge commit
+  or as a standalone docs commit)
+- If the session is ongoing and feedback arrives before the summary is written, hold it and
+  flush everything into the summary at the end
