@@ -1,17 +1,22 @@
 use reqwest::Client;
-use std::{collections::HashMap, sync::{Arc, Mutex}, time::{Duration, Instant}};
-use tokio::time::sleep;
+use std::{collections::HashMap, sync::Arc, time::{Duration, Instant}};
+use tokio::{sync::Mutex, time::sleep};
 
 use crate::error::AppError;
 
-const MB_RATE_LIMIT_MS: u64 = 1100; // MusicBrainz: max 1 req/sec
+/// MusicBrainz: max 1 req/sec (we use 1.1 s to give a small margin).
+const MB_RATE_LIMIT_MS: u64 = 1100;
+/// AcoustID: no published hard limit; 350 ms (~2.8 req/s) is safe and polite.
+const ACOUSTID_RATE_LIMIT_MS: u64 = 350;
 
 #[derive(Clone)]
 pub struct MusicBrainzService {
     client: Client,
     mb_base: String,
     acoustid_base: String,
+    /// Tokio async mutex so the guard can be held across the sleep, preventing burst.
     last_mb_request: Arc<Mutex<Option<Instant>>>,
+    last_acoustid_request: Arc<Mutex<Option<Instant>>>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -113,7 +118,33 @@ impl MusicBrainzService {
             mb_base,
             acoustid_base,
             last_mb_request: Arc::new(Mutex::new(None)),
+            last_acoustid_request: Arc::new(Mutex::new(None)),
         }
+    }
+
+    /// Wait until at least MB_RATE_LIMIT_MS has elapsed since the last MB request.
+    /// Holds the async lock across the sleep to prevent concurrent burst.
+    async fn mb_rate_limit(&self) {
+        let mut guard = self.last_mb_request.lock().await;
+        if let Some(prev) = *guard {
+            let elapsed = prev.elapsed();
+            if elapsed < Duration::from_millis(MB_RATE_LIMIT_MS) {
+                sleep(Duration::from_millis(MB_RATE_LIMIT_MS) - elapsed).await;
+            }
+        }
+        *guard = Some(Instant::now());
+    }
+
+    /// Wait until at least ACOUSTID_RATE_LIMIT_MS has elapsed since the last AcoustID request.
+    async fn acoustid_rate_limit(&self) {
+        let mut guard = self.last_acoustid_request.lock().await;
+        if let Some(prev) = *guard {
+            let elapsed = prev.elapsed();
+            if elapsed < Duration::from_millis(ACOUSTID_RATE_LIMIT_MS) {
+                sleep(Duration::from_millis(ACOUSTID_RATE_LIMIT_MS) - elapsed).await;
+            }
+        }
+        *guard = Some(Instant::now());
     }
 
     pub async fn acoustid_lookup(
@@ -122,6 +153,7 @@ impl MusicBrainzService {
         fingerprint: &str,
         duration: f64,
     ) -> anyhow::Result<Vec<AcoustIdResult>> {
+        self.acoustid_rate_limit().await;
         let url = format!("{}/v2/lookup", self.acoustid_base);
         let resp: serde_json::Value = self.client
             .get(&url)
@@ -146,31 +178,7 @@ impl MusicBrainzService {
     }
 
     pub async fn get_recording(&self, recording_id: &str) -> anyhow::Result<MbRecording> {
-        // Rate-limit: MusicBrainz allows max 1 req/sec.
-        // Compute the required sleep duration while holding the lock, then drop
-        // the guard before awaiting so that the MutexGuard is not held across
-        // an await point (which would make the future non-Send).
-        // Note: two concurrent callers can each compute their sleep duration against the same
-        // last-request timestamp and both sleep, potentially allowing a small burst. In practice
-        // the scheduler semaphore limits concurrent mb_lookup jobs, so this is acceptable.
-        let sleep_duration = {
-            let mut last = self.last_mb_request.lock().expect("mutex poisoned");
-            let dur = last.map(|t| {
-                let elapsed = t.elapsed();
-                if elapsed < Duration::from_millis(MB_RATE_LIMIT_MS) {
-                    Duration::from_millis(MB_RATE_LIMIT_MS) - elapsed
-                } else {
-                    Duration::ZERO
-                }
-            });
-            *last = Some(Instant::now());
-            dur
-        };
-        if let Some(d) = sleep_duration {
-            if d > Duration::ZERO {
-                sleep(d).await;
-            }
-        }
+        self.mb_rate_limit().await;
         let url = format!("{}/recording/{}", self.mb_base, recording_id);
         let rec = self.client
             .get(&url)
@@ -261,26 +269,7 @@ impl MusicBrainzService {
             r#"recording:"{title}" AND artist:"{artist}" AND release:"{album}""#
         );
 
-        // Rate-limit like get_recording
-        let sleep_duration = {
-            let mut last = self.last_mb_request.lock().expect("mutex poisoned");
-            let dur = last.map(|t| {
-                let elapsed = t.elapsed();
-                if elapsed < Duration::from_millis(MB_RATE_LIMIT_MS) {
-                    Duration::from_millis(MB_RATE_LIMIT_MS) - elapsed
-                } else {
-                    Duration::ZERO
-                }
-            });
-            *last = Some(Instant::now());
-            dur
-        };
-        if let Some(d) = sleep_duration {
-            if d > Duration::ZERO {
-                sleep(d).await;
-            }
-        }
-
+        self.mb_rate_limit().await;
         let url = format!("{}/recording/", self.mb_base);
         let resp: serde_json::Value = self
             .client

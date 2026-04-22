@@ -269,6 +269,7 @@ function AlbumGroup({
   const firstSuggestion = suggestionsByTrack[firstTrack.id]
   const coverArtUrl = firstSuggestion?.cover_art_url
   const displayArtUrl = presetArtUrl || coverArtUrl
+  const hasEmbeddedArt = tracks.some(t => t.has_embedded_art)
   const formatExt = firstTrack.relative_path.split('.').pop()?.toUpperCase() ?? '?'
   const [altTrackId, setAltTrackId] = useState<number | null>(null)
   const [editingAlbum, setEditingAlbum] = useState(false)
@@ -302,12 +303,17 @@ function AlbumGroup({
               {supersedeCount} replac{supersedeCount !== 1 ? 'e' : 'es'} existing
             </span>
           )}
+          {hasEmbeddedArt && !displayArtUrl && (
+            <span className="text-[10px] font-mono uppercase text-emerald-400 border border-emerald-400/40 rounded px-1 shrink-0">
+              Embedded art
+            </span>
+          )}
         </div>
         <button
           onClick={() => setShowArtUpload(v => !v)}
           className={`text-xs border rounded px-3 py-1 font-medium shrink-0 ${showArtUpload ? 'border-accent text-accent' : 'border-border text-text-muted hover:text-text-primary'}`}
         >
-          {displayArtUrl ? 'Change Art' : 'Add Art'}
+          {displayArtUrl ? 'Change Art' : hasEmbeddedArt ? 'Replace Art' : 'Add Art'}
         </button>
         <button
           onClick={() => setEditingAlbum(v => !v)}
@@ -752,11 +758,22 @@ function SubmitDialog({
 
   const suggestion = suggestionsByTrack[firstTrack.id]
   const suggestedArtUrl = suggestion?.cover_art_url
-  const [artSkipped, setArtSkipped] = useState(false)
-  const selectedArtUrl: string | undefined = artSkipped
-    ? undefined
-    : (uploadedArtUrl || suggestedArtUrl || undefined)
-  const writeFolderArt = selectedArtUrl != null && folderArtFilename !== ''
+  const albumHasEmbeddedArt = tracks.some(t => t.has_embedded_art)
+
+  // 'use' = use uploaded/suggested art | 'keep_embedded' = keep embedded | 'skip' = no art
+  type ArtMode = 'use' | 'keep_embedded' | 'skip'
+  const defaultArtMode: ArtMode =
+    !uploadedArtUrl && !suggestedArtUrl && albumHasEmbeddedArt ? 'keep_embedded' : 'use'
+  const [artMode, setArtMode] = useState<ArtMode>(defaultArtMode)
+
+  const selectedArtUrl: string | undefined =
+    artMode === 'skip' || artMode === 'keep_embedded'
+      ? undefined
+      : (uploadedArtUrl || suggestedArtUrl || undefined)
+
+  // write_folder_art: true when there is art to write (explicit URL or embedded extraction)
+  const writeFolderArt =
+    folderArtFilename !== '' && (selectedArtUrl != null || artMode === 'keep_embedded')
 
   async function handleConfirm() {
     setSubmitting(true)
@@ -835,7 +852,7 @@ function SubmitDialog({
           <div>
             <p className="text-text-muted text-xs uppercase tracking-wider mb-2">Cover Art</p>
             <div className="flex items-start gap-3">
-              {suggestedArtUrl && !artSkipped && (
+              {(uploadedArtUrl || suggestedArtUrl) && artMode === 'use' && (
                 <img
                   src={uploadedArtUrl || suggestedArtUrl}
                   alt="cover"
@@ -846,24 +863,52 @@ function SubmitDialog({
               <div className="flex flex-col gap-2 flex-1 min-w-0">
                 <ImageUpload
                   value={uploadedArtUrl}
-                  onChange={url => { setUploadedArtUrl(url); setArtSkipped(false) }}
+                  onChange={url => { setUploadedArtUrl(url); setArtMode('use') }}
                 />
-                {!artSkipped ? (
-                  <button
-                    type="button"
-                    onClick={() => { setArtSkipped(true); setUploadedArtUrl('') }}
-                    className="self-start text-xs text-text-muted hover:text-text-primary border border-border rounded px-2 py-0.5"
-                  >
-                    Skip art
-                  </button>
-                ) : (
-                  <span className="text-xs text-text-muted italic">Art skipped</span>
-                )}
+                <div className="flex items-center gap-3 flex-wrap">
+                  {albumHasEmbeddedArt && (
+                    <label className="flex items-center gap-1.5 cursor-pointer text-xs">
+                      <input
+                        type="radio"
+                        name="art-mode"
+                        checked={artMode === 'keep_embedded'}
+                        onChange={() => setArtMode('keep_embedded')}
+                        className="accent-[color:var(--accent)]"
+                      />
+                      <span className={artMode === 'keep_embedded' ? 'text-emerald-400' : 'text-text-muted'}>
+                        Keep embedded art
+                      </span>
+                    </label>
+                  )}
+                  <label className="flex items-center gap-1.5 cursor-pointer text-xs">
+                    <input
+                      type="radio"
+                      name="art-mode"
+                      checked={artMode === 'skip'}
+                      onChange={() => setArtMode('skip')}
+                      className="accent-[color:var(--accent)]"
+                    />
+                    <span className={artMode === 'skip' ? 'text-text-primary' : 'text-text-muted'}>Skip art</span>
+                  </label>
+                  {(artMode === 'keep_embedded' || artMode === 'skip') && (uploadedArtUrl || suggestedArtUrl) && (
+                    <button
+                      type="button"
+                      onClick={() => setArtMode('use')}
+                      className="text-xs text-accent hover:underline"
+                    >
+                      Use suggested art
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
             {writeFolderArt && (
               <p className="text-xs text-text-muted mt-1">
-                Folder art will be written as <span className="font-mono">{folderArtFilename}</span>
+                Folder art will be written as{' '}
+                <span className="font-mono">{folderArtFilename}</span>
+                {artMode === 'keep_embedded' && (
+                  <span className="text-emerald-400/80"> (extracted from embedded art)</span>
+                )}
               </p>
             )}
           </div>

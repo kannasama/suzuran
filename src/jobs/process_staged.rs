@@ -194,6 +194,41 @@ async fn handle_process_staged(
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!("rename ingest→source: {e}")))?;
 
+    // 8.5 Write folder art from embedded art when no cover_art_url was provided
+    if staged_payload.write_folder_art && staged_payload.cover_art_url.is_none() {
+        let folder_art_filename = store
+            .get_setting("folder_art_filename")
+            .await?
+            .map(|s| s.value)
+            .unwrap_or_default();
+
+        if !folder_art_filename.is_empty() {
+            let dest_for_extract = dest_abs.clone();
+            let extracted = tokio::task::spawn_blocking(move || {
+                extract_embedded_art_sync(&dest_for_extract)
+            })
+            .await
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("spawn_blocking extract art: {e}")))?;
+
+            if let Ok(Some(art_bytes)) = extracted {
+                let folder_art_dir = Path::new(&dest_abs)
+                    .parent()
+                    .map(|p| p.to_path_buf())
+                    .unwrap_or_else(|| std::path::PathBuf::from(&root_path));
+
+                tokio::fs::create_dir_all(&folder_art_dir)
+                    .await
+                    .map_err(|e| AppError::Internal(anyhow::anyhow!("mkdir for embedded folder art: {e}")))?;
+
+                let folder_art_path = folder_art_dir.join(&folder_art_filename);
+                tokio::fs::write(&folder_art_path, &art_bytes)
+                    .await
+                    .map_err(|e| AppError::Internal(anyhow::anyhow!("write folder art from embedded: {e}")))?;
+            }
+            // No embedded art found — silently skip; not an error
+        }
+    }
+
     // 9. Hash file at destination
     let new_hash = hash_file(Path::new(&dest_abs))
         .await
@@ -288,6 +323,22 @@ fn strip_ingest_prefix(rel_path: &str) -> &str {
     rel_path
         .trim_start_matches("ingest/")
         .trim_start_matches('/')
+}
+
+/// Sync helper — extract the CoverFront picture bytes from an audio file's primary tag.
+/// Returns `Ok(None)` when the file has no embedded art; errors only on IO/parse failures.
+fn extract_embedded_art_sync(path: &str) -> anyhow::Result<Option<Vec<u8>>> {
+    let tagged = Probe::open(path)?.read()?;
+    let tag = match tagged.primary_tag() {
+        Some(t) => t,
+        None => return Ok(None),
+    };
+    let art = tag
+        .pictures()
+        .iter()
+        .find(|p| p.pic_type() == lofty::picture::PictureType::CoverFront)
+        .or_else(|| tag.pictures().iter().next());
+    Ok(art.map(|p| p.data().to_vec()))
 }
 
 /// Sync helper — embed image bytes into audio file as cover art.
