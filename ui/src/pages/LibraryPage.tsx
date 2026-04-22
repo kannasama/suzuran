@@ -94,6 +94,28 @@ function getFileExtension(path: string): string {
   return path.slice(dot + 1).toLowerCase()
 }
 
+type GroupByKey = 'none' | 'album' | 'artist' | 'albumartist' | 'year' | 'genre'
+type SortByKey = 'tracknumber' | 'title' | 'artist' | 'album' | 'year' | 'duration' | 'bitrate'
+
+const GROUP_OPTIONS: { key: GroupByKey; label: string }[] = [
+  { key: 'none',        label: 'None' },
+  { key: 'album',       label: 'Album' },
+  { key: 'artist',      label: 'Artist' },
+  { key: 'albumartist', label: 'Album Artist' },
+  { key: 'year',        label: 'Year' },
+  { key: 'genre',       label: 'Genre' },
+]
+
+const SORT_OPTIONS: { key: SortByKey; label: string }[] = [
+  { key: 'tracknumber', label: 'Track #' },
+  { key: 'title',       label: 'Title' },
+  { key: 'artist',      label: 'Artist' },
+  { key: 'album',       label: 'Album' },
+  { key: 'year',        label: 'Year' },
+  { key: 'duration',    label: 'Duration' },
+  { key: 'bitrate',     label: 'Bitrate' },
+]
+
 export function LibraryPage() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
@@ -111,6 +133,13 @@ export function LibraryPage() {
   const [searchTrack, setSearchTrack] = useState<Track | null>(null)
   const [selectedTrackIds, setSelectedTrackIds] = useState<Set<number>>(new Set())
   const lastSelectedIdRef = useRef<number | null>(null)
+  const [groupBy, setGroupBy] = useState<GroupByKey>('none')
+  const [sortBy, setSortBy] = useState<SortByKey>('tracknumber')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+  const [showGroupMenu, setShowGroupMenu] = useState(false)
+  const [showSortMenu, setShowSortMenu] = useState(false)
+  const groupMenuRef = useRef<HTMLDivElement>(null)
+  const sortMenuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!showColumnPicker) return
@@ -122,6 +151,20 @@ export function LibraryPage() {
     document.addEventListener('mousedown', handleMouseDown)
     return () => document.removeEventListener('mousedown', handleMouseDown)
   }, [showColumnPicker])
+
+  useEffect(() => {
+    if (!showGroupMenu && !showSortMenu) return
+    function handleMouseDown(e: MouseEvent) {
+      if (showGroupMenu && groupMenuRef.current && !groupMenuRef.current.contains(e.target as Node)) {
+        setShowGroupMenu(false)
+      }
+      if (showSortMenu && sortMenuRef.current && !sortMenuRef.current.contains(e.target as Node)) {
+        setShowSortMenu(false)
+      }
+    }
+    document.addEventListener('mousedown', handleMouseDown)
+    return () => document.removeEventListener('mousedown', handleMouseDown)
+  }, [showGroupMenu, showSortMenu])
 
   function toggleColumn(key: string) {
     setVisibleColumns(prev => {
@@ -191,6 +234,55 @@ export function LibraryPage() {
     }
     return map
   }, [suggestions])
+
+  const displayGroups = useMemo(() => {
+    function getTrackSortVal(t: Track): string | number {
+      switch (sortBy) {
+        case 'tracknumber': {
+          const n = parseInt((t.tracknumber ?? '').split('/')[0], 10)
+          return isNaN(n) ? 9999 : n
+        }
+        case 'title':    return (t.title ?? '').toLowerCase()
+        case 'artist':   return (t.artist ?? '').toLowerCase()
+        case 'album':    return (t.album ?? '').toLowerCase()
+        case 'year':     return t.date?.slice(0, 4) ?? ''
+        case 'duration': return t.duration_secs ?? 0
+        case 'bitrate':  return t.bitrate ?? 0
+      }
+    }
+    function cmp(a: string | number, b: string | number): number {
+      if (typeof a === 'number' && typeof b === 'number') return a - b
+      return String(a).localeCompare(String(b))
+    }
+    function sortTracks(arr: Track[]): Track[] {
+      return [...arr].sort((a, b) => {
+        const c = cmp(getTrackSortVal(a), getTrackSortVal(b))
+        return sortDir === 'asc' ? c : -c
+      })
+    }
+    function getGroupKey(t: Track): string {
+      switch (groupBy) {
+        case 'none':        return ''
+        case 'album':       return `${t.albumartist ?? t.artist ?? '—'} — ${t.album ?? 'Unknown Album'}`
+        case 'artist':      return t.artist ?? '—'
+        case 'albumartist': return t.albumartist ?? '—'
+        case 'year':        return t.date?.slice(0, 4) ?? '—'
+        case 'genre':       return t.genre ?? '—'
+      }
+    }
+    if (groupBy === 'none') {
+      return [{ key: '', tracks: sortTracks(tracks) }]
+    }
+    const groupMap = new Map<string, Track[]>()
+    for (const t of tracks) {
+      const k = getGroupKey(t)
+      if (!groupMap.has(k)) groupMap.set(k, [])
+      groupMap.get(k)!.push(t)
+    }
+    return [...groupMap.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, gt]) => ({ key, tracks: sortTracks(gt) }))
+  }, [tracks, groupBy, sortBy, sortDir])
 
   const acceptMutation = useMutation({
     mutationFn: (id: number) => tagSuggestionsApi.accept(id),
@@ -269,12 +361,61 @@ export function LibraryPage() {
                   </button>
                 </>
               )}
-              <button className="text-xs text-text-muted bg-bg-panel border border-border rounded px-2 py-0.5 hover:border-border">
-                Group: None ▾
-              </button>
-              <button className="text-xs text-text-muted bg-bg-panel border border-border rounded px-2 py-0.5 hover:border-border">
-                Sort ▾
-              </button>
+              {/* Group by dropdown */}
+              <div ref={groupMenuRef} className="relative">
+                <button
+                  onClick={() => { setShowGroupMenu(v => !v); setShowSortMenu(false) }}
+                  className={`text-xs bg-bg-panel border rounded px-2 py-0.5 ${showGroupMenu ? 'border-accent text-accent' : 'border-border text-text-muted hover:text-text-primary'}`}
+                >
+                  Group: {GROUP_OPTIONS.find(o => o.key === groupBy)?.label ?? 'None'} ▾
+                </button>
+                {showGroupMenu && (
+                  <div className="absolute right-0 top-full mt-1 z-50 bg-bg-panel border border-border rounded shadow-lg py-1 min-w-[130px]">
+                    {GROUP_OPTIONS.map(opt => (
+                      <button
+                        key={opt.key}
+                        onClick={() => { setGroupBy(opt.key); setShowGroupMenu(false) }}
+                        className={`block w-full text-left px-3 py-1 text-xs hover:bg-bg-row-hover ${groupBy === opt.key ? 'text-accent' : 'text-text-primary'}`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {/* Sort by dropdown */}
+              <div ref={sortMenuRef} className="relative">
+                <button
+                  onClick={() => { setShowSortMenu(v => !v); setShowGroupMenu(false) }}
+                  className={`text-xs bg-bg-panel border rounded px-2 py-0.5 ${showSortMenu ? 'border-accent text-accent' : 'border-border text-text-muted hover:text-text-primary'}`}
+                >
+                  Sort: {SORT_OPTIONS.find(o => o.key === sortBy)?.label ?? 'Track #'} {sortDir === 'asc' ? '▲' : '▼'}
+                </button>
+                {showSortMenu && (
+                  <div className="absolute right-0 top-full mt-1 z-50 bg-bg-panel border border-border rounded shadow-lg py-1 min-w-[130px]">
+                    {SORT_OPTIONS.map(opt => (
+                      <button
+                        key={opt.key}
+                        onClick={() => {
+                          if (sortBy === opt.key) {
+                            setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+                          } else {
+                            setSortBy(opt.key)
+                            setSortDir('asc')
+                          }
+                          setShowSortMenu(false)
+                        }}
+                        className={`block w-full text-left px-3 py-1 text-xs hover:bg-bg-row-hover ${sortBy === opt.key ? 'text-accent' : 'text-text-primary'}`}
+                      >
+                        {opt.label}
+                        {sortBy === opt.key && (
+                          <span className="ml-1 text-[10px]">{sortDir === 'asc' ? '▲' : '▼'}</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -343,27 +484,37 @@ export function LibraryPage() {
                   No tracks in this library. Run a scan to discover files.
                 </div>
               ) : (
-                tracks.map((track: Track) => (
-                  <TrackRow
-                    key={track.id}
-                    track={track}
-                    visibleColumns={visibleColumns}
-                    suggestion={suggestionsByTrack[track.id]}
-                    isExpanded={expandedTrackId === track.id}
-                    isEditingTags={editingTagsTrackId === track.id}
-                    isSelected={selectedTrackIds.has(track.id)}
-                    onToggleSelect={(shift) => toggleSelectTrack(track.id, shift, tracks)}
-                    onToggleExpand={() => {
-                      setExpandedTrackId(prev => prev === track.id ? null : track.id)
-                      setEditingTagsTrackId(null)
-                    }}
-                    onSearch={() => setSearchTrack(track)}
-                    onLookup={() => lookupMutation.mutate(track.id)}
-                    onAccept={id => acceptMutation.mutate(id)}
-                    onReject={id => rejectMutation.mutate(id)}
-                    onEditTags={() => setEditingTagsTrackId(track.id)}
-                    onEditTagsClose={() => setEditingTagsTrackId(null)}
-                  />
+                displayGroups.map(({ key, tracks: groupTracks }) => (
+                  <div key={key || '__all__'}>
+                    {groupBy !== 'none' && (
+                      <div className="px-3 py-1 bg-bg-panel border-b border-border text-[11px] font-mono flex items-center gap-2 sticky top-0 z-10">
+                        <span className="text-text-primary font-medium">{key}</span>
+                        <span className="text-text-muted/60">{groupTracks.length}</span>
+                      </div>
+                    )}
+                    {groupTracks.map((track: Track) => (
+                      <TrackRow
+                        key={track.id}
+                        track={track}
+                        visibleColumns={visibleColumns}
+                        suggestion={suggestionsByTrack[track.id]}
+                        isExpanded={expandedTrackId === track.id}
+                        isEditingTags={editingTagsTrackId === track.id}
+                        isSelected={selectedTrackIds.has(track.id)}
+                        onToggleSelect={(shift) => toggleSelectTrack(track.id, shift, tracks)}
+                        onToggleExpand={() => {
+                          setExpandedTrackId(prev => prev === track.id ? null : track.id)
+                          setEditingTagsTrackId(null)
+                        }}
+                        onSearch={() => setSearchTrack(track)}
+                        onLookup={() => lookupMutation.mutate(track.id)}
+                        onAccept={id => acceptMutation.mutate(id)}
+                        onReject={id => rejectMutation.mutate(id)}
+                        onEditTags={() => setEditingTagsTrackId(track.id)}
+                        onEditTagsClose={() => setEditingTagsTrackId(null)}
+                      />
+                    ))}
+                  </div>
                 ))
               )}
             </div>
