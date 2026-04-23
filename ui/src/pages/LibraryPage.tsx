@@ -1,8 +1,7 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { TopNav } from '../components/TopNav'
 import { LibraryTree } from '../components/LibraryTree'
-import { TrackEditPanel } from '../components/TrackEditPanel'
 import { AlternativesPanel } from '../components/AlternativesPanel'
 import { IngestSearchDialog } from '../components/IngestSearchDialog'
 import { useAuth } from '../contexts/AuthContext'
@@ -13,7 +12,7 @@ import client from '../api/client'
 import type { Track } from '../types/track'
 import type { TagSuggestion } from '../types/tagSuggestion'
 
-// ── Bulk-edit field definitions (mirrors TrackEditPanel) ─────────────────────
+// ── Tag field definitions ──────────────────────────────────────────────────────
 interface TagField { key: string; label: string; fullWidth?: boolean }
 const BULK_EDIT_FIELDS: TagField[] = [
   { key: 'title',                      label: 'Title' },
@@ -29,10 +28,10 @@ const BULK_EDIT_FIELDS: TagField[] = [
   { key: 'releasetype',                label: 'Release Type' },
   { key: 'releasestatus',              label: 'Release Status' },
   { key: 'releasecountry',             label: 'Release Country' },
-  { key: 'originalyear',              label: 'Original Year' },
-  { key: 'originaldate',              label: 'Original Release Date' },
-  { key: 'totaltracks',               label: 'Total Tracks' },
-  { key: 'totaldiscs',                label: 'Total Discs' },
+  { key: 'originalyear',               label: 'Original Year' },
+  { key: 'originaldate',               label: 'Original Release Date' },
+  { key: 'totaltracks',                label: 'Total Tracks' },
+  { key: 'totaldiscs',                 label: 'Total Discs' },
   { key: 'label',                      label: 'Record Label' },
   { key: 'catalognumber',              label: 'Catalog #' },
   { key: 'barcode',                    label: 'Barcode' },
@@ -43,10 +42,27 @@ const BULK_EDIT_FIELDS: TagField[] = [
   { key: 'musicbrainz_trackid',        label: 'MB Recording ID',      fullWidth: true },
 ]
 
+// Fields promoted to top-level on Track; rest come from track.tags
+const TOP_LEVEL_TAG_FIELDS = new Set([
+  'title', 'artist', 'albumartist', 'album', 'tracknumber', 'discnumber',
+  'totaldiscs', 'totaltracks', 'date', 'genre', 'label', 'catalognumber',
+])
+
+function getTrackTagValue(track: Track, key: string): string {
+  if (TOP_LEVEL_TAG_FIELDS.has(key)) {
+    return (track as unknown as Record<string, string | undefined>)[key] ?? ''
+  }
+  const v = track.tags[key]
+  if (typeof v === 'string') return v
+  if (v != null) return String(v)
+  return ''
+}
+
+// ── Column definitions ─────────────────────────────────────────────────────────
 interface ColumnDef {
   key: string
-  label: string        // shown in the picker
-  headerLabel?: string // shown in the column header (falls back to label)
+  label: string
+  headerLabel?: string
   className: string
 }
 
@@ -129,7 +145,6 @@ export function LibraryPage() {
   const [showColumnPicker, setShowColumnPicker] = useState(false)
   const pickerRef = useRef<HTMLDivElement>(null)
   const [expandedTrackId, setExpandedTrackId] = useState<number | null>(null)
-  const [editingTagsTrackId, setEditingTagsTrackId] = useState<number | null>(null)
   const [searchTrack, setSearchTrack] = useState<Track | null>(null)
   const [selectedTrackIds, setSelectedTrackIds] = useState<Set<number>>(new Set())
   const lastSelectedIdRef = useRef<number | null>(null)
@@ -140,7 +155,9 @@ export function LibraryPage() {
   const [showSortMenu, setShowSortMenu] = useState(false)
   const groupMenuRef = useRef<HTMLDivElement>(null)
   const sortMenuRef = useRef<HTMLDivElement>(null)
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; track: Track } | null>(null)
 
+  // ── Dismiss handlers ──────────────────────────────────────────────────────────
   useEffect(() => {
     if (!showColumnPicker) return
     function handleMouseDown(e: MouseEvent) {
@@ -166,6 +183,18 @@ export function LibraryPage() {
     return () => document.removeEventListener('mousedown', handleMouseDown)
   }, [showGroupMenu, showSortMenu])
 
+  useEffect(() => {
+    if (!contextMenu) return
+    function handleClick() { setContextMenu(null) }
+    function handleScroll() { setContextMenu(null) }
+    document.addEventListener('click', handleClick)
+    document.addEventListener('scroll', handleScroll, true)
+    return () => {
+      document.removeEventListener('click', handleClick)
+      document.removeEventListener('scroll', handleScroll, true)
+    }
+  }, [contextMenu])
+
   function toggleColumn(key: string) {
     setVisibleColumns(prev => {
       const next = new Set(prev)
@@ -176,38 +205,7 @@ export function LibraryPage() {
     })
   }
 
-  const toggleSelectTrack = useCallback((id: number, shift: boolean, trackList: Track[]) => {
-    if (shift && lastSelectedIdRef.current != null) {
-      const ids = trackList.map(t => t.id)
-      const a = ids.indexOf(lastSelectedIdRef.current)
-      const b = ids.indexOf(id)
-      if (a !== -1 && b !== -1) {
-        const [lo, hi] = [Math.min(a, b), Math.max(a, b)]
-        setSelectedTrackIds(prev => {
-          const next = new Set(prev)
-          ids.slice(lo, hi + 1).forEach(rid => next.add(rid))
-          return next
-        })
-        return
-      }
-    }
-    setSelectedTrackIds(prev => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-    lastSelectedIdRef.current = id
-  }, [])
-
-  function toggleSelectAll() {
-    if (selectedTrackIds.size === tracks.length && tracks.length > 0) {
-      setSelectedTrackIds(new Set())
-    } else {
-      setSelectedTrackIds(new Set(tracks.map((t: Track) => t.id)))
-    }
-  }
-
+  // ── Queries ───────────────────────────────────────────────────────────────────
   const { data: selectedLibrary } = useQuery({
     queryKey: ['library', selectedLibraryId],
     queryFn: () => getLibrary(selectedLibraryId!),
@@ -235,6 +233,7 @@ export function LibraryPage() {
     return map
   }, [suggestions])
 
+  // ── Display groups + flat/selected track lists ────────────────────────────────
   const displayGroups = useMemo(() => {
     function getTrackSortVal(t: Track): string | number {
       switch (sortBy) {
@@ -284,6 +283,78 @@ export function LibraryPage() {
       .map(([key, gt]) => ({ key, tracks: sortTracks(gt) }))
   }, [tracks, groupBy, sortBy, sortDir])
 
+  // Flat list in display order — used for range selection
+  const flatTracks = useMemo(
+    () => displayGroups.flatMap(g => g.tracks),
+    [displayGroups]
+  )
+
+  const selectedTracks = useMemo(
+    () => tracks.filter((t: Track) => selectedTrackIds.has(t.id)),
+    [tracks, selectedTrackIds]
+  )
+
+  // ── Selection handlers ────────────────────────────────────────────────────────
+  function handleRowClick(id: number, e: React.MouseEvent) {
+    if (e.shiftKey && lastSelectedIdRef.current != null) {
+      const ids = flatTracks.map(t => t.id)
+      const a = ids.indexOf(lastSelectedIdRef.current)
+      const b = ids.indexOf(id)
+      if (a !== -1 && b !== -1) {
+        const [lo, hi] = [Math.min(a, b), Math.max(a, b)]
+        setSelectedTrackIds(prev => {
+          const next = new Set(prev)
+          ids.slice(lo, hi + 1).forEach(rid => next.add(rid))
+          return next
+        })
+        return
+      }
+    }
+    if (e.ctrlKey || e.metaKey) {
+      setSelectedTrackIds(prev => {
+        const next = new Set(prev)
+        if (next.has(id)) next.delete(id)
+        else next.add(id)
+        return next
+      })
+    } else {
+      setSelectedTrackIds(new Set([id]))
+    }
+    lastSelectedIdRef.current = id
+  }
+
+  // Checkbox click = toggle without clearing others (ctrl-click equivalent)
+  function handleCheckboxChange(id: number) {
+    setSelectedTrackIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+    lastSelectedIdRef.current = id
+  }
+
+  function toggleSelectAll() {
+    if (selectedTrackIds.size === tracks.length && tracks.length > 0) {
+      setSelectedTrackIds(new Set())
+    } else {
+      setSelectedTrackIds(new Set(tracks.map((t: Track) => t.id)))
+    }
+  }
+
+  // ── Context menu ──────────────────────────────────────────────────────────────
+  function handleContextMenu(e: React.MouseEvent, track: Track) {
+    e.preventDefault()
+    e.stopPropagation()
+    // Select only this track if it wasn't already selected
+    if (!selectedTrackIds.has(track.id)) {
+      setSelectedTrackIds(new Set([track.id]))
+      lastSelectedIdRef.current = track.id
+    }
+    setContextMenu({ x: e.clientX, y: e.clientY, track })
+  }
+
+  // ── Mutations ─────────────────────────────────────────────────────────────────
   const acceptMutation = useMutation({
     mutationFn: (id: number) => tagSuggestionsApi.accept(id),
     onSuccess: () => {
@@ -309,7 +380,7 @@ export function LibraryPage() {
       setScanQueued(true)
       setTimeout(() => setScanQueued(false), 2000)
     } catch {
-      // ignore — job queue errors are not critical UI failures
+      // ignore
     }
   }
 
@@ -499,19 +570,15 @@ export function LibraryPage() {
                         visibleColumns={visibleColumns}
                         suggestion={suggestionsByTrack[track.id]}
                         isExpanded={expandedTrackId === track.id}
-                        isEditingTags={editingTagsTrackId === track.id}
                         isSelected={selectedTrackIds.has(track.id)}
-                        onToggleSelect={(shift) => toggleSelectTrack(track.id, shift, tracks)}
-                        onToggleExpand={() => {
-                          setExpandedTrackId(prev => prev === track.id ? null : track.id)
-                          setEditingTagsTrackId(null)
-                        }}
+                        onRowClick={e => handleRowClick(track.id, e)}
+                        onCheckboxChange={() => handleCheckboxChange(track.id)}
+                        onContextMenu={e => handleContextMenu(e, track)}
+                        onToggleExpand={() => setExpandedTrackId(prev => prev === track.id ? null : track.id)}
                         onSearch={() => setSearchTrack(track)}
                         onLookup={() => lookupMutation.mutate(track.id)}
                         onAccept={id => acceptMutation.mutate(id)}
                         onReject={id => rejectMutation.mutate(id)}
-                        onEditTags={() => setEditingTagsTrackId(track.id)}
-                        onEditTagsClose={() => setEditingTagsTrackId(null)}
                       />
                     ))}
                   </div>
@@ -521,13 +588,15 @@ export function LibraryPage() {
 
             {selectedTrackIds.size > 0 && (
               <BulkEditPanel
-                selectedTracks={tracks.filter((t: Track) => selectedTrackIds.has(t.id))}
+                key={[...selectedTrackIds].sort((a, b) => a - b).join(',')}
+                selectedTracks={selectedTracks}
                 onClose={() => setSelectedTrackIds(new Set())}
               />
             )}
           </div>
         </main>
       </div>
+
       {searchTrack != null && (
         <IngestSearchDialog
           track={searchTrack}
@@ -537,53 +606,67 @@ export function LibraryPage() {
           }}
         />
       )}
+
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onLookup={() => { lookupMutation.mutate(contextMenu.track.id); setContextMenu(null) }}
+          onSearch={() => { setSearchTrack(contextMenu.track); setContextMenu(null) }}
+          onSelectAll={() => { toggleSelectAll(); setContextMenu(null) }}
+          onDeselectAll={() => { setSelectedTrackIds(new Set()); setContextMenu(null) }}
+          onCopyPath={() => { navigator.clipboard.writeText(contextMenu.track.relative_path); setContextMenu(null) }}
+        />
+      )}
     </div>
   )
 }
 
+// ── TrackRow ───────────────────────────────────────────────────────────────────
 function TrackRow({
   track,
   visibleColumns,
   suggestion,
   isExpanded,
-  isEditingTags,
   isSelected,
-  onToggleSelect,
+  onRowClick,
+  onCheckboxChange,
+  onContextMenu,
   onToggleExpand,
   onSearch,
   onLookup,
   onAccept,
   onReject,
-  onEditTags,
-  onEditTagsClose,
 }: {
   track: Track
   visibleColumns: Set<string>
   suggestion?: TagSuggestion
   isExpanded: boolean
-  isEditingTags: boolean
   isSelected: boolean
-  onToggleSelect: (shift: boolean) => void
+  onRowClick: (e: React.MouseEvent) => void
+  onCheckboxChange: () => void
+  onContextMenu: (e: React.MouseEvent) => void
   onToggleExpand: () => void
   onSearch: () => void
   onLookup: () => void
   onAccept: (id: number) => void
   onReject: (id: number) => void
-  onEditTags: () => void
-  onEditTagsClose: () => void
 }) {
   const pct = suggestion ? Math.round(suggestion.confidence * 100) : null
   const [showAlt, setShowAlt] = useState(false)
 
   return (
     <>
-      <div className={`flex items-center gap-0 px-2 py-0.5 border-b border-border-subtle text-xs hover:bg-bg-row-hover ${isExpanded ? 'bg-bg-surface' : ''} ${isSelected ? 'bg-accent/10' : ''}`}>
-        <span className="w-5 shrink-0 flex items-center">
+      <div
+        className={`flex items-center gap-0 px-2 py-0.5 border-b border-border-subtle text-xs hover:bg-bg-row-hover cursor-pointer select-none ${isExpanded ? 'bg-bg-surface' : ''} ${isSelected ? 'bg-accent/10' : ''}`}
+        onClick={onRowClick}
+        onContextMenu={onContextMenu}
+      >
+        <span className="w-5 shrink-0 flex items-center" onClick={e => e.stopPropagation()}>
           <input
             type="checkbox"
             checked={isSelected}
-            onChange={e => onToggleSelect(e.nativeEvent instanceof MouseEvent && (e.nativeEvent as MouseEvent).shiftKey)}
-            onClick={e => e.stopPropagation()}
+            onChange={onCheckboxChange}
             className="accent-[color:var(--accent)] cursor-pointer"
           />
         </span>
@@ -627,7 +710,7 @@ function TrackRow({
               </span>
             )}
             <button
-              onClick={onToggleExpand}
+              onClick={e => { e.stopPropagation(); onToggleExpand() }}
               className={`text-xs border rounded px-1.5 py-0.5 transition-colors ${
                 isExpanded
                   ? 'border-accent text-accent'
@@ -657,16 +740,6 @@ function TrackRow({
             >
               Search
             </button>
-            <button
-              onClick={isEditingTags ? onEditTagsClose : onEditTags}
-              className={`text-xs border rounded px-2 py-0.5 ${
-                isEditingTags
-                  ? 'border-accent text-accent'
-                  : 'border-border text-text-muted hover:bg-bg-panel hover:border-accent hover:text-text-secondary'
-              }`}
-            >
-              Edit Tags
-            </button>
             {suggestion?.alternatives && suggestion.alternatives.length > 0 && (
               <button
                 onClick={() => setShowAlt(v => !v)}
@@ -682,7 +755,7 @@ function TrackRow({
           </div>
 
           {/* Pending suggestion */}
-          {suggestion && !isEditingTags && (
+          {suggestion && (
             <div className="flex flex-col gap-1">
               <div className="flex items-center gap-2">
                 <span className="text-[10px] uppercase tracking-wide text-text-muted font-mono">{suggestion.source}</span>
@@ -712,13 +785,8 @@ function TrackRow({
           )}
 
           {/* Alternatives picker */}
-          {showAlt && suggestion && !isEditingTags && (
+          {showAlt && suggestion && (
             <AlternativesPanel suggestion={suggestion} onClose={() => setShowAlt(false)} />
-          )}
-
-          {/* Tag editor */}
-          {isEditingTags && (
-            <TrackEditPanel track={track} suggestion={suggestion} onClose={onEditTagsClose} />
           )}
         </div>
       )}
@@ -726,8 +794,7 @@ function TrackRow({
   )
 }
 
-// ── BulkEditPanel ─────────────────────────────────────────────────────────────
-
+// ── BulkEditPanel ──────────────────────────────────────────────────────────────
 function BulkEditPanel({
   selectedTracks,
   onClose,
@@ -736,17 +803,44 @@ function BulkEditPanel({
   onClose: () => void
 }) {
   const qc = useQueryClient()
-  const [fields, setFields] = useState<Record<string, string>>(
-    () => Object.fromEntries(BULK_EDIT_FIELDS.map(f => [f.key, '']))
-  )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [savedCount, setSavedCount] = useState<number | null>(null)
 
+  // Computed once on mount — key prop on the parent remounts when selection changes
+  const [{ initialValues, differsFields }] = useState(() => {
+    const initials: Record<string, string> = {}
+    const differs = new Set<string>()
+    for (const { key } of BULK_EDIT_FIELDS) {
+      const vals = selectedTracks.map(t => getTrackTagValue(t, key))
+      const first = vals[0] ?? ''
+      if (vals.length > 0 && vals.every(v => v === first)) {
+        initials[key] = first
+      } else {
+        initials[key] = ''
+        differs.add(key)
+      }
+    }
+    return { initialValues: initials, differsFields: differs }
+  })
+
+  const [currentValues, setCurrentValues] = useState<Record<string, string>>(
+    () => Object.fromEntries(BULK_EDIT_FIELDS.map(({ key }) => [key, initialValues[key]]))
+  )
+
+  function isDirty(key: string): boolean {
+    if (differsFields.has(key)) return currentValues[key].trim() !== ''
+    return currentValues[key] !== initialValues[key]
+  }
+
+  const hasDirty = BULK_EDIT_FIELDS.some(f => isDirty(f.key))
+
   async function handleApply() {
     const tags: Record<string, string> = {}
     for (const { key } of BULK_EDIT_FIELDS) {
-      if (fields[key].trim() !== '') tags[key] = fields[key].trim()
+      if (isDirty(key) && currentValues[key].trim() !== '') {
+        tags[key] = currentValues[key].trim()
+      }
     }
     if (Object.keys(tags).length === 0) return
 
@@ -775,8 +869,6 @@ function BulkEditPanel({
     qc.invalidateQueries({ queryKey: ['inbox-count'] })
   }
 
-  const noneFilledIn = BULK_EDIT_FIELDS.every(f => !fields[f.key].trim())
-
   return (
     <div className="border-t border-border bg-bg-surface flex-shrink-0 flex flex-col overflow-hidden" style={{ maxHeight: '45vh' }}>
       {/* Panel header */}
@@ -795,7 +887,7 @@ function BulkEditPanel({
           <button
             type="button"
             onClick={handleApply}
-            disabled={saving || noneFilledIn}
+            disabled={saving || !hasDirty}
             className="text-xs bg-accent text-bg-base rounded px-3 py-0.5 font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {saving ? 'Applying…' : 'Apply to Selected'}
@@ -821,18 +913,71 @@ function BulkEditPanel({
               <span className="text-text-muted text-[10px] uppercase tracking-wider">{label}</span>
               <input
                 type="text"
-                value={fields[key]}
-                placeholder="(unchanged)"
+                value={currentValues[key]}
+                placeholder={differsFields.has(key) ? '(multiple values)' : ''}
                 onChange={e => {
                   setSavedCount(null)
-                  setFields(prev => ({ ...prev, [key]: e.target.value }))
+                  setCurrentValues(prev => ({ ...prev, [key]: e.target.value }))
                 }}
-                className="bg-bg-base border border-border text-text-primary text-xs px-2 py-1 rounded focus:outline-none focus:border-accent font-mono placeholder:text-text-muted/40"
+                className={`bg-bg-base border text-text-primary text-xs px-2 py-1 rounded focus:outline-none focus:border-accent font-mono placeholder:text-text-muted/40 ${
+                  isDirty(key) ? 'border-accent/60' : 'border-border'
+                }`}
               />
             </label>
           ))}
         </div>
       </div>
+    </div>
+  )
+}
+
+// ── ContextMenu ────────────────────────────────────────────────────────────────
+function ContextMenu({
+  x, y,
+  onLookup,
+  onSearch,
+  onSelectAll,
+  onDeselectAll,
+  onCopyPath,
+}: {
+  x: number
+  y: number
+  onLookup: () => void
+  onSearch: () => void
+  onSelectAll: () => void
+  onDeselectAll: () => void
+  onCopyPath: () => void
+}) {
+  const items: ({ label: string; action: () => void } | null)[] = [
+    { label: 'Lookup',       action: onLookup },
+    { label: 'Search',       action: onSearch },
+    null,
+    { label: 'Select All',   action: onSelectAll },
+    { label: 'Deselect All', action: onDeselectAll },
+    null,
+    { label: 'Copy Path',    action: onCopyPath },
+  ]
+
+  return (
+    <div
+      style={{ position: 'fixed', left: x, top: y }}
+      className="z-[100] bg-bg-panel border border-border rounded shadow-lg py-1 min-w-[140px]"
+      onClick={e => e.stopPropagation()}
+      onContextMenu={e => e.preventDefault()}
+    >
+      {items.map((item, i) =>
+        item == null ? (
+          <div key={i} className="border-t border-border my-1" />
+        ) : (
+          <button
+            key={item.label}
+            onClick={item.action}
+            className="block w-full text-left px-3 py-1 text-xs text-text-primary hover:bg-bg-row-hover"
+          >
+            {item.label}
+          </button>
+        )
+      )}
     </div>
   )
 }
