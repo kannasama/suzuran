@@ -7,40 +7,49 @@ import type { TagSuggestion } from '../types/tagSuggestion'
 interface TagField {
   key: string
   label: string
-  fullWidth?: boolean
+  cols?: number
+}
+
+const COL_SPAN: Record<number, string> = {
+  1: 'col-span-1',
+  2: 'col-span-2',
+  3: 'col-span-3',
+  4: 'col-span-4',
+  6: 'col-span-6',
 }
 
 const EDIT_TAG_FIELDS: TagField[] = [
   // ── Basic ───────────────────────────────────────────────────────────────────
-  { key: 'title',                      label: 'Title' },
-  { key: 'artist',                     label: 'Artist' },
-  { key: 'albumartist',                label: 'Album Artist' },
-  { key: 'album',                      label: 'Album' },
-  { key: 'tracknumber',                label: 'Track #' },
-  { key: 'discnumber',                 label: 'Disc #' },
-  { key: 'date',                       label: 'Date' },
-  { key: 'genre',                      label: 'Genre' },
+  { key: 'title',                      label: 'Title',                 cols: 4 },
+  { key: 'date',                       label: 'Date',                  cols: 2 },
+  { key: 'artist',                     label: 'Artist',                cols: 3 },
+  { key: 'albumartist',                label: 'Album Artist',          cols: 3 },
+  { key: 'album',                      label: 'Album',                 cols: 4 },
+  { key: 'genre',                      label: 'Genre',                 cols: 2 },
+  // ── Track / disc ────────────────────────────────────────────────────────────
+  { key: 'tracknumber',                label: 'Track #',               cols: 1 },
+  { key: 'totaltracks',                label: 'Total Tracks',          cols: 1 },
+  { key: 'discnumber',                 label: 'Disc #',                cols: 1 },
+  { key: 'totaldiscs',                 label: 'Total Discs',           cols: 1 },
+  { key: 'releasecountry',             label: 'Release Country',       cols: 1 },
+  { key: 'originalyear',               label: 'Original Year',         cols: 1 },
   // ── Sort ────────────────────────────────────────────────────────────────────
-  { key: 'albumartistsort',            label: 'Album Artist Sort' },
-  { key: 'artistsort',                 label: 'Artist Sort' },
+  { key: 'albumartistsort',            label: 'Album Artist Sort',     cols: 3 },
+  { key: 'artistsort',                 label: 'Artist Sort',           cols: 3 },
   // ── Release metadata ────────────────────────────────────────────────────────
-  { key: 'releasetype',                label: 'Release Type' },
-  { key: 'releasestatus',              label: 'Release Status' },
-  { key: 'releasecountry',             label: 'Release Country' },
-  { key: 'originalyear',              label: 'Original Year' },
-  { key: 'originaldate',              label: 'Original Release Date' },
-  { key: 'totaltracks',               label: 'Total Tracks' },
-  { key: 'totaldiscs',                label: 'Total Discs' },
+  { key: 'releasetype',                label: 'Release Type',          cols: 2 },
+  { key: 'releasestatus',              label: 'Release Status',        cols: 2 },
+  { key: 'originaldate',               label: 'Original Release Date', cols: 2 },
   // ── Label / commercial ──────────────────────────────────────────────────────
-  { key: 'label',                      label: 'Record Label' },
-  { key: 'catalognumber',              label: 'Catalog #' },
-  { key: 'barcode',                    label: 'Barcode' },
-  // ── MusicBrainz IDs (full-width — UUIDs are too long for half-width) ────────
-  { key: 'musicbrainz_artistid',       label: 'MB Artist ID',         fullWidth: true },
-  { key: 'musicbrainz_albumartistid',  label: 'MB Release Artist ID', fullWidth: true },
-  { key: 'musicbrainz_releasegroupid', label: 'MB Release Group ID',  fullWidth: true },
-  { key: 'musicbrainz_releaseid',      label: 'MB Release ID',        fullWidth: true },
-  { key: 'musicbrainz_trackid',        label: 'MB Recording ID',      fullWidth: true },
+  { key: 'label',                      label: 'Record Label',          cols: 3 },
+  { key: 'catalognumber',              label: 'Catalog #',             cols: 2 },
+  { key: 'barcode',                    label: 'Barcode',               cols: 1 },
+  // ── MusicBrainz IDs ─────────────────────────────────────────────────────────
+  { key: 'musicbrainz_artistid',       label: 'MB Artist ID',          cols: 6 },
+  { key: 'musicbrainz_albumartistid',  label: 'MB Release Artist ID',  cols: 6 },
+  { key: 'musicbrainz_releasegroupid', label: 'MB Release Group ID',   cols: 6 },
+  { key: 'musicbrainz_releaseid',      label: 'MB Release ID',         cols: 6 },
+  { key: 'musicbrainz_trackid',        label: 'MB Recording ID',       cols: 6 },
 ]
 
 export function TrackEditPanel({
@@ -83,8 +92,6 @@ export function TrackEditPanel({
       }
       await tagSuggestionsApi.create({
         track_id: track.id,
-        // 'mb_search' is the closest valid source for manually-entered tags
-        // (backend schema has no 'manual' source yet)
         source: 'mb_search',
         suggested_tags: tags,
         confidence: 1.0,
@@ -101,11 +108,11 @@ export function TrackEditPanel({
 
   return (
     <div className="flex flex-col gap-2 p-3 bg-bg-panel border border-border rounded">
-      <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
-        {EDIT_TAG_FIELDS.map(({ key, label, fullWidth }) => (
+      <div className="grid grid-cols-6 gap-x-3 gap-y-1.5">
+        {EDIT_TAG_FIELDS.map(({ key, label, cols }) => (
           <label
             key={key}
-            className={`flex flex-col gap-0.5 ${fullWidth ? 'col-span-2' : ''}`}
+            className={`flex flex-col gap-0.5 ${COL_SPAN[cols ?? 2] ?? 'col-span-2'}`}
           >
             <span className="text-text-muted text-[10px] uppercase tracking-wider">{label}</span>
             <input

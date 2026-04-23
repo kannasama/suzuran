@@ -13,33 +13,42 @@ import type { Track } from '../types/track'
 import type { TagSuggestion } from '../types/tagSuggestion'
 
 // ── Tag field definitions ──────────────────────────────────────────────────────
-interface TagField { key: string; label: string; fullWidth?: boolean }
+interface TagField { key: string; label: string; cols?: number }
+
+const COL_SPAN: Record<number, string> = {
+  1: 'col-span-1',
+  2: 'col-span-2',
+  3: 'col-span-3',
+  4: 'col-span-4',
+  6: 'col-span-6',
+}
+
 const BULK_EDIT_FIELDS: TagField[] = [
-  { key: 'title',                      label: 'Title' },
-  { key: 'artist',                     label: 'Artist' },
-  { key: 'albumartist',                label: 'Album Artist' },
-  { key: 'album',                      label: 'Album' },
-  { key: 'tracknumber',                label: 'Track #' },
-  { key: 'discnumber',                 label: 'Disc #' },
-  { key: 'date',                       label: 'Date' },
-  { key: 'genre',                      label: 'Genre' },
-  { key: 'albumartistsort',            label: 'Album Artist Sort' },
-  { key: 'artistsort',                 label: 'Artist Sort' },
-  { key: 'releasetype',                label: 'Release Type' },
-  { key: 'releasestatus',              label: 'Release Status' },
-  { key: 'releasecountry',             label: 'Release Country' },
-  { key: 'originalyear',               label: 'Original Year' },
-  { key: 'originaldate',               label: 'Original Release Date' },
-  { key: 'totaltracks',                label: 'Total Tracks' },
-  { key: 'totaldiscs',                 label: 'Total Discs' },
-  { key: 'label',                      label: 'Record Label' },
-  { key: 'catalognumber',              label: 'Catalog #' },
-  { key: 'barcode',                    label: 'Barcode' },
-  { key: 'musicbrainz_artistid',       label: 'MB Artist ID',         fullWidth: true },
-  { key: 'musicbrainz_albumartistid',  label: 'MB Release Artist ID', fullWidth: true },
-  { key: 'musicbrainz_releasegroupid', label: 'MB Release Group ID',  fullWidth: true },
-  { key: 'musicbrainz_releaseid',      label: 'MB Release ID',        fullWidth: true },
-  { key: 'musicbrainz_trackid',        label: 'MB Recording ID',      fullWidth: true },
+  { key: 'title',                      label: 'Title',                 cols: 4 },
+  { key: 'date',                       label: 'Date',                  cols: 2 },
+  { key: 'artist',                     label: 'Artist',                cols: 3 },
+  { key: 'albumartist',                label: 'Album Artist',          cols: 3 },
+  { key: 'album',                      label: 'Album',                 cols: 4 },
+  { key: 'genre',                      label: 'Genre',                 cols: 2 },
+  { key: 'tracknumber',                label: 'Track #',               cols: 1 },
+  { key: 'totaltracks',                label: 'Total Tracks',          cols: 1 },
+  { key: 'discnumber',                 label: 'Disc #',                cols: 1 },
+  { key: 'totaldiscs',                 label: 'Total Discs',           cols: 1 },
+  { key: 'releasecountry',             label: 'Release Country',       cols: 1 },
+  { key: 'originalyear',               label: 'Original Year',         cols: 1 },
+  { key: 'albumartistsort',            label: 'Album Artist Sort',     cols: 3 },
+  { key: 'artistsort',                 label: 'Artist Sort',           cols: 3 },
+  { key: 'releasetype',                label: 'Release Type',          cols: 2 },
+  { key: 'releasestatus',              label: 'Release Status',        cols: 2 },
+  { key: 'originaldate',               label: 'Original Release Date', cols: 2 },
+  { key: 'label',                      label: 'Record Label',          cols: 3 },
+  { key: 'catalognumber',              label: 'Catalog #',             cols: 2 },
+  { key: 'barcode',                    label: 'Barcode',               cols: 1 },
+  { key: 'musicbrainz_artistid',       label: 'MB Artist ID',          cols: 6 },
+  { key: 'musicbrainz_albumartistid',  label: 'MB Release Artist ID',  cols: 6 },
+  { key: 'musicbrainz_releasegroupid', label: 'MB Release Group ID',   cols: 6 },
+  { key: 'musicbrainz_releaseid',      label: 'MB Release ID',         cols: 6 },
+  { key: 'musicbrainz_trackid',        label: 'MB Recording ID',       cols: 6 },
 ]
 
 // Fields promoted to top-level on Track; rest come from track.tags
@@ -59,12 +68,7 @@ function getTrackTagValue(track: Track, key: string): string {
 }
 
 // ── Column definitions ─────────────────────────────────────────────────────────
-interface ColumnDef {
-  key: string
-  label: string
-  headerLabel?: string
-  className: string
-}
+interface ColumnDef { key: string; label: string; headerLabel?: string; className: string }
 
 const COLUMNS: ColumnDef[] = [
   { key: 'num',      label: 'Track #',  headerLabel: '#',    className: 'w-6' },
@@ -110,8 +114,11 @@ function getFileExtension(path: string): string {
   return path.slice(dot + 1).toLowerCase()
 }
 
+// ── Sort / group types ─────────────────────────────────────────────────────────
 type GroupByKey = 'none' | 'album' | 'artist' | 'albumartist' | 'year' | 'genre'
-type SortByKey = 'tracknumber' | 'title' | 'artist' | 'album' | 'year' | 'duration' | 'bitrate'
+type SortByKey = 'tracknumber' | 'discnumber' | 'title' | 'artist' | 'album' | 'year' | 'duration' | 'bitrate'
+type SortLevel = { key: SortByKey; dir: 'asc' | 'desc' }
+type MenuItem = { label: string; action: () => void } | null
 
 const GROUP_OPTIONS: { key: GroupByKey; label: string }[] = [
   { key: 'none',        label: 'None' },
@@ -124,6 +131,7 @@ const GROUP_OPTIONS: { key: GroupByKey; label: string }[] = [
 
 const SORT_OPTIONS: { key: SortByKey; label: string }[] = [
   { key: 'tracknumber', label: 'Track #' },
+  { key: 'discnumber',  label: 'Disc #' },
   { key: 'title',       label: 'Title' },
   { key: 'artist',      label: 'Artist' },
   { key: 'album',       label: 'Album' },
@@ -144,18 +152,17 @@ export function LibraryPage() {
   const [visibleColumns, setVisibleColumns] = useState<Set<string>>(loadColumnVisibility)
   const [showColumnPicker, setShowColumnPicker] = useState(false)
   const pickerRef = useRef<HTMLDivElement>(null)
-  const [expandedTrackId, setExpandedTrackId] = useState<number | null>(null)
   const [searchTrack, setSearchTrack] = useState<Track | null>(null)
   const [selectedTrackIds, setSelectedTrackIds] = useState<Set<number>>(new Set())
   const lastSelectedIdRef = useRef<number | null>(null)
   const [groupBy, setGroupBy] = useState<GroupByKey>('none')
-  const [sortBy, setSortBy] = useState<SortByKey>('tracknumber')
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+  const [sortLevels, setSortLevels] = useState<SortLevel[]>([{ key: 'tracknumber', dir: 'asc' }])
   const [showGroupMenu, setShowGroupMenu] = useState(false)
   const [showSortMenu, setShowSortMenu] = useState(false)
   const groupMenuRef = useRef<HTMLDivElement>(null)
   const sortMenuRef = useRef<HTMLDivElement>(null)
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; track: Track } | null>(null)
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null)
+  const [altPanelTrackId, setAltPanelTrackId] = useState<number | null>(null)
 
   // ── Dismiss handlers ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -235,10 +242,14 @@ export function LibraryPage() {
 
   // ── Display groups + flat/selected track lists ────────────────────────────────
   const displayGroups = useMemo(() => {
-    function getTrackSortVal(t: Track): string | number {
-      switch (sortBy) {
+    function getTrackSortVal(t: Track, key: SortByKey): string | number {
+      switch (key) {
         case 'tracknumber': {
           const n = parseInt((t.tracknumber ?? '').split('/')[0], 10)
+          return isNaN(n) ? 9999 : n
+        }
+        case 'discnumber': {
+          const n = parseInt((t.discnumber ?? '').split('/')[0], 10)
           return isNaN(n) ? 9999 : n
         }
         case 'title':    return (t.title ?? '').toLowerCase()
@@ -254,9 +265,13 @@ export function LibraryPage() {
       return String(a).localeCompare(String(b))
     }
     function sortTracks(arr: Track[]): Track[] {
+      if (sortLevels.length === 0) return arr
       return [...arr].sort((a, b) => {
-        const c = cmp(getTrackSortVal(a), getTrackSortVal(b))
-        return sortDir === 'asc' ? c : -c
+        for (const { key, dir } of sortLevels) {
+          const c = cmp(getTrackSortVal(a, key), getTrackSortVal(b, key))
+          if (c !== 0) return dir === 'asc' ? c : -c
+        }
+        return 0
       })
     }
     function getGroupKey(t: Track): string {
@@ -281,18 +296,20 @@ export function LibraryPage() {
     return [...groupMap.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([key, gt]) => ({ key, tracks: sortTracks(gt) }))
-  }, [tracks, groupBy, sortBy, sortDir])
+  }, [tracks, groupBy, sortLevels])
 
-  // Flat list in display order — used for range selection
-  const flatTracks = useMemo(
-    () => displayGroups.flatMap(g => g.tracks),
-    [displayGroups]
-  )
+  const flatTracks = useMemo(() => displayGroups.flatMap(g => g.tracks), [displayGroups])
+  const selectedTracks = useMemo(() => tracks.filter((t: Track) => selectedTrackIds.has(t.id)), [tracks, selectedTrackIds])
 
-  const selectedTracks = useMemo(
-    () => tracks.filter((t: Track) => selectedTrackIds.has(t.id)),
-    [tracks, selectedTrackIds]
-  )
+  // ── Sort label ────────────────────────────────────────────────────────────────
+  function getSortLabel(): string {
+    if (sortLevels.length === 0) return 'Sort'
+    if (sortLevels.length === 1) {
+      const opt = SORT_OPTIONS.find(o => o.key === sortLevels[0].key)
+      return `Sort: ${opt?.label ?? sortLevels[0].key} ${sortLevels[0].dir === 'asc' ? '▲' : '▼'}`
+    }
+    return `Sort (${sortLevels.length})`
+  }
 
   // ── Selection handlers ────────────────────────────────────────────────────────
   function handleRowClick(id: number, e: React.MouseEvent) {
@@ -323,7 +340,6 @@ export function LibraryPage() {
     lastSelectedIdRef.current = id
   }
 
-  // Checkbox click = toggle without clearing others (ctrl-click equivalent)
   function handleCheckboxChange(id: number) {
     setSelectedTrackIds(prev => {
       const next = new Set(prev)
@@ -342,16 +358,52 @@ export function LibraryPage() {
     }
   }
 
-  // ── Context menu ──────────────────────────────────────────────────────────────
+  // ── Context menu builders ─────────────────────────────────────────────────────
   function handleContextMenu(e: React.MouseEvent, track: Track) {
     e.preventDefault()
     e.stopPropagation()
-    // Select only this track if it wasn't already selected
     if (!selectedTrackIds.has(track.id)) {
       setSelectedTrackIds(new Set([track.id]))
       lastSelectedIdRef.current = track.id
     }
-    setContextMenu({ x: e.clientX, y: e.clientY, track })
+    setContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      items: [
+        { label: 'Lookup', action: () => { lookupMutation.mutate(track.id); setContextMenu(null) } },
+        { label: 'Search', action: () => { setSearchTrack(track); setContextMenu(null) } },
+        null,
+        { label: 'Select All',   action: () => { toggleSelectAll(); setContextMenu(null) } },
+        { label: 'Deselect All', action: () => { setSelectedTrackIds(new Set()); setContextMenu(null) } },
+        null,
+        { label: 'Copy Path', action: () => { navigator.clipboard.writeText(track.relative_path); setContextMenu(null) } },
+      ],
+    })
+  }
+
+  function handleThreeDotsClick(track: Track, x: number, y: number) {
+    const suggestion = suggestionsByTrack[track.id]
+    const items: MenuItem[] = [
+      { label: 'Lookup', action: () => { lookupMutation.mutate(track.id); setContextMenu(null) } },
+      { label: 'Search', action: () => { setSearchTrack(track); setContextMenu(null) } },
+    ]
+    if (suggestion) {
+      const pct = Math.round(suggestion.confidence * 100)
+      items.push(null)
+      items.push({ label: `Accept (${pct}%)`, action: () => { acceptMutation.mutate(suggestion.id); setContextMenu(null) } })
+      items.push({ label: 'Reject',           action: () => { rejectMutation.mutate(suggestion.id); setContextMenu(null) } })
+    }
+    if (suggestion?.alternatives && suggestion.alternatives.length > 0) {
+      items.push(null)
+      items.push({
+        label: 'Alternatives…',
+        action: () => {
+          setAltPanelTrackId(prev => prev === track.id ? null : track.id)
+          setContextMenu(null)
+        },
+      })
+    }
+    setContextMenu({ x, y, items })
   }
 
   // ── Mutations ─────────────────────────────────────────────────────────────────
@@ -379,18 +431,12 @@ export function LibraryPage() {
       await client.post('/jobs/scan', { library_id: selectedLibraryId })
       setScanQueued(true)
       setTimeout(() => setScanQueued(false), 2000)
-    } catch {
-      // ignore
-    }
+    } catch { /* ignore */ }
   }
 
   function getToolbarLabel() {
-    if (selectedLibraryId == null && selectedVirtualLibraryId == null) {
-      return 'Select a library'
-    }
-    if (selectedVirtualLibraryId != null) {
-      return `Virtual Library #${selectedVirtualLibraryId}`
-    }
+    if (selectedLibraryId == null && selectedVirtualLibraryId == null) return 'Select a library'
+    if (selectedVirtualLibraryId != null) return `Virtual Library #${selectedVirtualLibraryId}`
     return selectedLibrary?.name ?? `Library #${selectedLibraryId}`
   }
 
@@ -404,9 +450,9 @@ export function LibraryPage() {
             isAdmin={isAdmin}
             isLibraryAdmin={isLibraryAdmin}
             selectedLibraryId={selectedLibraryId}
-            onSelectLibrary={id => { setSelectedLibraryId(id); setSelectedVirtualLibraryId(null) }}
+            onSelectLibrary={id => { setSelectedLibraryId(id); setSelectedVirtualLibraryId(null); setAltPanelTrackId(null) }}
             selectedVirtualLibraryId={selectedVirtualLibraryId}
-            onSelectVirtualLibrary={id => { setSelectedVirtualLibraryId(id); setSelectedLibraryId(null) }}
+            onSelectVirtualLibrary={id => { setSelectedVirtualLibraryId(id); setSelectedLibraryId(null); setAltPanelTrackId(null) }}
           />
         </aside>
 
@@ -414,15 +460,11 @@ export function LibraryPage() {
         <main className="flex flex-col flex-1 overflow-hidden">
           {/* Toolbar */}
           <div className="flex items-center gap-2 px-3 py-1.5 bg-bg-surface border-b border-border flex-shrink-0">
-            <span className="text-text-muted text-xs">
-              {getToolbarLabel()}
-            </span>
+            <span className="text-text-muted text-xs">{getToolbarLabel()}</span>
             <div className="ml-auto flex gap-1 items-center">
               {selectedLibraryId != null && selectedVirtualLibraryId == null && (
                 <>
-                  {scanQueued && (
-                    <span className="text-xs text-accent mr-1">Scan queued</span>
-                  )}
+                  {scanQueued && <span className="text-xs text-accent mr-1">Scan queued</span>}
                   <button
                     onClick={handleScan}
                     className="text-xs text-text-muted bg-bg-panel border border-border rounded px-2 py-0.5 hover:text-text-primary hover:border-accent"
@@ -432,7 +474,7 @@ export function LibraryPage() {
                   </button>
                 </>
               )}
-              {/* Group by dropdown */}
+              {/* Group by */}
               <div ref={groupMenuRef} className="relative">
                 <button
                   onClick={() => { setShowGroupMenu(v => !v); setShowSortMenu(false) }}
@@ -454,36 +496,64 @@ export function LibraryPage() {
                   </div>
                 )}
               </div>
-              {/* Sort by dropdown */}
+              {/* Sort by — multi-level */}
               <div ref={sortMenuRef} className="relative">
                 <button
                   onClick={() => { setShowSortMenu(v => !v); setShowGroupMenu(false) }}
                   className={`text-xs bg-bg-panel border rounded px-2 py-0.5 ${showSortMenu ? 'border-accent text-accent' : 'border-border text-text-muted hover:text-text-primary'}`}
                 >
-                  Sort: {SORT_OPTIONS.find(o => o.key === sortBy)?.label ?? 'Track #'} {sortDir === 'asc' ? '▲' : '▼'}
+                  {getSortLabel()} ▾
                 </button>
                 {showSortMenu && (
-                  <div className="absolute right-0 top-full mt-1 z-50 bg-bg-panel border border-border rounded shadow-lg py-1 min-w-[130px]">
-                    {SORT_OPTIONS.map(opt => (
-                      <button
-                        key={opt.key}
-                        onClick={() => {
-                          if (sortBy === opt.key) {
-                            setSortDir(d => d === 'asc' ? 'desc' : 'asc')
-                          } else {
-                            setSortBy(opt.key)
-                            setSortDir('asc')
-                          }
-                          setShowSortMenu(false)
-                        }}
-                        className={`block w-full text-left px-3 py-1 text-xs hover:bg-bg-row-hover ${sortBy === opt.key ? 'text-accent' : 'text-text-primary'}`}
-                      >
-                        {opt.label}
-                        {sortBy === opt.key && (
-                          <span className="ml-1 text-[10px]">{sortDir === 'asc' ? '▲' : '▼'}</span>
-                        )}
-                      </button>
+                  <div className="absolute right-0 top-full mt-1 z-50 bg-bg-panel border border-border rounded shadow-lg py-2 min-w-[230px]">
+                    {sortLevels.length === 0 && (
+                      <div className="px-3 py-1 text-xs text-text-muted italic">No sort applied</div>
+                    )}
+                    {sortLevels.map((level, i) => (
+                      <div key={i} className="flex items-center gap-1 px-2 py-0.5">
+                        <span className="text-[10px] text-text-muted w-3 shrink-0 text-center">{i + 1}</span>
+                        <select
+                          value={level.key}
+                          onChange={e => setSortLevels(prev => prev.map((l, li) =>
+                            li === i ? { ...l, key: e.target.value as SortByKey } : l
+                          ))}
+                          className="flex-1 bg-bg-base border border-border text-text-primary text-xs px-1.5 py-0.5 rounded focus:outline-none focus:border-accent cursor-pointer"
+                        >
+                          {SORT_OPTIONS.map(opt => (
+                            <option key={opt.key} value={opt.key}>{opt.label}</option>
+                          ))}
+                        </select>
+                        <button
+                          onClick={() => setSortLevels(prev => prev.map((l, li) =>
+                            li === i ? { ...l, dir: l.dir === 'asc' ? 'desc' : 'asc' } : l
+                          ))}
+                          className="text-xs border border-border text-text-muted rounded px-1.5 py-0.5 hover:border-accent w-7 text-center"
+                          title="Toggle direction"
+                        >
+                          {level.dir === 'asc' ? '▲' : '▼'}
+                        </button>
+                        <button
+                          onClick={() => setSortLevels(prev => prev.filter((_, li) => li !== i))}
+                          className="text-xs text-text-muted hover:text-destructive w-4 text-center"
+                          title="Remove level"
+                        >
+                          ×
+                        </button>
+                      </div>
                     ))}
+                    <div className="px-2 pt-1.5 mt-0.5 border-t border-border">
+                      <button
+                        onClick={() => {
+                          const usedKeys = new Set(sortLevels.map(l => l.key))
+                          const nextKey = SORT_OPTIONS.find(o => !usedKeys.has(o.key))?.key ?? 'tracknumber'
+                          setSortLevels(prev => [...prev, { key: nextKey, dir: 'asc' }])
+                        }}
+                        disabled={sortLevels.length >= SORT_OPTIONS.length}
+                        className="text-xs text-accent hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        + Add level
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -507,7 +577,6 @@ export function LibraryPage() {
                 {col.headerLabel ?? col.label}
               </span>
             ))}
-            {/* Column picker */}
             <div ref={pickerRef} className="relative w-6 shrink-0 ml-auto">
               <span
                 className="text-accent cursor-pointer hover:opacity-70 transition-opacity block text-center"
@@ -519,19 +588,14 @@ export function LibraryPage() {
               {showColumnPicker && (
                 <div className="absolute right-0 top-full mt-1 z-50 bg-bg-panel border border-border rounded shadow-lg py-1 min-w-[140px]">
                   {COLUMNS.map(col => (
-                    <label
-                      key={col.key}
-                      className="flex items-center gap-2 px-3 py-1 hover:bg-bg-row-hover cursor-pointer"
-                    >
+                    <label key={col.key} className="flex items-center gap-2 px-3 py-1 hover:bg-bg-row-hover cursor-pointer">
                       <input
                         type="checkbox"
                         checked={visibleColumns.has(col.key)}
                         onChange={() => toggleColumn(col.key)}
                         className="accent-[color:var(--accent)]"
                       />
-                      <span className="text-text-primary text-xs normal-case tracking-normal">
-                        {col.label}
-                      </span>
+                      <span className="text-text-primary text-xs normal-case tracking-normal">{col.label}</span>
                     </label>
                   ))}
                 </div>
@@ -539,7 +603,7 @@ export function LibraryPage() {
             </div>
           </div>
 
-          {/* Track list area + bulk edit panel */}
+          {/* Track list + bulk edit panel */}
           <div className="flex-1 flex flex-col overflow-hidden">
             <div className="flex-1 overflow-y-auto">
               {selectedLibraryId == null && selectedVirtualLibraryId == null ? (
@@ -569,16 +633,13 @@ export function LibraryPage() {
                         track={track}
                         visibleColumns={visibleColumns}
                         suggestion={suggestionsByTrack[track.id]}
-                        isExpanded={expandedTrackId === track.id}
                         isSelected={selectedTrackIds.has(track.id)}
+                        isShowingAlt={altPanelTrackId === track.id}
                         onRowClick={e => handleRowClick(track.id, e)}
                         onCheckboxChange={() => handleCheckboxChange(track.id)}
                         onContextMenu={e => handleContextMenu(e, track)}
-                        onToggleExpand={() => setExpandedTrackId(prev => prev === track.id ? null : track.id)}
-                        onSearch={() => setSearchTrack(track)}
-                        onLookup={() => lookupMutation.mutate(track.id)}
-                        onAccept={id => acceptMutation.mutate(id)}
-                        onReject={id => rejectMutation.mutate(id)}
+                        onThreeDotsClick={(x, y) => handleThreeDotsClick(track, x, y)}
+                        onCloseAlt={() => setAltPanelTrackId(null)}
                       />
                     ))}
                   </div>
@@ -608,15 +669,7 @@ export function LibraryPage() {
       )}
 
       {contextMenu && (
-        <ContextMenu
-          x={contextMenu.x}
-          y={contextMenu.y}
-          onLookup={() => { lookupMutation.mutate(contextMenu.track.id); setContextMenu(null) }}
-          onSearch={() => { setSearchTrack(contextMenu.track); setContextMenu(null) }}
-          onSelectAll={() => { toggleSelectAll(); setContextMenu(null) }}
-          onDeselectAll={() => { setSelectedTrackIds(new Set()); setContextMenu(null) }}
-          onCopyPath={() => { navigator.clipboard.writeText(contextMenu.track.relative_path); setContextMenu(null) }}
-        />
+        <ContextMenu x={contextMenu.x} y={contextMenu.y} items={contextMenu.items} />
       )}
     </div>
   )
@@ -627,38 +680,31 @@ function TrackRow({
   track,
   visibleColumns,
   suggestion,
-  isExpanded,
   isSelected,
+  isShowingAlt,
   onRowClick,
   onCheckboxChange,
   onContextMenu,
-  onToggleExpand,
-  onSearch,
-  onLookup,
-  onAccept,
-  onReject,
+  onThreeDotsClick,
+  onCloseAlt,
 }: {
   track: Track
   visibleColumns: Set<string>
   suggestion?: TagSuggestion
-  isExpanded: boolean
   isSelected: boolean
+  isShowingAlt: boolean
   onRowClick: (e: React.MouseEvent) => void
   onCheckboxChange: () => void
   onContextMenu: (e: React.MouseEvent) => void
-  onToggleExpand: () => void
-  onSearch: () => void
-  onLookup: () => void
-  onAccept: (id: number) => void
-  onReject: (id: number) => void
+  onThreeDotsClick: (x: number, y: number) => void
+  onCloseAlt: () => void
 }) {
   const pct = suggestion ? Math.round(suggestion.confidence * 100) : null
-  const [showAlt, setShowAlt] = useState(false)
 
   return (
     <>
       <div
-        className={`flex items-center gap-0 px-2 py-0.5 border-b border-border-subtle text-xs hover:bg-bg-row-hover cursor-pointer select-none ${isExpanded ? 'bg-bg-surface' : ''} ${isSelected ? 'bg-accent/10' : ''}`}
+        className={`flex items-center gap-0 px-2 py-0.5 border-b border-border-subtle text-xs hover:bg-bg-row-hover cursor-pointer select-none ${isSelected ? 'bg-accent/10' : ''}`}
         onClick={onRowClick}
         onContextMenu={onContextMenu}
       >
@@ -710,12 +756,12 @@ function TrackRow({
               </span>
             )}
             <button
-              onClick={e => { e.stopPropagation(); onToggleExpand() }}
-              className={`text-xs border rounded px-1.5 py-0.5 transition-colors ${
-                isExpanded
-                  ? 'border-accent text-accent'
-                  : 'border-border text-text-muted hover:border-accent hover:text-text-secondary'
-              }`}
+              onClick={e => {
+                e.stopPropagation()
+                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                onThreeDotsClick(rect.left, rect.bottom + 4)
+              }}
+              className="text-xs border border-border text-text-muted rounded px-1.5 py-0.5 hover:border-accent hover:text-text-secondary transition-colors"
               title="Track actions"
             >
               ⋯
@@ -724,70 +770,9 @@ function TrackRow({
         )}
       </div>
 
-      {isExpanded && (
-        <div className="border-b border-border bg-bg-surface px-3 py-2 flex flex-col gap-2">
-          {/* Action buttons */}
-          <div className="flex items-center gap-1.5">
-            <button
-              onClick={onLookup}
-              className="text-xs border border-border text-text-muted rounded px-2 py-0.5 hover:bg-bg-panel hover:border-accent hover:text-text-secondary"
-            >
-              Lookup
-            </button>
-            <button
-              onClick={onSearch}
-              className="text-xs border border-border text-text-muted rounded px-2 py-0.5 hover:bg-bg-panel hover:border-accent hover:text-text-secondary"
-            >
-              Search
-            </button>
-            {suggestion?.alternatives && suggestion.alternatives.length > 0 && (
-              <button
-                onClick={() => setShowAlt(v => !v)}
-                className={`text-xs border rounded px-2 py-0.5 ${
-                  showAlt
-                    ? 'border-accent text-accent'
-                    : 'border-border text-text-muted hover:bg-bg-panel hover:border-accent hover:text-text-secondary'
-                }`}
-              >
-                Alt…
-              </button>
-            )}
-          </div>
-
-          {/* Pending suggestion */}
-          {suggestion && (
-            <div className="flex flex-col gap-1">
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] uppercase tracking-wide text-text-muted font-mono">{suggestion.source}</span>
-                <span className={`text-[10px] font-mono ${pct! >= 80 ? 'text-green-400' : 'text-yellow-400'}`}>{pct}% confidence</span>
-                <button
-                  onClick={() => onAccept(suggestion.id)}
-                  className="text-xs bg-accent text-bg-base rounded px-2 py-0.5 hover:opacity-90 ml-auto"
-                >
-                  Accept
-                </button>
-                <button
-                  onClick={() => onReject(suggestion.id)}
-                  className="text-xs border border-border text-text-muted rounded px-2 py-0.5 hover:bg-bg-panel"
-                >
-                  Reject
-                </button>
-              </div>
-              <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[11px]">
-                {Object.entries(suggestion.suggested_tags).slice(0, 8).map(([k, v]) => (
-                  <div key={k} className="flex gap-1.5 min-w-0">
-                    <span className="text-text-muted font-mono w-28 shrink-0 truncate">{k}</span>
-                    <span className="text-text-secondary truncate">{v}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Alternatives picker */}
-          {showAlt && suggestion && (
-            <AlternativesPanel suggestion={suggestion} onClose={() => setShowAlt(false)} />
-          )}
+      {isShowingAlt && suggestion?.alternatives && suggestion.alternatives.length > 0 && (
+        <div className="border-b border-border bg-bg-surface px-3 py-2">
+          <AlternativesPanel suggestion={suggestion} onClose={onCloseAlt} />
         </div>
       )}
     </>
@@ -807,7 +792,7 @@ function BulkEditPanel({
   const [error, setError] = useState<string | null>(null)
   const [savedCount, setSavedCount] = useState<number | null>(null)
 
-  // Computed once on mount — key prop on the parent remounts when selection changes
+  // Computed once on mount — key prop remounts on selection change
   const [{ initialValues, differsFields }] = useState(() => {
     const initials: Record<string, string> = {}
     const differs = new Set<string>()
@@ -871,7 +856,6 @@ function BulkEditPanel({
 
   return (
     <div className="border-t border-border bg-bg-surface flex-shrink-0 flex flex-col overflow-hidden" style={{ maxHeight: '45vh' }}>
-      {/* Panel header */}
       <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border flex-shrink-0">
         <span className="text-xs text-text-muted">
           {selectedTracks.length} track{selectedTracks.length !== 1 ? 's' : ''} selected
@@ -880,9 +864,7 @@ function BulkEditPanel({
           {selectedTracks.map(t => t.title ?? t.relative_path.split('/').pop()).join(', ')}
         </span>
         <div className="ml-auto flex items-center gap-2">
-          {savedCount != null && (
-            <span className="text-xs text-green-400">Applied to {savedCount}</span>
-          )}
+          {savedCount != null && <span className="text-xs text-green-400">Applied to {savedCount}</span>}
           {error && <span className="text-xs text-destructive">{error}</span>}
           <button
             type="button"
@@ -902,13 +884,12 @@ function BulkEditPanel({
         </div>
       </div>
 
-      {/* Fields grid */}
       <div className="flex-1 overflow-y-auto px-3 py-2">
-        <div className="grid grid-cols-3 gap-x-3 gap-y-1.5">
-          {BULK_EDIT_FIELDS.map(({ key, label, fullWidth }) => (
+        <div className="grid grid-cols-6 gap-x-3 gap-y-1.5">
+          {BULK_EDIT_FIELDS.map(({ key, label, cols }) => (
             <label
               key={key}
-              className={`flex flex-col gap-0.5 ${fullWidth ? 'col-span-3' : ''}`}
+              className={`flex flex-col gap-0.5 ${COL_SPAN[cols ?? 2] ?? 'col-span-2'}`}
             >
               <span className="text-text-muted text-[10px] uppercase tracking-wider">{label}</span>
               <input
@@ -932,32 +913,7 @@ function BulkEditPanel({
 }
 
 // ── ContextMenu ────────────────────────────────────────────────────────────────
-function ContextMenu({
-  x, y,
-  onLookup,
-  onSearch,
-  onSelectAll,
-  onDeselectAll,
-  onCopyPath,
-}: {
-  x: number
-  y: number
-  onLookup: () => void
-  onSearch: () => void
-  onSelectAll: () => void
-  onDeselectAll: () => void
-  onCopyPath: () => void
-}) {
-  const items: ({ label: string; action: () => void } | null)[] = [
-    { label: 'Lookup',       action: onLookup },
-    { label: 'Search',       action: onSearch },
-    null,
-    { label: 'Select All',   action: onSelectAll },
-    { label: 'Deselect All', action: onDeselectAll },
-    null,
-    { label: 'Copy Path',    action: onCopyPath },
-  ]
-
+function ContextMenu({ x, y, items }: { x: number; y: number; items: MenuItem[] }) {
   return (
     <div
       style={{ position: 'fixed', left: x, top: y }}
