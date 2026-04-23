@@ -8,7 +8,7 @@ use crate::{
     error::AppError,
     jobs::cue_split::hash_file,
     models::EncodingProfile,
-    services::transcode_compat::is_compatible,
+    services::transcode_compat::{is_compatible, is_noop_transcode},
     tagger,
 };
 
@@ -114,7 +114,7 @@ async fn handle_transcode(
         .map(|e| e.to_lowercase())
         .unwrap_or_else(|| src_lib.format.clone());
 
-    // 7. Compatibility check — skip instead of fail for quality violations
+    // 7a. Compatibility check — skip instead of fail for quality violations
     if !is_compatible(
         &src_format,
         track.sample_rate,
@@ -125,6 +125,21 @@ async fn handle_transcode(
         return Ok(serde_json::json!({
             "status": "skipped",
             "reason": "source/profile combination not compatible (quality guard)",
+            "track_id": track_id,
+        }));
+    }
+
+    // 7b. No-op check — skip when source is already this format at this quality
+    if is_noop_transcode(
+        &src_format,
+        track.sample_rate,
+        track.bit_depth,
+        track.bitrate,
+        &profile,
+    ) {
+        return Ok(serde_json::json!({
+            "status": "skipped",
+            "reason": "source already satisfies profile format and quality",
             "track_id": track_id,
         }));
     }

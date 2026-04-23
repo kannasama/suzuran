@@ -44,7 +44,11 @@ pub fn read_tags(path: &Path) -> anyhow::Result<(HashMap<String, String>, AudioP
 
     let file_props = tagged_file.properties();
     props.duration_secs = Some(file_props.duration().as_secs_f64());
-    props.bitrate = file_props.overall_bitrate().map(|b| b as i64);
+    // overall_bitrate() returns None for MP4/M4A containers; fall back to
+    // audio_bitrate() which reads the bitrate from the container's stream info.
+    props.bitrate = file_props.overall_bitrate()
+        .or_else(|| file_props.audio_bitrate())
+        .map(|b| b as i64);
     props.sample_rate = file_props.sample_rate().map(|s| s as i64);
     props.channels = file_props.channels().map(|c| c as i64);
     props.bit_depth = file_props.bit_depth().map(|b| b as i64);

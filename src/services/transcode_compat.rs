@@ -139,6 +139,46 @@ pub fn quality_cmp(
     }
 }
 
+/// Returns true when the source file is already in the target format at equal or
+/// better quality — i.e. transcoding would produce no improvement.  Used to skip
+/// job creation rather than to gate quality.
+///
+/// Distinct from `is_compatible` (which only checks for upscaling violations):
+/// a source can be compatible without being a no-op if the codec differs.
+pub fn is_noop_transcode(
+    src_format: &str,
+    src_sample_rate: Option<i64>,
+    src_bit_depth: Option<i64>,
+    src_bitrate: Option<i64>,
+    profile: &EncodingProfile,
+) -> bool {
+    if !codecs_match(src_format, &profile.codec) {
+        return false;
+    }
+    let src_lossless = is_lossless(src_format);
+    match src_lossless {
+        false => {
+            // lossy → same lossy: skip when src bitrate meets or exceeds profile target
+            match (src_bitrate, profile.bitrate.as_deref().and_then(parse_bitrate_kbps)) {
+                (Some(src_br), Some(prof_br)) => src_br >= prof_br,
+                _ => false, // unknown bitrate — don't assume equal
+            }
+        }
+        true => {
+            // lossless → same lossless: skip when src doesn't need any conversion
+            let sr_ok = match (src_sample_rate, profile.sample_rate) {
+                (Some(src_sr), Some(prof_sr)) => src_sr >= prof_sr,
+                _ => true,
+            };
+            let bd_ok = match (src_bit_depth, profile.bit_depth) {
+                (Some(src_bd), Some(prof_bd)) => src_bd >= prof_bd,
+                _ => true,
+            };
+            sr_ok && bd_ok
+        }
+    }
+}
+
 /// Parse "256k", "1.5M", or bare "256" → kbps as i64.
 pub fn parse_bitrate_kbps(s: &str) -> Option<i64> {
     let s = s.trim().to_lowercase();
