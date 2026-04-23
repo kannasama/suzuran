@@ -413,3 +413,18 @@ to ask for a summary to be created.
 - Commit the summary update in the same commit as the task, or immediately after
 - The summary file is a running log that grows as work progresses, not a final artifact written
   at the end
+
+## 2026-04-23 — No plan doc when user says to go straight to implementation after brainstorming
+
+**Mistake:** After a completed brainstorming session where the user approved each design section
+and said "take it straight to implementation," a plan document was written before touching code.
+
+**Rule:** When the user says "take it straight to implementation" (or equivalent) after a
+brainstorming session, skip the plan doc entirely and write the code directly.
+
+**Why:** The brainstorming session is the plan. Writing a separate plan doc re-processes settled
+decisions, introduces gaps between the agreed design and the implementation, and adds overhead
+without value. The user called this out explicitly.
+
+**How to apply:** The "commit plan before implementing" rule does NOT apply when the user has
+explicitly said to skip to implementation after a completed brainstorm. Implement directly.
