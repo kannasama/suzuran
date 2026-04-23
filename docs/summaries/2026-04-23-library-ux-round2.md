@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-23  
 **Branch:** 0.6  
-**Commit:** ba38525
+**Commits:** ba38525 (UI), 7df32a4 (backend)
 
 ## What Was Implemented
 
@@ -35,15 +35,20 @@ All changes in `ui/src/pages/LibraryPage.tsx` and `ui/src/components/TrackEditPa
 - `COL_SPAN: Record<number, string>` lookup prevents Tailwind purging dynamic
   class strings
 
-## Root Causes Identified (not yet fixed)
+**m4a bitrate fix (item 3)**
+- `src/tagger/mod.rs`: `overall_bitrate()` returns `None` for M4A containers
+  (lofty doesn't synthesise bitrate from the MP4 container)
+- Fix: `.or_else(|| file_props.audio_bitrate())` — falls back to the AAC stream
+  bitrate stored in the MP4 container metadata
 
-**Item 3 — m4a bitrate shows as 0k:**  
-`src/tagger/mod.rs` calls `overall_bitrate()` which returns `None` for M4A
-containers. No fallback. Fix: use `audio_bitrate()` from lofty, or compute from
-file size / duration.
-
-**Item 4 — unnecessary transcode jobs for same-quality m4a:**  
-`src/services/transcode_compat.rs::is_compatible` has no same-codec/same-quality
-passthrough rule. Bitrate guard uses `src < prof` (not `src == prof`). When
-bitrate is NULL (item 3 bug), the guard is bypassed entirely — causing every
-m4a track to generate a transcode job even to its own profile quality.
+**Same-format/quality transcode skip (item 4)**
+- Root cause: `is_compatible` in `transcode_compat.rs` only guards against
+  upscaling; it has no "source already satisfies profile" check
+- The two bugs interact: NULL bitrate causes the lossy upscale guard to be
+  bypassed entirely (the `if let` doesn't match), so every m4a-192k source
+  passes `is_compatible` against an m4a-192k profile and gets a transcode job
+- Fix: new `is_noop_transcode()` function — returns true when codecs match AND
+  source quality meets or exceeds profile target
+- Wired into `transcode.rs` as a second skip check after `is_compatible`
+- `is_compatible` semantics preserved unchanged (upscaling guard only); existing
+  tests all pass
