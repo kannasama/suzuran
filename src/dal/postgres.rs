@@ -1156,6 +1156,19 @@ impl Store for PgStore {
         .map_err(AppError::Database)
     }
 
+    async fn list_track_links_by_library(&self, library_id: i64) -> Result<Vec<TrackLink>, AppError> {
+        sqlx::query_as::<_, TrackLink>(
+            "SELECT tl.source_track_id, tl.derived_track_id, tl.created_at
+             FROM track_links tl
+             JOIN tracks t ON t.id = tl.source_track_id
+             WHERE t.library_id = $1",
+        )
+        .bind(library_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(AppError::Database)
+    }
+
     async fn update_track_tags(&self, track_id: i64, tags: serde_json::Value) -> Result<(), AppError> {
         let result = sqlx::query(
             r#"UPDATE tracks SET

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { TopNav } from '../components/TopNav'
 import { LibraryTree } from '../components/LibraryTree'
@@ -628,19 +628,27 @@ export function LibraryPage() {
                       </div>
                     )}
                     {groupTracks.map((track: Track) => (
-                      <TrackRow
-                        key={track.id}
-                        track={track}
-                        visibleColumns={visibleColumns}
-                        suggestion={suggestionsByTrack[track.id]}
-                        isSelected={selectedTrackIds.has(track.id)}
-                        isShowingAlt={altPanelTrackId === track.id}
-                        onRowClick={e => handleRowClick(track.id, e)}
-                        onCheckboxChange={() => handleCheckboxChange(track.id)}
-                        onContextMenu={e => handleContextMenu(e, track)}
-                        onThreeDotsClick={(x, y) => handleThreeDotsClick(track, x, y)}
-                        onCloseAlt={() => setAltPanelTrackId(null)}
-                      />
+                      <React.Fragment key={track.id}>
+                        <TrackRow
+                          track={track}
+                          visibleColumns={visibleColumns}
+                          suggestion={suggestionsByTrack[track.id]}
+                          isSelected={selectedTrackIds.has(track.id)}
+                          isShowingAlt={altPanelTrackId === track.id}
+                          onRowClick={e => handleRowClick(track.id, e)}
+                          onCheckboxChange={() => handleCheckboxChange(track.id)}
+                          onContextMenu={e => handleContextMenu(e, track)}
+                          onThreeDotsClick={(x, y) => handleThreeDotsClick(track, x, y)}
+                          onCloseAlt={() => setAltPanelTrackId(null)}
+                        />
+                        {track.derived_tracks?.map(dt => (
+                          <DerivedTrackRow
+                            key={dt.id}
+                            derived={dt}
+                            visibleColumns={visibleColumns}
+                          />
+                        ))}
+                      </React.Fragment>
                     ))}
                   </div>
                 ))
@@ -776,6 +784,60 @@ function TrackRow({
         </div>
       )}
     </>
+  )
+}
+
+// ── DerivedTrackRow ────────────────────────────────────────────────────────────
+function DerivedTrackRow({
+  derived,
+  visibleColumns,
+}: {
+  derived: Track
+  visibleColumns: Set<string>
+}) {
+  // The first path segment is the derived-dir-name set by the library profile
+  // e.g. "aac-192k/Artist/Album/track.m4a" → "aac-192k"
+  const profileLabel = derived.relative_path.split('/')[0] ?? '—'
+
+  return (
+    <div className="flex items-center gap-0 px-2 py-0.5 border-b border-border-subtle text-xs text-text-muted/60 select-none bg-bg-base/40">
+      {/* indent + connector in place of checkbox */}
+      <span className="w-5 shrink-0 flex items-center justify-center text-text-muted/40 text-[10px]">↳</span>
+      {visibleColumns.has('num') && (
+        <span className="w-6 shrink-0" />
+      )}
+      {visibleColumns.has('title') && (
+        <span className="flex-[3] shrink-0 truncate pr-2 font-mono text-[10px] text-text-muted/70">
+          {profileLabel}
+        </span>
+      )}
+      {visibleColumns.has('artist') && (
+        <span className="flex-[2] shrink-0" />
+      )}
+      {visibleColumns.has('album') && (
+        <span className="flex-[2] shrink-0" />
+      )}
+      {visibleColumns.has('year') && (
+        <span className="w-10 shrink-0" />
+      )}
+      {visibleColumns.has('genre') && (
+        <span className="flex-1 shrink-0" />
+      )}
+      {visibleColumns.has('format') && (
+        <span className="w-12 shrink-0 font-mono uppercase text-[10px]">
+          {getFileExtension(derived.relative_path)}
+        </span>
+      )}
+      {visibleColumns.has('bitrate') && (
+        <span className="w-14 shrink-0 font-mono">{formatBitrate(derived.bitrate)}</span>
+      )}
+      {visibleColumns.has('duration') && (
+        <span className="w-10 shrink-0 font-mono">{formatDuration(derived.duration_secs)}</span>
+      )}
+      {visibleColumns.has('actions') && (
+        <span className="w-16 shrink-0" />
+      )}
+    </div>
   )
 }
 
