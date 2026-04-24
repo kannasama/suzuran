@@ -47,6 +47,7 @@ pub struct MbRelease {
     pub title: String,
     pub date: Option<String>,
     pub status: Option<String>,
+    pub country: Option<String>,
     #[serde(rename = "artist-credit")]
     pub artist_credit: Option<Vec<MbArtistCredit>>,
     #[serde(rename = "label-info")]
@@ -82,8 +83,18 @@ pub struct MbLabel {
 
 #[derive(Debug, serde::Deserialize)]
 pub struct MbReleaseGroup {
+    pub id: Option<String>,
     #[serde(rename = "primary-type")]
     pub primary_type: Option<String>,
+    #[serde(rename = "secondary-types")]
+    pub secondary_types: Option<Vec<String>>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct MbTrack {
+    pub position: Option<u32>,
+    pub number: Option<String>,
+    pub recording: Option<MbTrackRecording>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -91,6 +102,12 @@ pub struct MbMedia {
     pub position: Option<u32>,
     #[serde(rename = "track-count")]
     pub track_count: Option<u32>,
+    pub tracks: Option<Vec<MbTrack>>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct MbTrackRecording {
+    pub id: String,
 }
 
 impl Default for MusicBrainzService {
@@ -183,7 +200,7 @@ impl MusicBrainzService {
         let rec = self.client
             .get(&url)
             .query(&[
-                ("inc", "releases+release-groups+artist-credits+media"),
+                ("inc", "releases+release-groups+artist-credits+media+recordings"),
                 ("fmt", "json"),
             ])
             .send().await?
@@ -237,11 +254,28 @@ impl MusicBrainzService {
             }
         }
 
-        // Disc count
+        // Disc/track position from media; also yields totaldiscs, discnumber, tracknumber, totaltracks
         if let Some(media) = &release.media {
-            let disc_count = media.len();
-            if disc_count > 1 {
-                tags.insert("totaldiscs".into(), disc_count.to_string());
+            tags.insert("totaldiscs".into(), media.len().to_string());
+            'outer: for medium in media {
+                if let Some(tracks) = &medium.tracks {
+                    for track in tracks {
+                        if !track.recording.as_ref().map(|r| r.id == rec.id).unwrap_or(false) {
+                            continue;
+                        }
+                        let disc_num = medium.position.unwrap_or(1);
+                        tags.insert("discnumber".into(), disc_num.to_string());
+                        if let Some(pos) = track.position {
+                            tags.insert("tracknumber".into(), pos.to_string());
+                        } else if let Some(num) = &track.number {
+                            tags.insert("tracknumber".into(), num.clone());
+                        }
+                        if let Some(tc) = medium.track_count {
+                            tags.insert("totaltracks".into(), tc.to_string());
+                        }
+                        break 'outer;
+                    }
+                }
             }
         }
 
@@ -250,6 +284,33 @@ impl MusicBrainzService {
             if let Some(pt) = &rg.primary_type {
                 tags.insert("releasetype".into(), pt.to_lowercase());
             }
+            if let Some(rg_id) = &rg.id {
+                tags.insert("musicbrainz_releasegroupid".into(), rg_id.clone());
+            }
+        }
+
+        // Release status and country
+        if let Some(status) = &release.status {
+            tags.insert("releasestatus".into(), status.to_lowercase());
+        }
+        if let Some(country) = &release.country {
+            tags.insert("releasecountry".into(), country.clone());
+        }
+
+        // MusicBrainz artist IDs
+        if let Some(artist_id) = rec.artist_credit.as_ref()
+            .and_then(|ac| ac.first())
+            .and_then(|a| a.artist.as_ref())
+            .map(|ar| ar.id.clone())
+        {
+            tags.insert("musicbrainz_artistid".into(), artist_id);
+        }
+        if let Some(albumartist_id) = release.artist_credit.as_ref()
+            .and_then(|ac| ac.first())
+            .and_then(|a| a.artist.as_ref())
+            .map(|ar| ar.id.clone())
+        {
+            tags.insert("musicbrainz_albumartistid".into(), albumartist_id);
         }
 
         tags

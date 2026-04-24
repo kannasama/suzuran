@@ -102,6 +102,7 @@ async fn test_to_tag_map_extracts_fields() {
         title: "The Wall".into(),
         date: Some("1979".into()),
         status: None,
+        country: None,
         artist_credit: None,
         label_info: None,
         release_group: None,
@@ -139,6 +140,7 @@ async fn test_to_tag_map_uses_release_artist_for_albumartist() {
         title: "Now That's What I Call Music 1".into(),
         date: Some("1983".into()),
         status: None,
+        country: None,
         artist_credit: Some(vec![MbArtistCredit {
             name: Some("Various Artists".into()),
             artist: None,

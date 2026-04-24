@@ -51,6 +51,11 @@ const BULK_EDIT_FIELDS: TagField[] = [
   { key: 'musicbrainz_trackid',        label: 'MB Recording ID',       cols: 6 },
 ]
 
+// Quick label lookup for suggestion review pane — covers all keys emitted by to_tag_map
+const FIELD_LABELS: Record<string, string> = Object.fromEntries(
+  BULK_EDIT_FIELDS.map(({ key, label }) => [key, label])
+)
+
 // Fields promoted to top-level on Track; rest come from track.tags
 const TOP_LEVEL_TAG_FIELDS = new Set([
   'title', 'artist', 'albumartist', 'album', 'tracknumber', 'discnumber',
@@ -1291,7 +1296,9 @@ function SuggestionReviewPane({
             }`}
             onClick={() => toggleField(key)}
           >
-            <span className="text-[11px] text-text-muted font-mono truncate">{key}</span>
+            <span className="text-[11px] text-text-muted truncate" title={key}>
+              {FIELD_LABELS[key] ?? key}
+            </span>
             <span className="text-xs text-text-secondary truncate font-mono">{currentVal || <em className="not-italic text-text-muted/40">—</em>}</span>
             <span className={`text-xs truncate font-mono ${changed ? 'text-text-primary' : 'text-text-secondary'}`}>
               {suggestedVal || <em className="not-italic text-text-muted/40">—</em>}
