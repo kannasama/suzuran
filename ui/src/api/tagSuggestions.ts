@@ -26,8 +26,11 @@ export const tagSuggestionsApi = {
       .then(r => r.data.count);
   },
 
-  accept(id: number) {
-    return client.post(`/tag-suggestions/${id}/accept`);
+  accept(id: number, fields?: string[]) {
+    return client.post(
+      `/tag-suggestions/${id}/accept`,
+      fields ? { fields } : undefined,
+    );
   },
 
   reject(id: number) {

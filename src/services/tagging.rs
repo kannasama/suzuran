@@ -2,9 +2,13 @@ use crate::{dal::Store, error::AppError, models::TagSuggestion, tagger};
 use std::sync::Arc;
 
 /// Apply an accepted tag suggestion: merge tags, write to audio file via lofty, update DB.
+///
+/// When `fields` is `Some`, only the named fields from the suggestion are applied.
+/// When `fields` is `None`, all suggested fields are applied.
 pub async fn apply_suggestion(
     store: &Arc<dyn Store>,
     suggestion: &TagSuggestion,
+    fields: Option<&[String]>,
 ) -> Result<(), AppError> {
     let track = store
         .get_track(suggestion.track_id)
@@ -24,7 +28,7 @@ pub async fn apply_suggestion(
         track.relative_path.trim_start_matches('/')
     );
 
-    // Merge: start with existing tags, overlay suggestion tags
+    // Merge: start with existing tags, overlay suggestion tags (filtered by fields if provided)
     let mut merged = track
         .tags
         .as_object()
@@ -33,7 +37,10 @@ pub async fn apply_suggestion(
 
     if let Some(suggested_obj) = suggestion.suggested_tags.as_object() {
         for (k, v) in suggested_obj {
-            merged.insert(k.clone(), v.clone());
+            let include = fields.map_or(true, |f| f.iter().any(|field| field == k));
+            if include {
+                merged.insert(k.clone(), v.clone());
+            }
         }
     }
 

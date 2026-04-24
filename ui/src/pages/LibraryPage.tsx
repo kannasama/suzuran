@@ -769,7 +769,12 @@ export function LibraryPage() {
               <BulkEditPanel
                 key={[...selectedTrackIds].sort((a, b) => a - b).join(',')}
                 selectedTracks={selectedTracks}
+                suggestionsByTrack={suggestionsByTrack}
                 onClose={() => setSelectedTrackIds(new Set())}
+                onSuggestionActioned={() => {
+                  qc.invalidateQueries({ queryKey: ['tag-suggestions'] })
+                  qc.invalidateQueries({ queryKey: ['library-tracks', selectedLibraryId] })
+                }}
               />
             )}
           </div>
@@ -954,15 +959,23 @@ function DerivedTrackRow({
 // ── BulkEditPanel ──────────────────────────────────────────────────────────────
 function BulkEditPanel({
   selectedTracks,
+  suggestionsByTrack,
   onClose,
+  onSuggestionActioned,
 }: {
   selectedTracks: Track[]
+  suggestionsByTrack: Record<number, TagSuggestion>
   onClose: () => void
+  onSuggestionActioned: () => void
 }) {
   const qc = useQueryClient()
+  const [activeTab, setActiveTab] = useState<'edit' | 'suggestion'>('edit')
+  const [reviewTrackId, setReviewTrackId] = useState<number | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [savedCount, setSavedCount] = useState<number | null>(null)
+
+  const tracksWithSuggestions = selectedTracks.filter(t => suggestionsByTrack[t.id])
 
   // Computed once on mount — key prop remounts on selection change
   const [{ initialValues, differsFields }] = useState(() => {
@@ -1000,85 +1013,282 @@ function BulkEditPanel({
       }
     }
     if (Object.keys(tags).length === 0) return
-
-    setSaving(true)
-    setError(null)
-    setSavedCount(null)
+    setSaving(true); setError(null); setSavedCount(null)
     let count = 0
     const errors: string[] = []
     for (const track of selectedTracks) {
       try {
-        await tagSuggestionsApi.create({
-          track_id: track.id,
-          source: 'mb_search',
-          suggested_tags: tags,
-          confidence: 1.0,
-        })
+        await tagSuggestionsApi.create({ track_id: track.id, source: 'mb_search', suggested_tags: tags, confidence: 1.0 })
         count++
       } catch (e) {
         errors.push(e instanceof Error ? e.message : 'unknown error')
       }
     }
-    setSaving(false)
-    setSavedCount(count)
+    setSaving(false); setSavedCount(count)
     if (errors.length > 0) setError(`${errors.length} failed: ${errors[0]}`)
     qc.invalidateQueries({ queryKey: ['tag-suggestions'] })
     qc.invalidateQueries({ queryKey: ['ingest-count'] })
   }
 
+  // Resolve the track/suggestion to review (single-select or drill-in)
+  const reviewTrack = reviewTrackId != null
+    ? (selectedTracks.find(t => t.id === reviewTrackId) ?? null)
+    : selectedTracks.length === 1 && tracksWithSuggestions.length === 1
+      ? tracksWithSuggestions[0]
+      : null
+  const reviewSuggestion = reviewTrack ? suggestionsByTrack[reviewTrack.id] : null
+
   return (
     <div className="border-t border-border bg-bg-surface flex-shrink-0 flex flex-col overflow-hidden" style={{ maxHeight: '45vh' }}>
+      {/* Header */}
       <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border flex-shrink-0">
-        <span className="text-xs text-text-muted">
-          {selectedTracks.length} track{selectedTracks.length !== 1 ? 's' : ''} selected
-        </span>
-        <span className="text-[10px] text-text-muted truncate max-w-xs">
-          {selectedTracks.map(t => t.title ?? t.relative_path.split('/').pop()).join(', ')}
-        </span>
-        <div className="ml-auto flex items-center gap-2">
-          {savedCount != null && <span className="text-xs text-green-400">Applied to {savedCount}</span>}
-          {error && <span className="text-xs text-destructive">{error}</span>}
+        {/* Tabs */}
+        <div className="flex gap-0 border border-border rounded overflow-hidden shrink-0">
           <button
             type="button"
-            onClick={handleApply}
-            disabled={saving || !hasDirty}
-            className="text-xs bg-accent text-bg-base rounded px-3 py-0.5 font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+            onClick={() => setActiveTab('edit')}
+            className={`text-xs px-2.5 py-0.5 transition-colors ${activeTab === 'edit' ? 'bg-accent text-bg-base' : 'text-text-muted hover:text-text-primary'}`}
           >
-            {saving ? 'Applying…' : 'Apply to Selected'}
+            Edit
           </button>
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-xs text-text-muted hover:text-text-primary border border-border rounded px-2 py-0.5"
-          >
+          {tracksWithSuggestions.length > 0 && (
+            <button
+              type="button"
+              onClick={() => { setActiveTab('suggestion'); setReviewTrackId(null) }}
+              className={`text-xs px-2.5 py-0.5 border-l border-border transition-colors ${activeTab === 'suggestion' ? 'bg-accent text-bg-base' : 'text-text-muted hover:text-text-primary'}`}
+            >
+              Suggestion{tracksWithSuggestions.length > 1 ? ` (${tracksWithSuggestions.length})` : ''}
+            </button>
+          )}
+        </div>
+
+        <span className="text-xs text-text-muted">
+          {selectedTracks.length} track{selectedTracks.length !== 1 ? 's' : ''}
+        </span>
+
+        <div className="ml-auto flex items-center gap-2">
+          {activeTab === 'edit' && (
+            <>
+              {savedCount != null && <span className="text-xs text-green-400">Applied to {savedCount}</span>}
+              {error && <span className="text-xs text-destructive">{error}</span>}
+              <button
+                type="button"
+                onClick={handleApply}
+                disabled={saving || !hasDirty}
+                className="text-xs bg-accent text-bg-base rounded px-3 py-0.5 font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {saving ? 'Applying…' : 'Apply to Selected'}
+              </button>
+            </>
+          )}
+          <button type="button" onClick={onClose} className="text-xs text-text-muted hover:text-text-primary border border-border rounded px-2 py-0.5">
             Close
           </button>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-3 py-2">
-        <div className="grid grid-cols-6 gap-x-3 gap-y-1.5">
-          {BULK_EDIT_FIELDS.map(({ key, label, cols }) => (
-            <label
-              key={key}
-              className={`flex flex-col gap-0.5 ${COL_SPAN[cols ?? 2] ?? 'col-span-2'}`}
-            >
-              <span className="text-text-muted text-[10px] uppercase tracking-wider">{label}</span>
-              <input
-                type="text"
-                value={currentValues[key]}
-                placeholder={differsFields.has(key) ? '(multiple values)' : ''}
-                onChange={e => {
-                  setSavedCount(null)
-                  setCurrentValues(prev => ({ ...prev, [key]: e.target.value }))
-                }}
-                className={`bg-bg-base border text-text-primary text-xs px-2 py-1 rounded focus:outline-none focus:border-accent font-mono placeholder:text-text-muted/40 ${
-                  isDirty(key) ? 'border-accent/60' : 'border-border'
-                }`}
-              />
-            </label>
-          ))}
+      {/* Tab content */}
+      {activeTab === 'edit' ? (
+        <div className="flex-1 overflow-y-auto px-3 py-2">
+          <div className="grid grid-cols-6 gap-x-3 gap-y-1.5">
+            {BULK_EDIT_FIELDS.map(({ key, label, cols }) => (
+              <label key={key} className={`flex flex-col gap-0.5 ${COL_SPAN[cols ?? 2] ?? 'col-span-2'}`}>
+                <span className="text-text-muted text-[10px] uppercase tracking-wider">{label}</span>
+                <input
+                  type="text"
+                  value={currentValues[key]}
+                  placeholder={differsFields.has(key) ? '(multiple values)' : ''}
+                  onChange={e => { setSavedCount(null); setCurrentValues(prev => ({ ...prev, [key]: e.target.value })) }}
+                  className={`bg-bg-base border text-text-primary text-xs px-2 py-1 rounded focus:outline-none focus:border-accent font-mono placeholder:text-text-muted/40 ${isDirty(key) ? 'border-accent/60' : 'border-border'}`}
+                />
+              </label>
+            ))}
+          </div>
         </div>
+      ) : (
+        <div className="flex-1 overflow-y-auto">
+          {reviewTrack && reviewSuggestion ? (
+            /* Single-track diff view */
+            <SuggestionReviewPane
+              key={reviewTrack.id}
+              track={reviewTrack}
+              suggestion={reviewSuggestion}
+              showBack={reviewTrackId != null}
+              onBack={() => setReviewTrackId(null)}
+              onDone={() => { onSuggestionActioned(); setReviewTrackId(null) }}
+            />
+          ) : (
+            /* Multi-track list */
+            <div className="flex flex-col">
+              <div className="px-3 py-1.5 border-b border-border text-[11px] uppercase tracking-wider text-text-muted flex items-center">
+                <span className="flex-1">Track</span>
+                <span className="w-12 text-right">Match</span>
+              </div>
+              {tracksWithSuggestions.map(t => {
+                const s = suggestionsByTrack[t.id]
+                const pct = Math.round(s.confidence * 100)
+                return (
+                  <div key={t.id} className="flex items-center px-3 py-1.5 border-b border-border-subtle hover:bg-bg-row-hover">
+                    <span className="flex-1 text-xs text-text-primary truncate pr-2">{t.title ?? t.relative_path.split('/').pop()}</span>
+                    <span className={`text-xs font-mono mr-3 ${pct >= 80 ? 'text-green-400' : 'text-yellow-400'}`}>{pct}%</span>
+                    <button
+                      onClick={() => setReviewTrackId(t.id)}
+                      className="text-xs text-accent hover:opacity-80 shrink-0"
+                    >
+                      Review ▶
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── SuggestionReviewPane ───────────────────────────────────────────────────────
+function SuggestionReviewPane({
+  track,
+  suggestion,
+  showBack,
+  onBack,
+  onDone,
+}: {
+  track: Track
+  suggestion: TagSuggestion
+  showBack: boolean
+  onBack: () => void
+  onDone: () => void
+}) {
+  const qc = useQueryClient()
+
+  const diffItems = useMemo(() => {
+    const suggested = (suggestion.suggested_tags ?? {}) as Record<string, unknown>
+    return Object.entries(suggested).map(([key, raw]) => {
+      const suggestedVal = typeof raw === 'string' ? raw : String(raw ?? '')
+      const currentVal = getTrackTagValue(track, key)
+      return { key, currentVal, suggestedVal, changed: currentVal !== suggestedVal }
+    })
+  }, [suggestion, track])
+
+  const [checkedFields, setCheckedFields] = useState<Set<string>>(
+    () => new Set(diffItems.filter(d => d.changed).map(d => d.key))
+  )
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  function toggleField(key: string) {
+    setCheckedFields(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  const allChecked = diffItems.length > 0 && checkedFields.size === diffItems.length
+  const noneChecked = checkedFields.size === 0
+
+  async function handleAccept() {
+    setSaving(true); setError(null)
+    try {
+      const fields = [...checkedFields]
+      await tagSuggestionsApi.accept(suggestion.id, fields.length < diffItems.length ? fields : undefined)
+      qc.invalidateQueries({ queryKey: ['tag-suggestions'] })
+      onDone()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to accept')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleReject() {
+    setSaving(true); setError(null)
+    try {
+      await tagSuggestionsApi.reject(suggestion.id)
+      qc.invalidateQueries({ queryKey: ['tag-suggestions'] })
+      onDone()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to reject')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const pct = Math.round(suggestion.confidence * 100)
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Pane header */}
+      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border flex-shrink-0">
+        {showBack && (
+          <button onClick={onBack} className="text-xs text-text-muted hover:text-text-primary mr-1">
+            ← Back
+          </button>
+        )}
+        <span className="text-xs text-text-muted truncate flex-1">
+          {track.title ?? track.relative_path.split('/').pop()}
+        </span>
+        <span className={`text-xs font-mono ${pct >= 80 ? 'text-green-400' : 'text-yellow-400'}`}>{pct}% match</span>
+        <button
+          onClick={() => setCheckedFields(allChecked ? new Set() : new Set(diffItems.map(d => d.key)))}
+          className="text-xs text-text-muted hover:text-text-primary border border-border rounded px-2 py-0.5"
+        >
+          {allChecked ? 'None' : 'All'}
+        </button>
+        {error && <span className="text-xs text-destructive">{error}</span>}
+        <button
+          onClick={handleReject}
+          disabled={saving}
+          className="text-xs text-text-muted hover:text-destructive border border-border rounded px-2 py-0.5 disabled:opacity-40"
+        >
+          Reject
+        </button>
+        <button
+          onClick={handleAccept}
+          disabled={saving || noneChecked}
+          className="text-xs bg-accent text-bg-base rounded px-3 py-0.5 font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          {saving ? 'Saving…' : `Accept${checkedFields.size < diffItems.length ? ` (${checkedFields.size})` : ''}`}
+        </button>
+      </div>
+
+      {/* Field diff table */}
+      <div className="flex-1 overflow-y-auto">
+        {/* Column header */}
+        <div className="grid grid-cols-[1fr_1fr_1fr_1.5rem] gap-x-2 px-3 py-1 bg-bg-panel border-b border-border text-[10px] uppercase tracking-wider text-text-muted sticky top-0">
+          <span>Field</span>
+          <span>Current</span>
+          <span>Suggested</span>
+          <span />
+        </div>
+        {diffItems.map(({ key, currentVal, suggestedVal, changed }) => (
+          <div
+            key={key}
+            className={`grid grid-cols-[1fr_1fr_1fr_1.5rem] gap-x-2 px-3 py-1 border-b border-border-subtle items-center cursor-pointer select-none ${
+              changed ? 'hover:bg-bg-row-hover' : 'opacity-50'
+            }`}
+            onClick={() => toggleField(key)}
+          >
+            <span className="text-[11px] text-text-muted font-mono truncate">{key}</span>
+            <span className="text-xs text-text-secondary truncate font-mono">{currentVal || <em className="not-italic text-text-muted/40">—</em>}</span>
+            <span className={`text-xs truncate font-mono ${changed ? 'text-text-primary' : 'text-text-secondary'}`}>
+              {suggestedVal || <em className="not-italic text-text-muted/40">—</em>}
+            </span>
+            <span className="flex items-center justify-center">
+              <input
+                type="checkbox"
+                checked={checkedFields.has(key)}
+                onChange={() => toggleField(key)}
+                onClick={e => e.stopPropagation()}
+                className="accent-[color:var(--accent)] cursor-pointer"
+              />
+            </span>
+          </div>
+        ))}
       </div>
     </div>
   )
