@@ -1,54 +1,80 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { TopNav } from '../components/TopNav'
-import { LibraryTree } from '../components/LibraryTree'
-import { TrackEditPanel } from '../components/TrackEditPanel'
+import { LibraryTree, type BrowseMode } from '../components/LibraryTree'
 import { AlternativesPanel } from '../components/AlternativesPanel'
 import { IngestSearchDialog } from '../components/IngestSearchDialog'
 import { useAuth } from '../contexts/AuthContext'
-import { getLibrary, listLibraryTracks } from '../api/libraries'
+import { getLibrary, listLibraries, listLibraryTracks, triggerMaintenance } from '../api/libraries'
 import { enqueueLookup } from '../api/tracks'
 import { tagSuggestionsApi } from '../api/tagSuggestions'
+import { getJob } from '../api/jobs'
 import client from '../api/client'
 import type { Track } from '../types/track'
 import type { TagSuggestion } from '../types/tagSuggestion'
 
-// ── Bulk-edit field definitions (mirrors TrackEditPanel) ─────────────────────
-interface TagField { key: string; label: string; fullWidth?: boolean }
+// ── Tag field definitions ──────────────────────────────────────────────────────
+interface TagField { key: string; label: string; cols?: number }
+
+const COL_SPAN: Record<number, string> = {
+  1: 'col-span-1',
+  2: 'col-span-2',
+  3: 'col-span-3',
+  4: 'col-span-4',
+  6: 'col-span-6',
+}
+
 const BULK_EDIT_FIELDS: TagField[] = [
-  { key: 'title',                      label: 'Title' },
-  { key: 'artist',                     label: 'Artist' },
-  { key: 'albumartist',                label: 'Album Artist' },
-  { key: 'album',                      label: 'Album' },
-  { key: 'tracknumber',                label: 'Track #' },
-  { key: 'discnumber',                 label: 'Disc #' },
-  { key: 'date',                       label: 'Date' },
-  { key: 'genre',                      label: 'Genre' },
-  { key: 'albumartistsort',            label: 'Album Artist Sort' },
-  { key: 'artistsort',                 label: 'Artist Sort' },
-  { key: 'releasetype',                label: 'Release Type' },
-  { key: 'releasestatus',              label: 'Release Status' },
-  { key: 'releasecountry',             label: 'Release Country' },
-  { key: 'originalyear',              label: 'Original Year' },
-  { key: 'originaldate',              label: 'Original Release Date' },
-  { key: 'totaltracks',               label: 'Total Tracks' },
-  { key: 'totaldiscs',                label: 'Total Discs' },
-  { key: 'label',                      label: 'Record Label' },
-  { key: 'catalognumber',              label: 'Catalog #' },
-  { key: 'barcode',                    label: 'Barcode' },
-  { key: 'musicbrainz_artistid',       label: 'MB Artist ID',         fullWidth: true },
-  { key: 'musicbrainz_albumartistid',  label: 'MB Release Artist ID', fullWidth: true },
-  { key: 'musicbrainz_releasegroupid', label: 'MB Release Group ID',  fullWidth: true },
-  { key: 'musicbrainz_releaseid',      label: 'MB Release ID',        fullWidth: true },
-  { key: 'musicbrainz_trackid',        label: 'MB Recording ID',      fullWidth: true },
+  { key: 'title',                      label: 'Title',                 cols: 4 },
+  { key: 'date',                       label: 'Date',                  cols: 2 },
+  { key: 'artist',                     label: 'Artist',                cols: 3 },
+  { key: 'albumartist',                label: 'Album Artist',          cols: 3 },
+  { key: 'album',                      label: 'Album',                 cols: 4 },
+  { key: 'genre',                      label: 'Genre',                 cols: 2 },
+  { key: 'tracknumber',                label: 'Track #',               cols: 1 },
+  { key: 'totaltracks',                label: 'Total Tracks',          cols: 1 },
+  { key: 'discnumber',                 label: 'Disc #',                cols: 1 },
+  { key: 'totaldiscs',                 label: 'Total Discs',           cols: 1 },
+  { key: 'releasecountry',             label: 'Release Country',       cols: 1 },
+  { key: 'originalyear',               label: 'Original Year',         cols: 1 },
+  { key: 'albumartistsort',            label: 'Album Artist Sort',     cols: 3 },
+  { key: 'artistsort',                 label: 'Artist Sort',           cols: 3 },
+  { key: 'releasetype',                label: 'Release Type',          cols: 2 },
+  { key: 'releasestatus',              label: 'Release Status',        cols: 2 },
+  { key: 'originaldate',               label: 'Original Release Date', cols: 2 },
+  { key: 'label',                      label: 'Record Label',          cols: 3 },
+  { key: 'catalognumber',              label: 'Catalog #',             cols: 2 },
+  { key: 'barcode',                    label: 'Barcode',               cols: 1 },
+  { key: 'musicbrainz_artistid',       label: 'MB Artist ID',          cols: 6 },
+  { key: 'musicbrainz_albumartistid',  label: 'MB Release Artist ID',  cols: 6 },
+  { key: 'musicbrainz_releasegroupid', label: 'MB Release Group ID',   cols: 6 },
+  { key: 'musicbrainz_releaseid',      label: 'MB Release ID',         cols: 6 },
+  { key: 'musicbrainz_trackid',        label: 'MB Recording ID',       cols: 6 },
 ]
 
-interface ColumnDef {
-  key: string
-  label: string        // shown in the picker
-  headerLabel?: string // shown in the column header (falls back to label)
-  className: string
+// Quick label lookup for suggestion review pane — covers all keys emitted by to_tag_map
+const FIELD_LABELS: Record<string, string> = Object.fromEntries(
+  BULK_EDIT_FIELDS.map(({ key, label }) => [key, label])
+)
+
+// Fields promoted to top-level on Track; rest come from track.tags
+const TOP_LEVEL_TAG_FIELDS = new Set([
+  'title', 'artist', 'albumartist', 'album', 'tracknumber', 'discnumber',
+  'totaldiscs', 'totaltracks', 'date', 'genre', 'label', 'catalognumber',
+])
+
+function getTrackTagValue(track: Track, key: string): string {
+  if (TOP_LEVEL_TAG_FIELDS.has(key)) {
+    return (track as unknown as Record<string, string | undefined>)[key] ?? ''
+  }
+  const v = track.tags[key]
+  if (typeof v === 'string') return v
+  if (v != null) return String(v)
+  return ''
 }
+
+// ── Column definitions ─────────────────────────────────────────────────────────
+interface ColumnDef { key: string; label: string; headerLabel?: string; className: string }
 
 const COLUMNS: ColumnDef[] = [
   { key: 'num',      label: 'Track #',  headerLabel: '#',    className: 'w-6' },
@@ -58,7 +84,7 @@ const COLUMNS: ColumnDef[] = [
   { key: 'year',     label: 'Year',                          className: 'w-10' },
   { key: 'genre',    label: 'Genre',                         className: 'flex-1' },
   { key: 'format',   label: 'Format',                        className: 'w-12' },
-  { key: 'bitrate',  label: 'Bitrate',                       className: 'w-14' },
+  { key: 'bitrate',  label: 'Quality',                       className: 'w-24' },
   { key: 'duration', label: 'Duration', headerLabel: 'Time', className: 'w-10' },
   { key: 'actions',  label: 'Actions',                       className: 'w-16' },
 ]
@@ -83,9 +109,13 @@ function formatDuration(secs?: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
-function formatBitrate(bps?: number): string {
-  if (bps == null) return '—'
-  return `${Math.round(bps / 1000)}k`
+function formatQuality(bitrate?: number, bitDepth?: number, sampleRate?: number): string {
+  if (bitDepth != null) {
+    const khz = sampleRate != null ? (sampleRate / 1000).toFixed(sampleRate % 1000 === 0 ? 0 : 1) : null
+    return khz != null ? `${bitDepth}-bit / ${khz}kHz` : `${bitDepth}-bit`
+  }
+  if (bitrate != null) return `${bitrate}k`
+  return '—'
 }
 
 function getFileExtension(path: string): string {
@@ -93,6 +123,32 @@ function getFileExtension(path: string): string {
   if (dot === -1) return '—'
   return path.slice(dot + 1).toLowerCase()
 }
+
+// ── Sort / group types ─────────────────────────────────────────────────────────
+type GroupByKey = 'none' | 'album' | 'artist' | 'albumartist' | 'year' | 'genre'
+type SortByKey = 'tracknumber' | 'discnumber' | 'title' | 'artist' | 'album' | 'year' | 'duration' | 'bitrate'
+type SortLevel = { key: SortByKey; dir: 'asc' | 'desc' }
+type MenuItem = { label: string; action: () => void } | null
+
+const GROUP_OPTIONS: { key: GroupByKey; label: string }[] = [
+  { key: 'none',        label: 'None' },
+  { key: 'album',       label: 'Album' },
+  { key: 'artist',      label: 'Artist' },
+  { key: 'albumartist', label: 'Album Artist' },
+  { key: 'year',        label: 'Year' },
+  { key: 'genre',       label: 'Genre' },
+]
+
+const SORT_OPTIONS: { key: SortByKey; label: string }[] = [
+  { key: 'tracknumber', label: 'Track #' },
+  { key: 'discnumber',  label: 'Disc #' },
+  { key: 'title',       label: 'Title' },
+  { key: 'artist',      label: 'Artist' },
+  { key: 'album',       label: 'Album' },
+  { key: 'year',        label: 'Year' },
+  { key: 'duration',    label: 'Duration' },
+  { key: 'bitrate',     label: 'Bitrate' },
+]
 
 export function LibraryPage() {
   const { user } = useAuth()
@@ -103,15 +159,25 @@ export function LibraryPage() {
   const [selectedLibraryId, setSelectedLibraryId] = useState<number | null>(null)
   const [selectedVirtualLibraryId, setSelectedVirtualLibraryId] = useState<number | null>(null)
   const [scanQueued, setScanQueued] = useState(false)
+  const [maintenanceQueued, setMaintenanceQueued] = useState(false)
   const [visibleColumns, setVisibleColumns] = useState<Set<string>>(loadColumnVisibility)
   const [showColumnPicker, setShowColumnPicker] = useState(false)
   const pickerRef = useRef<HTMLDivElement>(null)
-  const [expandedTrackId, setExpandedTrackId] = useState<number | null>(null)
-  const [editingTagsTrackId, setEditingTagsTrackId] = useState<number | null>(null)
   const [searchTrack, setSearchTrack] = useState<Track | null>(null)
   const [selectedTrackIds, setSelectedTrackIds] = useState<Set<number>>(new Set())
   const lastSelectedIdRef = useRef<number | null>(null)
+  const [groupBy, setGroupBy] = useState<GroupByKey>('none')
+  const [sortLevels, setSortLevels] = useState<SortLevel[]>([{ key: 'tracknumber', dir: 'asc' }])
+  const [showGroupMenu, setShowGroupMenu] = useState(false)
+  const [showSortMenu, setShowSortMenu] = useState(false)
+  const groupMenuRef = useRef<HTMLDivElement>(null)
+  const sortMenuRef = useRef<HTMLDivElement>(null)
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null)
+  const [altPanelTrackId, setAltPanelTrackId] = useState<number | null>(null)
+  const [browseMode, setBrowseMode] = useState<BrowseMode | null>(null)
+  const [browseFilter, setBrowseFilter] = useState<string | null>(null)
 
+  // ── Dismiss handlers ──────────────────────────────────────────────────────────
   useEffect(() => {
     if (!showColumnPicker) return
     function handleMouseDown(e: MouseEvent) {
@@ -123,6 +189,32 @@ export function LibraryPage() {
     return () => document.removeEventListener('mousedown', handleMouseDown)
   }, [showColumnPicker])
 
+  useEffect(() => {
+    if (!showGroupMenu && !showSortMenu) return
+    function handleMouseDown(e: MouseEvent) {
+      if (showGroupMenu && groupMenuRef.current && !groupMenuRef.current.contains(e.target as Node)) {
+        setShowGroupMenu(false)
+      }
+      if (showSortMenu && sortMenuRef.current && !sortMenuRef.current.contains(e.target as Node)) {
+        setShowSortMenu(false)
+      }
+    }
+    document.addEventListener('mousedown', handleMouseDown)
+    return () => document.removeEventListener('mousedown', handleMouseDown)
+  }, [showGroupMenu, showSortMenu])
+
+  useEffect(() => {
+    if (!contextMenu) return
+    function handleClick() { setContextMenu(null) }
+    function handleScroll() { setContextMenu(null) }
+    document.addEventListener('click', handleClick)
+    document.addEventListener('scroll', handleScroll, true)
+    return () => {
+      document.removeEventListener('click', handleClick)
+      document.removeEventListener('scroll', handleScroll, true)
+    }
+  }, [contextMenu])
+
   function toggleColumn(key: string) {
     setVisibleColumns(prev => {
       const next = new Set(prev)
@@ -133,37 +225,18 @@ export function LibraryPage() {
     })
   }
 
-  const toggleSelectTrack = useCallback((id: number, shift: boolean, trackList: Track[]) => {
-    if (shift && lastSelectedIdRef.current != null) {
-      const ids = trackList.map(t => t.id)
-      const a = ids.indexOf(lastSelectedIdRef.current)
-      const b = ids.indexOf(id)
-      if (a !== -1 && b !== -1) {
-        const [lo, hi] = [Math.min(a, b), Math.max(a, b)]
-        setSelectedTrackIds(prev => {
-          const next = new Set(prev)
-          ids.slice(lo, hi + 1).forEach(rid => next.add(rid))
-          return next
-        })
-        return
-      }
-    }
-    setSelectedTrackIds(prev => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-    lastSelectedIdRef.current = id
-  }, [])
+  // ── Queries ───────────────────────────────────────────────────────────────────
+  const { data: libraries = [] } = useQuery({
+    queryKey: ['libraries'],
+    queryFn: listLibraries,
+  })
 
-  function toggleSelectAll() {
-    if (selectedTrackIds.size === tracks.length && tracks.length > 0) {
-      setSelectedTrackIds(new Set())
-    } else {
-      setSelectedTrackIds(new Set(tracks.map((t: Track) => t.id)))
-    }
-  }
+  // Auto-select default library on first load
+  useEffect(() => {
+    if (selectedLibraryId != null || selectedVirtualLibraryId != null) return
+    const def = libraries.find(l => l.is_default)
+    if (def) setSelectedLibraryId(def.id)
+  }, [libraries, selectedLibraryId, selectedVirtualLibraryId])
 
   const { data: selectedLibrary } = useQuery({
     queryKey: ['library', selectedLibraryId],
@@ -192,11 +265,209 @@ export function LibraryPage() {
     return map
   }, [suggestions])
 
+  // ── Browse helpers ─────────────────────────────────────────────────────────────
+  function getBrowseValue(track: Track, mode: BrowseMode): string {
+    switch (mode) {
+      case 'artist':      return track.artist ?? ''
+      case 'albumartist': return track.albumartist ?? ''
+      case 'album':       return track.album ?? ''
+      case 'genre':       return track.genre ?? ''
+    }
+  }
+
+  const BROWSE_LABEL: Record<BrowseMode, string> = {
+    artist:      'Artist',
+    albumartist: 'Album Artist',
+    album:       'Album',
+    genre:       'Genre',
+  }
+
+  const browseValues = useMemo(() => {
+    if (!browseMode) return []
+    const counts = new Map<string, number>()
+    for (const t of tracks) {
+      const v = getBrowseValue(t, browseMode) || '—'
+      counts.set(v, (counts.get(v) ?? 0) + 1)
+    }
+    return [...counts.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([val, count]) => ({ val, count }))
+  }, [tracks, browseMode])
+
+  // Tracks scoped by active browse filter (State C), or all tracks otherwise
+  const displayTracks = useMemo(() => {
+    if (!browseMode || !browseFilter) return tracks
+    return tracks.filter(t => (getBrowseValue(t, browseMode) || '—') === browseFilter)
+  }, [tracks, browseMode, browseFilter])
+
+  // ── Display groups + flat/selected track lists ────────────────────────────────
+  const displayGroups = useMemo(() => {
+    function getTrackSortVal(t: Track, key: SortByKey): string | number {
+      switch (key) {
+        case 'tracknumber': {
+          const n = parseInt((t.tracknumber ?? '').split('/')[0], 10)
+          return isNaN(n) ? 9999 : n
+        }
+        case 'discnumber': {
+          const n = parseInt((t.discnumber ?? '').split('/')[0], 10)
+          return isNaN(n) ? 9999 : n
+        }
+        case 'title':    return (t.title ?? '').toLowerCase()
+        case 'artist':   return (t.artist ?? '').toLowerCase()
+        case 'album':    return (t.album ?? '').toLowerCase()
+        case 'year':     return t.date?.slice(0, 4) ?? ''
+        case 'duration': return t.duration_secs ?? 0
+        case 'bitrate':  return t.bitrate ?? 0
+      }
+    }
+    function cmp(a: string | number, b: string | number): number {
+      if (typeof a === 'number' && typeof b === 'number') return a - b
+      return String(a).localeCompare(String(b))
+    }
+    function sortTracks(arr: Track[]): Track[] {
+      if (sortLevels.length === 0) return arr
+      return [...arr].sort((a, b) => {
+        for (const { key, dir } of sortLevels) {
+          const c = cmp(getTrackSortVal(a, key), getTrackSortVal(b, key))
+          if (c !== 0) return dir === 'asc' ? c : -c
+        }
+        return 0
+      })
+    }
+    function getGroupKey(t: Track): string {
+      switch (groupBy) {
+        case 'none':        return ''
+        case 'album':       return `${t.albumartist ?? t.artist ?? '—'} — ${t.album ?? 'Unknown Album'}`
+        case 'artist':      return t.artist ?? '—'
+        case 'albumartist': return t.albumartist ?? '—'
+        case 'year':        return t.date?.slice(0, 4) ?? '—'
+        case 'genre':       return t.genre ?? '—'
+      }
+    }
+    if (groupBy === 'none') {
+      return [{ key: '', tracks: sortTracks(displayTracks) }]
+    }
+    const groupMap = new Map<string, Track[]>()
+    for (const t of displayTracks) {
+      const k = getGroupKey(t)
+      if (!groupMap.has(k)) groupMap.set(k, [])
+      groupMap.get(k)!.push(t)
+    }
+    return [...groupMap.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, gt]) => ({ key, tracks: sortTracks(gt) }))
+  }, [tracks, groupBy, sortLevels])
+
+  const flatTracks = useMemo(() => displayGroups.flatMap(g => g.tracks), [displayGroups])
+  const selectedTracks = useMemo(() => tracks.filter((t: Track) => selectedTrackIds.has(t.id)), [tracks, selectedTrackIds])
+
+  // ── Sort label ────────────────────────────────────────────────────────────────
+  function getSortLabel(): string {
+    if (sortLevels.length === 0) return 'Sort'
+    if (sortLevels.length === 1) {
+      const opt = SORT_OPTIONS.find(o => o.key === sortLevels[0].key)
+      return `Sort: ${opt?.label ?? sortLevels[0].key} ${sortLevels[0].dir === 'asc' ? '▲' : '▼'}`
+    }
+    return `Sort (${sortLevels.length})`
+  }
+
+  // ── Selection handlers ────────────────────────────────────────────────────────
+  function handleRowClick(id: number, e: React.MouseEvent) {
+    if (e.shiftKey && lastSelectedIdRef.current != null) {
+      const ids = flatTracks.map(t => t.id)
+      const a = ids.indexOf(lastSelectedIdRef.current)
+      const b = ids.indexOf(id)
+      if (a !== -1 && b !== -1) {
+        const [lo, hi] = [Math.min(a, b), Math.max(a, b)]
+        setSelectedTrackIds(prev => {
+          const next = new Set(prev)
+          ids.slice(lo, hi + 1).forEach(rid => next.add(rid))
+          return next
+        })
+        return
+      }
+    }
+    if (e.ctrlKey || e.metaKey) {
+      setSelectedTrackIds(prev => {
+        const next = new Set(prev)
+        if (next.has(id)) next.delete(id)
+        else next.add(id)
+        return next
+      })
+    } else {
+      setSelectedTrackIds(new Set([id]))
+    }
+    lastSelectedIdRef.current = id
+  }
+
+  function handleCheckboxChange(id: number) {
+    setSelectedTrackIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+    lastSelectedIdRef.current = id
+  }
+
+  function toggleSelectAll() {
+    if (selectedTrackIds.size === displayTracks.length && displayTracks.length > 0) {
+      setSelectedTrackIds(new Set())
+    } else {
+      setSelectedTrackIds(new Set(displayTracks.map((t: Track) => t.id)))
+    }
+  }
+
+  // ── Context menu builders ─────────────────────────────────────────────────────
+  function handleContextMenu(e: React.MouseEvent, track: Track) {
+    e.preventDefault()
+    e.stopPropagation()
+    setContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      items: [
+        { label: 'Identify via AcoustID',       action: () => { lookupMutation.mutate(track.id); setContextMenu(null) } },
+        { label: 'Search MusicBrainz / FreeDB…', action: () => { setSearchTrack(track); setContextMenu(null) } },
+        null,
+        { label: 'Select All',   action: () => { toggleSelectAll(); setContextMenu(null) } },
+        { label: 'Deselect All', action: () => { setSelectedTrackIds(new Set()); setContextMenu(null) } },
+        null,
+        { label: 'Copy Path', action: () => { navigator.clipboard.writeText(track.relative_path); setContextMenu(null) } },
+      ],
+    })
+  }
+
+  function handleThreeDotsClick(track: Track, x: number, y: number) {
+    const suggestion = suggestionsByTrack[track.id]
+    const items: MenuItem[] = [
+      { label: 'Identify via AcoustID',        action: () => { lookupMutation.mutate(track.id); setContextMenu(null) } },
+      { label: 'Search MusicBrainz / FreeDB…', action: () => { setSearchTrack(track); setContextMenu(null) } },
+    ]
+    if (suggestion) {
+      const pct = Math.round(suggestion.confidence * 100)
+      items.push(null)
+      items.push({ label: `Accept (${pct}%)`, action: () => { acceptMutation.mutate(suggestion.id); setContextMenu(null) } })
+      items.push({ label: 'Reject',           action: () => { rejectMutation.mutate(suggestion.id); setContextMenu(null) } })
+    }
+    if (suggestion?.alternatives && suggestion.alternatives.length > 0) {
+      items.push(null)
+      items.push({
+        label: 'Alternatives…',
+        action: () => {
+          setAltPanelTrackId(prev => prev === track.id ? null : track.id)
+          setContextMenu(null)
+        },
+      })
+    }
+    setContextMenu({ x, y, items })
+  }
+
+  // ── Mutations ─────────────────────────────────────────────────────────────────
   const acceptMutation = useMutation({
     mutationFn: (id: number) => tagSuggestionsApi.accept(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['tag-suggestions'] })
-      qc.invalidateQueries({ queryKey: ['inbox-count'] })
+      qc.invalidateQueries({ queryKey: ['ingest-count'] })
       qc.invalidateQueries({ queryKey: ['library-tracks', selectedLibraryId] })
     },
   })
@@ -213,21 +484,45 @@ export function LibraryPage() {
   async function handleScan() {
     if (selectedLibraryId == null) return
     try {
-      await client.post('/jobs/scan', { library_id: selectedLibraryId })
+      const res = await client.post<{ id: number }>('/jobs/scan', { library_id: selectedLibraryId })
+      const jobId = res.data.id
       setScanQueued(true)
-      setTimeout(() => setScanQueued(false), 2000)
-    } catch {
-      // ignore — job queue errors are not critical UI failures
-    }
+      const libId = selectedLibraryId
+      const timer = setInterval(async () => {
+        try {
+          const job = await getJob(jobId)
+          if (job.status === 'completed' || job.status === 'failed') {
+            clearInterval(timer)
+            setScanQueued(false)
+            qc.invalidateQueries({ queryKey: ['library-tracks', libId] })
+          }
+        } catch { clearInterval(timer); setScanQueued(false) }
+      }, 2000)
+    } catch { /* ignore */ }
+  }
+
+  async function handleMaintenance() {
+    if (selectedLibraryId == null) return
+    try {
+      const { job_id } = await triggerMaintenance(selectedLibraryId)
+      setMaintenanceQueued(true)
+      const libId = selectedLibraryId
+      const timer = setInterval(async () => {
+        try {
+          const job = await getJob(job_id)
+          if (job.status === 'completed' || job.status === 'failed') {
+            clearInterval(timer)
+            setMaintenanceQueued(false)
+            qc.invalidateQueries({ queryKey: ['library-tracks', libId] })
+          }
+        } catch { clearInterval(timer); setMaintenanceQueued(false) }
+      }, 2000)
+    } catch { /* ignore */ }
   }
 
   function getToolbarLabel() {
-    if (selectedLibraryId == null && selectedVirtualLibraryId == null) {
-      return 'Select a library'
-    }
-    if (selectedVirtualLibraryId != null) {
-      return `Virtual Library #${selectedVirtualLibraryId}`
-    }
+    if (selectedLibraryId == null && selectedVirtualLibraryId == null) return 'Select a library'
+    if (selectedVirtualLibraryId != null) return `Virtual Library #${selectedVirtualLibraryId}`
     return selectedLibrary?.name ?? `Library #${selectedLibraryId}`
   }
 
@@ -241,9 +536,32 @@ export function LibraryPage() {
             isAdmin={isAdmin}
             isLibraryAdmin={isLibraryAdmin}
             selectedLibraryId={selectedLibraryId}
-            onSelectLibrary={id => { setSelectedLibraryId(id); setSelectedVirtualLibraryId(null) }}
+            onSelectLibrary={id => {
+              setSelectedLibraryId(id)
+              setSelectedVirtualLibraryId(null)
+              setAltPanelTrackId(null)
+              setBrowseMode(null)
+              setBrowseFilter(null)
+              setSelectedTrackIds(new Set())
+            }}
             selectedVirtualLibraryId={selectedVirtualLibraryId}
-            onSelectVirtualLibrary={id => { setSelectedVirtualLibraryId(id); setSelectedLibraryId(null) }}
+            onSelectVirtualLibrary={id => {
+              setSelectedVirtualLibraryId(id)
+              setSelectedLibraryId(null)
+              setAltPanelTrackId(null)
+              setBrowseMode(null)
+              setBrowseFilter(null)
+              setSelectedTrackIds(new Set())
+            }}
+            selectedBrowseMode={browseMode}
+            onSelectBrowseMode={(libraryId, mode) => {
+              setSelectedLibraryId(libraryId)
+              setSelectedVirtualLibraryId(null)
+              setAltPanelTrackId(null)
+              setBrowseMode(mode)
+              setBrowseFilter(null)
+              setSelectedTrackIds(new Set())
+            }}
           />
         </aside>
 
@@ -251,15 +569,12 @@ export function LibraryPage() {
         <main className="flex flex-col flex-1 overflow-hidden">
           {/* Toolbar */}
           <div className="flex items-center gap-2 px-3 py-1.5 bg-bg-surface border-b border-border flex-shrink-0">
-            <span className="text-text-muted text-xs">
-              {getToolbarLabel()}
-            </span>
+            <span className="text-text-muted text-xs">{getToolbarLabel()}</span>
             <div className="ml-auto flex gap-1 items-center">
               {selectedLibraryId != null && selectedVirtualLibraryId == null && (
                 <>
-                  {scanQueued && (
-                    <span className="text-xs text-accent mr-1">Scan queued</span>
-                  )}
+                  {scanQueued && <span className="text-xs text-accent mr-1">Scanning…</span>}
+                  {maintenanceQueued && <span className="text-xs text-accent mr-1">Maintaining…</span>}
                   <button
                     onClick={handleScan}
                     className="text-xs text-text-muted bg-bg-panel border border-border rounded px-2 py-0.5 hover:text-text-primary hover:border-accent"
@@ -267,24 +582,126 @@ export function LibraryPage() {
                   >
                     Scan
                   </button>
+                  <button
+                    onClick={handleMaintenance}
+                    className="text-xs text-text-muted bg-bg-panel border border-border rounded px-2 py-0.5 hover:text-text-primary hover:border-accent"
+                    title="Re-read audio properties and mark missing files as removed"
+                  >
+                    Maintain
+                  </button>
                 </>
               )}
-              <button className="text-xs text-text-muted bg-bg-panel border border-border rounded px-2 py-0.5 hover:border-border">
-                Group: None ▾
-              </button>
-              <button className="text-xs text-text-muted bg-bg-panel border border-border rounded px-2 py-0.5 hover:border-border">
-                Sort ▾
-              </button>
+              {/* Group by */}
+              <div ref={groupMenuRef} className="relative">
+                <button
+                  onClick={() => { setShowGroupMenu(v => !v); setShowSortMenu(false) }}
+                  className={`text-xs bg-bg-panel border rounded px-2 py-0.5 ${showGroupMenu ? 'border-accent text-accent' : 'border-border text-text-muted hover:text-text-primary'}`}
+                >
+                  Group: {GROUP_OPTIONS.find(o => o.key === groupBy)?.label ?? 'None'} ▾
+                </button>
+                {showGroupMenu && (
+                  <div className="absolute right-0 top-full mt-1 z-50 bg-bg-panel border border-border rounded shadow-lg py-1 min-w-[130px]">
+                    {GROUP_OPTIONS.map(opt => (
+                      <button
+                        key={opt.key}
+                        onClick={() => { setGroupBy(opt.key); setShowGroupMenu(false) }}
+                        className={`block w-full text-left px-3 py-1 text-xs hover:bg-bg-row-hover ${groupBy === opt.key ? 'text-accent' : 'text-text-primary'}`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {/* Sort by — multi-level */}
+              <div ref={sortMenuRef} className="relative">
+                <button
+                  onClick={() => { setShowSortMenu(v => !v); setShowGroupMenu(false) }}
+                  className={`text-xs bg-bg-panel border rounded px-2 py-0.5 ${showSortMenu ? 'border-accent text-accent' : 'border-border text-text-muted hover:text-text-primary'}`}
+                >
+                  {getSortLabel()} ▾
+                </button>
+                {showSortMenu && (
+                  <div className="absolute right-0 top-full mt-1 z-50 bg-bg-panel border border-border rounded shadow-lg py-2 min-w-[230px]">
+                    {sortLevels.length === 0 && (
+                      <div className="px-3 py-1 text-xs text-text-muted italic">No sort applied</div>
+                    )}
+                    {sortLevels.map((level, i) => (
+                      <div key={i} className="flex items-center gap-1 px-2 py-0.5">
+                        <span className="text-[10px] text-text-muted w-3 shrink-0 text-center">{i + 1}</span>
+                        <select
+                          value={level.key}
+                          onChange={e => setSortLevels(prev => prev.map((l, li) =>
+                            li === i ? { ...l, key: e.target.value as SortByKey } : l
+                          ))}
+                          className="flex-1 bg-bg-base border border-border text-text-primary text-xs px-1.5 py-0.5 rounded focus:outline-none focus:border-accent cursor-pointer"
+                        >
+                          {SORT_OPTIONS.map(opt => (
+                            <option key={opt.key} value={opt.key}>{opt.label}</option>
+                          ))}
+                        </select>
+                        <button
+                          onClick={() => setSortLevels(prev => prev.map((l, li) =>
+                            li === i ? { ...l, dir: l.dir === 'asc' ? 'desc' : 'asc' } : l
+                          ))}
+                          className="text-xs border border-border text-text-muted rounded px-1.5 py-0.5 hover:border-accent w-7 text-center"
+                          title="Toggle direction"
+                        >
+                          {level.dir === 'asc' ? '▲' : '▼'}
+                        </button>
+                        <button
+                          onClick={() => setSortLevels(prev => prev.filter((_, li) => li !== i))}
+                          className="text-xs text-text-muted hover:text-destructive w-4 text-center"
+                          title="Remove level"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                    <div className="px-2 pt-1.5 mt-0.5 border-t border-border">
+                      <button
+                        onClick={() => {
+                          const usedKeys = new Set(sortLevels.map(l => l.key))
+                          const nextKey = SORT_OPTIONS.find(o => !usedKeys.has(o.key))?.key ?? 'tracknumber'
+                          setSortLevels(prev => [...prev, { key: nextKey, dir: 'asc' }])
+                        }}
+                        disabled={sortLevels.length >= SORT_OPTIONS.length}
+                        className="text-xs text-accent hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        + Add level
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
-          {/* Column headers */}
+          {/* Breadcrumb bar — shown in State C (browse mode + filter active) */}
+          {browseMode && browseFilter && (
+            <div className="flex items-center gap-2 px-3 py-2 bg-bg-surface border-b border-border flex-shrink-0">
+              <span className="text-xs text-text-muted">{BROWSE_LABEL[browseMode]}</span>
+              <span className="text-text-muted/50 text-xs">›</span>
+              <span className="text-xs text-text-primary font-medium truncate">{browseFilter}</span>
+              <span className="text-xs text-text-muted/60 ml-1">({displayTracks.length})</span>
+              <button
+                onClick={() => setBrowseFilter(null)}
+                className="ml-auto text-xs text-text-muted hover:text-text-primary border border-border rounded px-2 py-0.5 shrink-0"
+                title="Back to browse list"
+              >
+                ← Back
+              </button>
+            </div>
+          )}
+
+          {/* Column headers — hidden in State B (browse list) */}
+          {!(browseMode && !browseFilter) && (
           <div className="flex items-center gap-0 px-2 py-1 bg-bg-panel border-b border-border text-text-muted text-[11px] uppercase tracking-wider flex-shrink-0">
             <span className="w-5 shrink-0 flex items-center">
               <input
                 type="checkbox"
-                checked={tracks.length > 0 && selectedTrackIds.size === tracks.length}
-                ref={el => { if (el) el.indeterminate = selectedTrackIds.size > 0 && selectedTrackIds.size < tracks.length }}
+                checked={displayTracks.length > 0 && selectedTrackIds.size === displayTracks.length}
+                ref={el => { if (el) el.indeterminate = selectedTrackIds.size > 0 && selectedTrackIds.size < displayTracks.length }}
                 onChange={toggleSelectAll}
                 className="accent-[color:var(--accent)] cursor-pointer"
                 title="Select all"
@@ -295,7 +712,6 @@ export function LibraryPage() {
                 {col.headerLabel ?? col.label}
               </span>
             ))}
-            {/* Column picker */}
             <div ref={pickerRef} className="relative w-6 shrink-0 ml-auto">
               <span
                 className="text-accent cursor-pointer hover:opacity-70 transition-opacity block text-center"
@@ -307,27 +723,23 @@ export function LibraryPage() {
               {showColumnPicker && (
                 <div className="absolute right-0 top-full mt-1 z-50 bg-bg-panel border border-border rounded shadow-lg py-1 min-w-[140px]">
                   {COLUMNS.map(col => (
-                    <label
-                      key={col.key}
-                      className="flex items-center gap-2 px-3 py-1 hover:bg-bg-row-hover cursor-pointer"
-                    >
+                    <label key={col.key} className="flex items-center gap-2 px-3 py-1 hover:bg-bg-row-hover cursor-pointer">
                       <input
                         type="checkbox"
                         checked={visibleColumns.has(col.key)}
                         onChange={() => toggleColumn(col.key)}
                         className="accent-[color:var(--accent)]"
                       />
-                      <span className="text-text-primary text-xs normal-case tracking-normal">
-                        {col.label}
-                      </span>
+                      <span className="text-text-primary text-xs normal-case tracking-normal">{col.label}</span>
                     </label>
                   ))}
                 </div>
               )}
             </div>
           </div>
+          )} {/* end column headers conditional */}
 
-          {/* Track list area + bulk edit panel */}
+          {/* Track list + bulk edit panel */}
           <div className="flex-1 flex flex-col overflow-hidden">
             <div className="flex-1 overflow-y-auto">
               {selectedLibraryId == null && selectedVirtualLibraryId == null ? (
@@ -338,45 +750,86 @@ export function LibraryPage() {
                 <div className="flex items-center justify-center h-32 text-text-muted text-xs">
                   Loading tracks…
                 </div>
+              ) : browseMode && !browseFilter ? (
+                /* ── State B: Browse value list ─────────────────────────────── */
+                <div>
+                  <div className="flex items-center px-3 py-1 bg-bg-panel border-b border-border text-[11px] uppercase tracking-wider text-text-muted flex-shrink-0">
+                    <span className="flex-1">{BROWSE_LABEL[browseMode]}</span>
+                    <span className="w-16 text-right">Tracks</span>
+                  </div>
+                  {browseValues.length === 0 ? (
+                    <div className="flex items-center justify-center h-32 text-text-muted text-xs">
+                      No tracks in this library. Run a scan to discover files.
+                    </div>
+                  ) : browseValues.map(({ val, count }) => (
+                    <div
+                      key={val}
+                      className="flex items-center px-3 py-1.5 border-b border-border-subtle hover:bg-bg-row-hover cursor-pointer select-none"
+                      onClick={() => setBrowseFilter(val)}
+                    >
+                      <span className="flex-1 text-xs text-text-primary truncate pr-4">{val}</span>
+                      <span className="text-xs text-text-muted font-mono w-16 text-right shrink-0">{count}</span>
+                    </div>
+                  ))}
+                </div>
               ) : tracks.length === 0 ? (
                 <div className="flex items-center justify-center h-32 text-text-muted text-xs">
                   No tracks in this library. Run a scan to discover files.
                 </div>
               ) : (
-                tracks.map((track: Track) => (
-                  <TrackRow
-                    key={track.id}
-                    track={track}
-                    visibleColumns={visibleColumns}
-                    suggestion={suggestionsByTrack[track.id]}
-                    isExpanded={expandedTrackId === track.id}
-                    isEditingTags={editingTagsTrackId === track.id}
-                    isSelected={selectedTrackIds.has(track.id)}
-                    onToggleSelect={(shift) => toggleSelectTrack(track.id, shift, tracks)}
-                    onToggleExpand={() => {
-                      setExpandedTrackId(prev => prev === track.id ? null : track.id)
-                      setEditingTagsTrackId(null)
-                    }}
-                    onSearch={() => setSearchTrack(track)}
-                    onLookup={() => lookupMutation.mutate(track.id)}
-                    onAccept={id => acceptMutation.mutate(id)}
-                    onReject={id => rejectMutation.mutate(id)}
-                    onEditTags={() => setEditingTagsTrackId(track.id)}
-                    onEditTagsClose={() => setEditingTagsTrackId(null)}
-                  />
+                /* ── State A / C: Track list ────────────────────────────────── */
+                displayGroups.map(({ key, tracks: groupTracks }) => (
+                  <div key={key || '__all__'}>
+                    {groupBy !== 'none' && (
+                      <div className="px-3 py-1 bg-bg-panel border-b border-border text-[11px] font-mono flex items-center gap-2 sticky top-0 z-10">
+                        <span className="text-text-primary font-medium">{key}</span>
+                        <span className="text-text-muted/60">{groupTracks.length}</span>
+                      </div>
+                    )}
+                    {groupTracks.map((track: Track) => (
+                      <React.Fragment key={track.id}>
+                        <TrackRow
+                          track={track}
+                          visibleColumns={visibleColumns}
+                          suggestion={suggestionsByTrack[track.id]}
+                          isSelected={selectedTrackIds.has(track.id)}
+                          isShowingAlt={altPanelTrackId === track.id}
+                          onRowClick={e => handleRowClick(track.id, e)}
+                          onCheckboxChange={() => handleCheckboxChange(track.id)}
+                          onContextMenu={e => handleContextMenu(e, track)}
+                          onThreeDotsClick={(x, y) => handleThreeDotsClick(track, x, y)}
+                          onCloseAlt={() => setAltPanelTrackId(null)}
+                        />
+                        {track.derived_tracks?.map(dt => (
+                          <DerivedTrackRow
+                            key={dt.id}
+                            derived={dt}
+                            visibleColumns={visibleColumns}
+                          />
+                        ))}
+                      </React.Fragment>
+                    ))}
+                  </div>
                 ))
               )}
             </div>
 
             {selectedTrackIds.size > 0 && (
               <BulkEditPanel
-                selectedTracks={tracks.filter((t: Track) => selectedTrackIds.has(t.id))}
+                key={[...selectedTrackIds].sort((a, b) => a - b).join(',')}
+                selectedTracks={selectedTracks}
+                suggestionsByTrack={suggestionsByTrack}
                 onClose={() => setSelectedTrackIds(new Set())}
+                onSuggestionActioned={() => {
+                  qc.invalidateQueries({ queryKey: ['tag-suggestions'] })
+                  qc.invalidateQueries({ queryKey: ['library-tracks', selectedLibraryId] })
+                }}
               />
             )}
           </div>
         </main>
       </div>
+
       {searchTrack != null && (
         <IngestSearchDialog
           track={searchTrack}
@@ -386,53 +839,52 @@ export function LibraryPage() {
           }}
         />
       )}
+
+      {contextMenu && (
+        <ContextMenu x={contextMenu.x} y={contextMenu.y} items={contextMenu.items} />
+      )}
     </div>
   )
 }
 
+// ── TrackRow ───────────────────────────────────────────────────────────────────
 function TrackRow({
   track,
   visibleColumns,
   suggestion,
-  isExpanded,
-  isEditingTags,
   isSelected,
-  onToggleSelect,
-  onToggleExpand,
-  onSearch,
-  onLookup,
-  onAccept,
-  onReject,
-  onEditTags,
-  onEditTagsClose,
+  isShowingAlt,
+  onRowClick,
+  onCheckboxChange,
+  onContextMenu,
+  onThreeDotsClick,
+  onCloseAlt,
 }: {
   track: Track
   visibleColumns: Set<string>
   suggestion?: TagSuggestion
-  isExpanded: boolean
-  isEditingTags: boolean
   isSelected: boolean
-  onToggleSelect: (shift: boolean) => void
-  onToggleExpand: () => void
-  onSearch: () => void
-  onLookup: () => void
-  onAccept: (id: number) => void
-  onReject: (id: number) => void
-  onEditTags: () => void
-  onEditTagsClose: () => void
+  isShowingAlt: boolean
+  onRowClick: (e: React.MouseEvent) => void
+  onCheckboxChange: () => void
+  onContextMenu: (e: React.MouseEvent) => void
+  onThreeDotsClick: (x: number, y: number) => void
+  onCloseAlt: () => void
 }) {
   const pct = suggestion ? Math.round(suggestion.confidence * 100) : null
-  const [showAlt, setShowAlt] = useState(false)
 
   return (
     <>
-      <div className={`flex items-center gap-0 px-2 py-0.5 border-b border-border-subtle text-xs hover:bg-bg-row-hover ${isExpanded ? 'bg-bg-surface' : ''} ${isSelected ? 'bg-accent/10' : ''}`}>
-        <span className="w-5 shrink-0 flex items-center">
+      <div
+        className={`flex items-center gap-0 px-2 py-0.5 border-b border-border-subtle text-xs hover:bg-bg-row-hover cursor-pointer select-none ${isSelected ? 'bg-accent/10' : ''}`}
+        onClick={onRowClick}
+        onContextMenu={onContextMenu}
+      >
+        <span className="w-5 shrink-0 flex items-center" onClick={e => e.stopPropagation()}>
           <input
             type="checkbox"
             checked={isSelected}
-            onChange={e => onToggleSelect(e.nativeEvent instanceof MouseEvent && (e.nativeEvent as MouseEvent).shiftKey)}
-            onClick={e => e.stopPropagation()}
+            onChange={onCheckboxChange}
             className="accent-[color:var(--accent)] cursor-pointer"
           />
         </span>
@@ -460,7 +912,7 @@ function TrackRow({
           </span>
         )}
         {visibleColumns.has('bitrate') && (
-          <span className="w-14 shrink-0 text-text-muted font-mono">{formatBitrate(track.bitrate)}</span>
+          <span className="w-24 shrink-0 text-text-muted font-mono text-[11px]">{formatQuality(track.bitrate, track.bit_depth, track.sample_rate)}</span>
         )}
         {visibleColumns.has('duration') && (
           <span className="w-10 shrink-0 text-text-muted font-mono">{formatDuration(track.duration_secs)}</span>
@@ -476,12 +928,12 @@ function TrackRow({
               </span>
             )}
             <button
-              onClick={onToggleExpand}
-              className={`text-xs border rounded px-1.5 py-0.5 transition-colors ${
-                isExpanded
-                  ? 'border-accent text-accent'
-                  : 'border-border text-text-muted hover:border-accent hover:text-text-secondary'
-              }`}
+              onClick={e => {
+                e.stopPropagation()
+                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                onThreeDotsClick(rect.left, rect.bottom + 4)
+              }}
+              className="text-xs border border-border text-text-muted rounded px-1.5 py-0.5 hover:border-accent hover:text-text-secondary transition-colors"
               title="Track actions"
             >
               ⋯
@@ -490,198 +942,448 @@ function TrackRow({
         )}
       </div>
 
-      {isExpanded && (
-        <div className="border-b border-border bg-bg-surface px-3 py-2 flex flex-col gap-2">
-          {/* Action buttons */}
-          <div className="flex items-center gap-1.5">
-            <button
-              onClick={onLookup}
-              className="text-xs border border-border text-text-muted rounded px-2 py-0.5 hover:bg-bg-panel hover:border-accent hover:text-text-secondary"
-            >
-              Lookup
-            </button>
-            <button
-              onClick={onSearch}
-              className="text-xs border border-border text-text-muted rounded px-2 py-0.5 hover:bg-bg-panel hover:border-accent hover:text-text-secondary"
-            >
-              Search
-            </button>
-            <button
-              onClick={isEditingTags ? onEditTagsClose : onEditTags}
-              className={`text-xs border rounded px-2 py-0.5 ${
-                isEditingTags
-                  ? 'border-accent text-accent'
-                  : 'border-border text-text-muted hover:bg-bg-panel hover:border-accent hover:text-text-secondary'
-              }`}
-            >
-              Edit Tags
-            </button>
-            {suggestion?.alternatives && suggestion.alternatives.length > 0 && (
-              <button
-                onClick={() => setShowAlt(v => !v)}
-                className={`text-xs border rounded px-2 py-0.5 ${
-                  showAlt
-                    ? 'border-accent text-accent'
-                    : 'border-border text-text-muted hover:bg-bg-panel hover:border-accent hover:text-text-secondary'
-                }`}
-              >
-                Alt…
-              </button>
-            )}
-          </div>
-
-          {/* Pending suggestion */}
-          {suggestion && !isEditingTags && (
-            <div className="flex flex-col gap-1">
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] uppercase tracking-wide text-text-muted font-mono">{suggestion.source}</span>
-                <span className={`text-[10px] font-mono ${pct! >= 80 ? 'text-green-400' : 'text-yellow-400'}`}>{pct}% confidence</span>
-                <button
-                  onClick={() => onAccept(suggestion.id)}
-                  className="text-xs bg-accent text-bg-base rounded px-2 py-0.5 hover:opacity-90 ml-auto"
-                >
-                  Accept
-                </button>
-                <button
-                  onClick={() => onReject(suggestion.id)}
-                  className="text-xs border border-border text-text-muted rounded px-2 py-0.5 hover:bg-bg-panel"
-                >
-                  Reject
-                </button>
-              </div>
-              <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[11px]">
-                {Object.entries(suggestion.suggested_tags).slice(0, 8).map(([k, v]) => (
-                  <div key={k} className="flex gap-1.5 min-w-0">
-                    <span className="text-text-muted font-mono w-28 shrink-0 truncate">{k}</span>
-                    <span className="text-text-secondary truncate">{v}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Alternatives picker */}
-          {showAlt && suggestion && !isEditingTags && (
-            <AlternativesPanel suggestion={suggestion} onClose={() => setShowAlt(false)} />
-          )}
-
-          {/* Tag editor */}
-          {isEditingTags && (
-            <TrackEditPanel track={track} suggestion={suggestion} onClose={onEditTagsClose} />
-          )}
+      {isShowingAlt && suggestion?.alternatives && suggestion.alternatives.length > 0 && (
+        <div className="border-b border-border bg-bg-surface px-3 py-2">
+          <AlternativesPanel suggestion={suggestion} onClose={onCloseAlt} />
         </div>
       )}
     </>
   )
 }
 
-// ── BulkEditPanel ─────────────────────────────────────────────────────────────
+// ── DerivedTrackRow ────────────────────────────────────────────────────────────
+function DerivedTrackRow({
+  derived,
+  visibleColumns,
+}: {
+  derived: Track
+  visibleColumns: Set<string>
+}) {
+  // The first path segment is the derived-dir-name set by the library profile
+  // e.g. "aac-192k/Artist/Album/track.m4a" → "aac-192k"
+  const profileLabel = derived.relative_path.split('/')[0] ?? '—'
 
+  return (
+    <div className="flex items-center gap-0 px-2 py-0.5 border-b border-border-subtle text-xs text-text-muted/60 select-none bg-bg-base/40">
+      {/* indent + connector in place of checkbox */}
+      <span className="w-5 shrink-0 flex items-center justify-center text-text-muted/40 text-[10px]">↳</span>
+      {visibleColumns.has('num') && (
+        <span className="w-6 shrink-0" />
+      )}
+      {visibleColumns.has('title') && (
+        <span className="flex-[3] shrink-0 truncate pr-2 font-mono text-[10px] text-text-muted/70">
+          {profileLabel}
+        </span>
+      )}
+      {visibleColumns.has('artist') && (
+        <span className="flex-[2] shrink-0" />
+      )}
+      {visibleColumns.has('album') && (
+        <span className="flex-[2] shrink-0" />
+      )}
+      {visibleColumns.has('year') && (
+        <span className="w-10 shrink-0" />
+      )}
+      {visibleColumns.has('genre') && (
+        <span className="flex-1 shrink-0" />
+      )}
+      {visibleColumns.has('format') && (
+        <span className="w-12 shrink-0 font-mono uppercase text-[10px]">
+          {getFileExtension(derived.relative_path)}
+        </span>
+      )}
+      {visibleColumns.has('bitrate') && (
+        <span className="w-24 shrink-0 font-mono text-[11px]">{formatQuality(derived.bitrate, derived.bit_depth, derived.sample_rate)}</span>
+      )}
+      {visibleColumns.has('duration') && (
+        <span className="w-10 shrink-0 font-mono">{formatDuration(derived.duration_secs)}</span>
+      )}
+      {visibleColumns.has('actions') && (
+        <span className="w-16 shrink-0" />
+      )}
+    </div>
+  )
+}
+
+// ── BulkEditPanel ──────────────────────────────────────────────────────────────
 function BulkEditPanel({
   selectedTracks,
+  suggestionsByTrack,
   onClose,
+  onSuggestionActioned,
 }: {
   selectedTracks: Track[]
+  suggestionsByTrack: Record<number, TagSuggestion>
   onClose: () => void
+  onSuggestionActioned: () => void
 }) {
   const qc = useQueryClient()
-  const [fields, setFields] = useState<Record<string, string>>(
-    () => Object.fromEntries(BULK_EDIT_FIELDS.map(f => [f.key, '']))
-  )
+  const [activeTab, setActiveTab] = useState<'edit' | 'suggestion'>('edit')
+  const [reviewTrackId, setReviewTrackId] = useState<number | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [savedCount, setSavedCount] = useState<number | null>(null)
 
+  const tracksWithSuggestions = selectedTracks.filter(t => suggestionsByTrack[t.id])
+
+  // Computed once on mount — key prop remounts on selection change
+  const [{ initialValues, differsFields }] = useState(() => {
+    const initials: Record<string, string> = {}
+    const differs = new Set<string>()
+    for (const { key } of BULK_EDIT_FIELDS) {
+      const vals = selectedTracks.map(t => getTrackTagValue(t, key))
+      const first = vals[0] ?? ''
+      if (vals.length > 0 && vals.every(v => v === first)) {
+        initials[key] = first
+      } else {
+        initials[key] = ''
+        differs.add(key)
+      }
+    }
+    return { initialValues: initials, differsFields: differs }
+  })
+
+  const [currentValues, setCurrentValues] = useState<Record<string, string>>(
+    () => Object.fromEntries(BULK_EDIT_FIELDS.map(({ key }) => [key, initialValues[key]]))
+  )
+
+  function isDirty(key: string): boolean {
+    if (differsFields.has(key)) return currentValues[key].trim() !== ''
+    return currentValues[key] !== initialValues[key]
+  }
+
+  const hasDirty = BULK_EDIT_FIELDS.some(f => isDirty(f.key))
+
   async function handleApply() {
     const tags: Record<string, string> = {}
     for (const { key } of BULK_EDIT_FIELDS) {
-      if (fields[key].trim() !== '') tags[key] = fields[key].trim()
+      if (isDirty(key) && currentValues[key].trim() !== '') {
+        tags[key] = currentValues[key].trim()
+      }
     }
     if (Object.keys(tags).length === 0) return
-
-    setSaving(true)
-    setError(null)
-    setSavedCount(null)
+    setSaving(true); setError(null); setSavedCount(null)
     let count = 0
     const errors: string[] = []
     for (const track of selectedTracks) {
       try {
-        await tagSuggestionsApi.create({
-          track_id: track.id,
-          source: 'mb_search',
-          suggested_tags: tags,
-          confidence: 1.0,
-        })
+        await tagSuggestionsApi.create({ track_id: track.id, source: 'mb_search', suggested_tags: tags, confidence: 1.0 })
         count++
       } catch (e) {
         errors.push(e instanceof Error ? e.message : 'unknown error')
       }
     }
-    setSaving(false)
-    setSavedCount(count)
+    setSaving(false); setSavedCount(count)
     if (errors.length > 0) setError(`${errors.length} failed: ${errors[0]}`)
     qc.invalidateQueries({ queryKey: ['tag-suggestions'] })
-    qc.invalidateQueries({ queryKey: ['inbox-count'] })
+    qc.invalidateQueries({ queryKey: ['ingest-count'] })
   }
 
-  const noneFilledIn = BULK_EDIT_FIELDS.every(f => !fields[f.key].trim())
+  // Resolve the track/suggestion to review (single-select or drill-in)
+  const reviewTrack = reviewTrackId != null
+    ? (selectedTracks.find(t => t.id === reviewTrackId) ?? null)
+    : selectedTracks.length === 1 && tracksWithSuggestions.length === 1
+      ? tracksWithSuggestions[0]
+      : null
+  const reviewSuggestion = reviewTrack ? suggestionsByTrack[reviewTrack.id] : null
 
   return (
     <div className="border-t border-border bg-bg-surface flex-shrink-0 flex flex-col overflow-hidden" style={{ maxHeight: '45vh' }}>
-      {/* Panel header */}
+      {/* Header */}
       <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border flex-shrink-0">
-        <span className="text-xs text-text-muted">
-          {selectedTracks.length} track{selectedTracks.length !== 1 ? 's' : ''} selected
-        </span>
-        <span className="text-[10px] text-text-muted truncate max-w-xs">
-          {selectedTracks.map(t => t.title ?? t.relative_path.split('/').pop()).join(', ')}
-        </span>
-        <div className="ml-auto flex items-center gap-2">
-          {savedCount != null && (
-            <span className="text-xs text-green-400">Applied to {savedCount}</span>
-          )}
-          {error && <span className="text-xs text-destructive">{error}</span>}
+        {/* Tabs */}
+        <div className="flex gap-0 border border-border rounded overflow-hidden shrink-0">
           <button
             type="button"
-            onClick={handleApply}
-            disabled={saving || noneFilledIn}
-            className="text-xs bg-accent text-bg-base rounded px-3 py-0.5 font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+            onClick={() => setActiveTab('edit')}
+            className={`text-xs px-2.5 py-0.5 transition-colors ${activeTab === 'edit' ? 'bg-accent text-bg-base' : 'text-text-muted hover:text-text-primary'}`}
           >
-            {saving ? 'Applying…' : 'Apply to Selected'}
+            Edit
           </button>
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-xs text-text-muted hover:text-text-primary border border-border rounded px-2 py-0.5"
-          >
-            Clear
+          {tracksWithSuggestions.length > 0 && (
+            <button
+              type="button"
+              onClick={() => { setActiveTab('suggestion'); setReviewTrackId(null) }}
+              className={`text-xs px-2.5 py-0.5 border-l border-border transition-colors ${activeTab === 'suggestion' ? 'bg-accent text-bg-base' : 'text-text-muted hover:text-text-primary'}`}
+            >
+              Suggestion{tracksWithSuggestions.length > 1 ? ` (${tracksWithSuggestions.length})` : ''}
+            </button>
+          )}
+        </div>
+
+        <span className="text-xs text-text-muted">
+          {selectedTracks.length} track{selectedTracks.length !== 1 ? 's' : ''}
+        </span>
+
+        <div className="ml-auto flex items-center gap-2">
+          {activeTab === 'edit' && (
+            <>
+              {savedCount != null && <span className="text-xs text-green-400">Applied to {savedCount}</span>}
+              {error && <span className="text-xs text-destructive">{error}</span>}
+              <button
+                type="button"
+                onClick={handleApply}
+                disabled={saving || !hasDirty}
+                className="text-xs bg-accent text-bg-base rounded px-3 py-0.5 font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {saving ? 'Applying…' : 'Apply to Selected'}
+              </button>
+            </>
+          )}
+          <button type="button" onClick={onClose} className="text-xs text-text-muted hover:text-text-primary border border-border rounded px-2 py-0.5">
+            Close
           </button>
         </div>
       </div>
 
-      {/* Fields grid */}
-      <div className="flex-1 overflow-y-auto px-3 py-2">
-        <div className="grid grid-cols-3 gap-x-3 gap-y-1.5">
-          {BULK_EDIT_FIELDS.map(({ key, label, fullWidth }) => (
-            <label
-              key={key}
-              className={`flex flex-col gap-0.5 ${fullWidth ? 'col-span-3' : ''}`}
-            >
-              <span className="text-text-muted text-[10px] uppercase tracking-wider">{label}</span>
-              <input
-                type="text"
-                value={fields[key]}
-                placeholder="(unchanged)"
-                onChange={e => {
-                  setSavedCount(null)
-                  setFields(prev => ({ ...prev, [key]: e.target.value }))
-                }}
-                className="bg-bg-base border border-border text-text-primary text-xs px-2 py-1 rounded focus:outline-none focus:border-accent font-mono placeholder:text-text-muted/40"
-              />
-            </label>
-          ))}
+      {/* Tab content */}
+      {activeTab === 'edit' ? (
+        <div className="flex-1 overflow-y-auto px-3 py-2">
+          <div className="grid grid-cols-6 gap-x-3 gap-y-1.5">
+            {BULK_EDIT_FIELDS.map(({ key, label, cols }) => (
+              <label key={key} className={`flex flex-col gap-0.5 ${COL_SPAN[cols ?? 2] ?? 'col-span-2'}`}>
+                <span className="text-text-muted text-[10px] uppercase tracking-wider">{label}</span>
+                <input
+                  type="text"
+                  value={currentValues[key]}
+                  placeholder={differsFields.has(key) ? '(multiple values)' : ''}
+                  onChange={e => { setSavedCount(null); setCurrentValues(prev => ({ ...prev, [key]: e.target.value })) }}
+                  className={`bg-bg-base border text-text-primary text-xs px-2 py-1 rounded focus:outline-none focus:border-accent font-mono placeholder:text-text-muted/40 ${isDirty(key) ? 'border-accent/60' : 'border-border'}`}
+                />
+              </label>
+            ))}
+          </div>
         </div>
+      ) : (
+        <div className="flex-1 overflow-y-auto">
+          {reviewTrack && reviewSuggestion ? (
+            /* Single-track diff view */
+            <SuggestionReviewPane
+              key={reviewTrack.id}
+              track={reviewTrack}
+              suggestion={reviewSuggestion}
+              showBack={reviewTrackId != null}
+              onBack={() => setReviewTrackId(null)}
+              onDone={() => { onSuggestionActioned(); setReviewTrackId(null) }}
+            />
+          ) : (
+            /* Multi-track list */
+            <div className="flex flex-col">
+              <div className="px-3 py-1.5 border-b border-border text-[11px] uppercase tracking-wider text-text-muted flex items-center">
+                <span className="flex-1">Track</span>
+                <span className="w-12 text-right">Match</span>
+              </div>
+              {tracksWithSuggestions.map(t => {
+                const s = suggestionsByTrack[t.id]
+                const pct = Math.round(s.confidence * 100)
+                return (
+                  <div key={t.id} className="flex items-center px-3 py-1.5 border-b border-border-subtle hover:bg-bg-row-hover">
+                    <span className="flex-1 text-xs text-text-primary truncate pr-2">{t.title ?? t.relative_path.split('/').pop()}</span>
+                    <span className={`text-xs font-mono mr-3 ${pct >= 80 ? 'text-green-400' : 'text-yellow-400'}`}>{pct}%</span>
+                    <button
+                      onClick={() => setReviewTrackId(t.id)}
+                      className="text-xs text-accent hover:opacity-80 shrink-0"
+                    >
+                      Review ▶
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── SuggestionReviewPane ───────────────────────────────────────────────────────
+function SuggestionReviewPane({
+  track,
+  suggestion,
+  showBack,
+  onBack,
+  onDone,
+}: {
+  track: Track
+  suggestion: TagSuggestion
+  showBack: boolean
+  onBack: () => void
+  onDone: () => void
+}) {
+  const qc = useQueryClient()
+
+  const diffItems = useMemo(() => {
+    const suggested = (suggestion.suggested_tags ?? {}) as Record<string, unknown>
+    return Object.entries(suggested).map(([key, raw]) => {
+      const suggestedVal = typeof raw === 'string' ? raw : String(raw ?? '')
+      const currentVal = getTrackTagValue(track, key)
+      return { key, currentVal, suggestedVal, changed: currentVal !== suggestedVal }
+    })
+  }, [suggestion, track])
+
+  const [checkedFields, setCheckedFields] = useState<Set<string>>(
+    () => new Set(diffItems.filter(d => d.changed).map(d => d.key))
+  )
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  function toggleField(key: string) {
+    setCheckedFields(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  const allChecked = diffItems.length > 0 && checkedFields.size === diffItems.length
+  const noneChecked = checkedFields.size === 0
+
+  async function handleAccept() {
+    setSaving(true); setError(null)
+    try {
+      const fields = [...checkedFields]
+      await tagSuggestionsApi.accept(suggestion.id, fields.length < diffItems.length ? fields : undefined)
+      qc.invalidateQueries({ queryKey: ['tag-suggestions'] })
+      onDone()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to accept')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleReject() {
+    setSaving(true); setError(null)
+    try {
+      await tagSuggestionsApi.reject(suggestion.id)
+      qc.invalidateQueries({ queryKey: ['tag-suggestions'] })
+      onDone()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to reject')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const pct = Math.round(suggestion.confidence * 100)
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Pane header */}
+      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border flex-shrink-0">
+        {showBack && (
+          <button onClick={onBack} className="text-xs text-text-muted hover:text-text-primary mr-1">
+            ← Back
+          </button>
+        )}
+        <span className="text-xs text-text-muted truncate flex-1">
+          {track.title ?? track.relative_path.split('/').pop()}
+        </span>
+        <span className={`text-xs font-mono ${pct >= 80 ? 'text-green-400' : 'text-yellow-400'}`}>{pct}% match</span>
+        <button
+          onClick={() => setCheckedFields(allChecked ? new Set() : new Set(diffItems.map(d => d.key)))}
+          className="text-xs text-text-muted hover:text-text-primary border border-border rounded px-2 py-0.5"
+        >
+          {allChecked ? 'None' : 'All'}
+        </button>
+        {error && <span className="text-xs text-destructive">{error}</span>}
+        <button
+          onClick={handleReject}
+          disabled={saving}
+          className="text-xs text-text-muted hover:text-destructive border border-border rounded px-2 py-0.5 disabled:opacity-40"
+        >
+          Reject
+        </button>
+        <button
+          onClick={handleAccept}
+          disabled={saving || noneChecked}
+          className="text-xs bg-accent text-bg-base rounded px-3 py-0.5 font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          {saving ? 'Saving…' : `Accept${checkedFields.size < diffItems.length ? ` (${checkedFields.size})` : ''}`}
+        </button>
       </div>
+
+      {/* Field diff table */}
+      <div className="flex-1 overflow-y-auto">
+        {/* Column header */}
+        <div className="grid grid-cols-[1fr_1fr_1fr_1.5rem] gap-x-2 px-3 py-1 bg-bg-panel border-b border-border text-[10px] uppercase tracking-wider text-text-muted sticky top-0">
+          <span>Field</span>
+          <span>Current</span>
+          <span>Suggested</span>
+          <span />
+        </div>
+        {diffItems.map(({ key, currentVal, suggestedVal, changed }) => (
+          <div
+            key={key}
+            className={`grid grid-cols-[1fr_1fr_1fr_1.5rem] gap-x-2 px-3 py-1 border-b border-border-subtle items-center cursor-pointer select-none ${
+              changed ? 'hover:bg-bg-row-hover' : 'opacity-50'
+            }`}
+            onClick={() => toggleField(key)}
+          >
+            <span className="text-[11px] text-text-muted truncate" title={key}>
+              {FIELD_LABELS[key] ?? key}
+            </span>
+            <span className="text-xs text-text-secondary truncate font-mono">{currentVal || <em className="not-italic text-text-muted/40">—</em>}</span>
+            <span className={`text-xs truncate font-mono ${changed ? 'text-text-primary' : 'text-text-secondary'}`}>
+              {suggestedVal || <em className="not-italic text-text-muted/40">—</em>}
+            </span>
+            <span className="flex items-center justify-center">
+              <input
+                type="checkbox"
+                checked={checkedFields.has(key)}
+                onChange={() => toggleField(key)}
+                onClick={e => e.stopPropagation()}
+                className="accent-[color:var(--accent)] cursor-pointer"
+              />
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ── ContextMenu ────────────────────────────────────────────────────────────────
+function ContextMenu({ x, y, items }: { x: number; y: number; items: MenuItem[] }) {
+  const ref = React.useRef<HTMLDivElement>(null)
+  const [pos, setPos] = React.useState({ x, y })
+
+  React.useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    let nx = x
+    let ny = y
+    if (nx + rect.width > window.innerWidth)   nx = window.innerWidth  - rect.width  - 4
+    if (ny + rect.height > window.innerHeight) ny = window.innerHeight - rect.height - 4
+    if (nx < 4) nx = 4
+    if (ny < 4) ny = 4
+    setPos({ x: nx, y: ny })
+  }, [x, y])
+
+  return (
+    <div
+      ref={ref}
+      style={{ position: 'fixed', left: pos.x, top: pos.y }}
+      className="z-[100] bg-bg-panel border border-border rounded shadow-lg py-1 min-w-[140px]"
+      onClick={e => e.stopPropagation()}
+      onContextMenu={e => e.preventDefault()}
+    >
+      {items.map((item, i) =>
+        item == null ? (
+          <div key={i} className="border-t border-border my-1" />
+        ) : (
+          <button
+            key={item.label}
+            onClick={item.action}
+            className="block w-full text-left px-3 py-1 text-xs text-text-primary hover:bg-bg-row-hover"
+          >
+            {item.label}
+          </button>
+        )
+      )}
     </div>
   )
 }

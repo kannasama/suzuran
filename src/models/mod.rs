@@ -69,6 +69,8 @@ pub struct Library {
     pub auto_organize_on_ingest: bool,
     pub tag_encoding: String,
     pub organization_rule_id: Option<i64>,
+    pub is_default: bool,
+    pub maintenance_interval_secs: Option<i64>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -282,4 +284,26 @@ pub struct VirtualLibraryTrack {
     pub virtual_library_id: i64,
     pub source_track_id: i64,
     pub link_path: String,
+}
+
+#[derive(Debug, Clone, sqlx::FromRow, serde::Serialize, serde::Deserialize)]
+pub struct Issue {
+    pub id: i64,
+    pub library_id: i64,
+    pub track_id: Option<i64>,
+    pub issue_type: String,
+    pub detail: Option<String>,
+    pub severity: String,
+    pub dismissed: bool,
+    pub resolved: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+pub struct UpsertIssue {
+    pub library_id: i64,
+    pub track_id: Option<i64>,
+    pub issue_type: String,
+    pub detail: Option<String>,
+    pub severity: String,
 }

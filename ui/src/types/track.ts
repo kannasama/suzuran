@@ -28,4 +28,6 @@ export interface Track {
   library_profile_id: number | null;
   last_scanned_at: string;
   created_at: string;
+  /** Transcoded/derived variants nested by the library listing endpoint */
+  derived_tracks?: Track[];
 }

@@ -11,6 +11,8 @@ export interface Library {
   auto_organize_on_ingest: boolean
   tag_encoding: string
   organization_rule_id: number | null
+  is_default: boolean
+  maintenance_interval_secs: number | null
 }
 
 export interface CreateLibraryInput {
@@ -27,6 +29,8 @@ export interface UpdateLibraryInput {
   auto_organize_on_ingest: boolean
   tag_encoding: string
   organization_rule_id: number | null
+  is_default: boolean
+  maintenance_interval_secs: number | null
 }
 
 export async function listLibraries(): Promise<Library[]> {
@@ -55,5 +59,10 @@ export async function deleteLibrary(id: number): Promise<void> {
 
 export async function listLibraryTracks(libraryId: number): Promise<Track[]> {
   const res = await client.get<Track[]>(`/libraries/${libraryId}/tracks`)
+  return res.data
+}
+
+export async function triggerMaintenance(libraryId: number): Promise<{ job_id: number }> {
+  const res = await client.post<{ job_id: number }>(`/libraries/${libraryId}/maintenance`)
   return res.data
 }

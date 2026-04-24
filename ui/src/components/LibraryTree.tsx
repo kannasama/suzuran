@@ -6,6 +6,15 @@ import type { VirtualLibrary } from '../types/virtualLibrary'
 import { LibraryFormModal } from './LibraryFormModal'
 import { VirtualLibraryFormModal } from './VirtualLibraryFormModal'
 
+export type BrowseMode = 'artist' | 'albumartist' | 'album' | 'genre'
+
+const BROWSE_OPTIONS: { key: BrowseMode; label: string }[] = [
+  { key: 'artist',      label: 'Artist' },
+  { key: 'albumartist', label: 'Album Artist' },
+  { key: 'album',       label: 'Album' },
+  { key: 'genre',       label: 'Genre' },
+]
+
 interface Props {
   isAdmin: boolean
   isLibraryAdmin: boolean
@@ -13,6 +22,8 @@ interface Props {
   onSelectLibrary: (id: number) => void
   selectedVirtualLibraryId: number | null
   onSelectVirtualLibrary: (id: number) => void
+  selectedBrowseMode: BrowseMode | null
+  onSelectBrowseMode: (libraryId: number, mode: BrowseMode | null) => void
 }
 
 export function LibraryTree({
@@ -22,6 +33,8 @@ export function LibraryTree({
   onSelectLibrary,
   selectedVirtualLibraryId,
   onSelectVirtualLibrary,
+  selectedBrowseMode,
+  onSelectBrowseMode,
 }: Props) {
   const queryClient = useQueryClient()
 
@@ -109,17 +122,45 @@ export function LibraryTree({
           </div>
         )}
 
-        {/* Flat library list */}
+        {/* Library list with browse sub-nodes */}
         {libraries.map(lib => (
-          <LibraryRow
-            key={lib.id}
-            library={lib}
-            isSelected={selectedLibraryId === lib.id}
-            isAdmin={isAdmin}
-            onSelect={() => onSelectLibrary(lib.id)}
-            onEdit={() => setEditingLibrary(lib)}
-            onDelete={() => handleDelete(lib)}
-          />
+          <div key={lib.id}>
+            <LibraryRow
+              library={lib}
+              isSelected={selectedLibraryId === lib.id}
+              isAdmin={isAdmin}
+              onSelect={() => onSelectLibrary(lib.id)}
+              onEdit={() => setEditingLibrary(lib)}
+              onDelete={() => handleDelete(lib)}
+            />
+            {/* Browse sub-nodes — always visible */}
+            <div className="flex flex-col">
+              {/* All Tracks */}
+              <button
+                onClick={() => onSelectLibrary(lib.id)}
+                className={`text-left pl-5 pr-2 py-0.5 text-[11px] truncate transition-colors ${
+                  selectedLibraryId === lib.id && selectedBrowseMode === null
+                    ? 'text-accent'
+                    : 'text-text-muted hover:text-text-secondary'
+                }`}
+              >
+                All Tracks
+              </button>
+              {BROWSE_OPTIONS.map(opt => (
+                <button
+                  key={opt.key}
+                  onClick={() => onSelectBrowseMode(lib.id, opt.key)}
+                  className={`text-left pl-5 pr-2 py-0.5 text-[11px] truncate transition-colors ${
+                    selectedLibraryId === lib.id && selectedBrowseMode === opt.key
+                      ? 'text-accent'
+                      : 'text-text-muted hover:text-text-secondary'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
         ))}
 
         {/* Virtual Libraries section */}

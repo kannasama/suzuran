@@ -1,17 +1,22 @@
 use reqwest::Client;
-use std::{collections::HashMap, sync::{Arc, Mutex}, time::{Duration, Instant}};
-use tokio::time::sleep;
+use std::{collections::HashMap, sync::Arc, time::{Duration, Instant}};
+use tokio::{sync::Mutex, time::sleep};
 
 use crate::error::AppError;
 
-const MB_RATE_LIMIT_MS: u64 = 1100; // MusicBrainz: max 1 req/sec
+/// MusicBrainz: max 1 req/sec (we use 1.1 s to give a small margin).
+const MB_RATE_LIMIT_MS: u64 = 1100;
+/// AcoustID: no published hard limit; 350 ms (~2.8 req/s) is safe and polite.
+const ACOUSTID_RATE_LIMIT_MS: u64 = 350;
 
 #[derive(Clone)]
 pub struct MusicBrainzService {
     client: Client,
     mb_base: String,
     acoustid_base: String,
+    /// Tokio async mutex so the guard can be held across the sleep, preventing burst.
     last_mb_request: Arc<Mutex<Option<Instant>>>,
+    last_acoustid_request: Arc<Mutex<Option<Instant>>>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -42,6 +47,7 @@ pub struct MbRelease {
     pub title: String,
     pub date: Option<String>,
     pub status: Option<String>,
+    pub country: Option<String>,
     #[serde(rename = "artist-credit")]
     pub artist_credit: Option<Vec<MbArtistCredit>>,
     #[serde(rename = "label-info")]
@@ -77,8 +83,18 @@ pub struct MbLabel {
 
 #[derive(Debug, serde::Deserialize)]
 pub struct MbReleaseGroup {
+    pub id: Option<String>,
     #[serde(rename = "primary-type")]
     pub primary_type: Option<String>,
+    #[serde(rename = "secondary-types")]
+    pub secondary_types: Option<Vec<String>>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct MbTrack {
+    pub position: Option<u32>,
+    pub number: Option<String>,
+    pub recording: Option<MbTrackRecording>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -86,6 +102,12 @@ pub struct MbMedia {
     pub position: Option<u32>,
     #[serde(rename = "track-count")]
     pub track_count: Option<u32>,
+    pub tracks: Option<Vec<MbTrack>>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct MbTrackRecording {
+    pub id: String,
 }
 
 impl Default for MusicBrainzService {
@@ -113,7 +135,33 @@ impl MusicBrainzService {
             mb_base,
             acoustid_base,
             last_mb_request: Arc::new(Mutex::new(None)),
+            last_acoustid_request: Arc::new(Mutex::new(None)),
         }
+    }
+
+    /// Wait until at least MB_RATE_LIMIT_MS has elapsed since the last MB request.
+    /// Holds the async lock across the sleep to prevent concurrent burst.
+    async fn mb_rate_limit(&self) {
+        let mut guard = self.last_mb_request.lock().await;
+        if let Some(prev) = *guard {
+            let elapsed = prev.elapsed();
+            if elapsed < Duration::from_millis(MB_RATE_LIMIT_MS) {
+                sleep(Duration::from_millis(MB_RATE_LIMIT_MS) - elapsed).await;
+            }
+        }
+        *guard = Some(Instant::now());
+    }
+
+    /// Wait until at least ACOUSTID_RATE_LIMIT_MS has elapsed since the last AcoustID request.
+    async fn acoustid_rate_limit(&self) {
+        let mut guard = self.last_acoustid_request.lock().await;
+        if let Some(prev) = *guard {
+            let elapsed = prev.elapsed();
+            if elapsed < Duration::from_millis(ACOUSTID_RATE_LIMIT_MS) {
+                sleep(Duration::from_millis(ACOUSTID_RATE_LIMIT_MS) - elapsed).await;
+            }
+        }
+        *guard = Some(Instant::now());
     }
 
     pub async fn acoustid_lookup(
@@ -122,6 +170,7 @@ impl MusicBrainzService {
         fingerprint: &str,
         duration: f64,
     ) -> anyhow::Result<Vec<AcoustIdResult>> {
+        self.acoustid_rate_limit().await;
         let url = format!("{}/v2/lookup", self.acoustid_base);
         let resp: serde_json::Value = self.client
             .get(&url)
@@ -146,36 +195,12 @@ impl MusicBrainzService {
     }
 
     pub async fn get_recording(&self, recording_id: &str) -> anyhow::Result<MbRecording> {
-        // Rate-limit: MusicBrainz allows max 1 req/sec.
-        // Compute the required sleep duration while holding the lock, then drop
-        // the guard before awaiting so that the MutexGuard is not held across
-        // an await point (which would make the future non-Send).
-        // Note: two concurrent callers can each compute their sleep duration against the same
-        // last-request timestamp and both sleep, potentially allowing a small burst. In practice
-        // the scheduler semaphore limits concurrent mb_lookup jobs, so this is acceptable.
-        let sleep_duration = {
-            let mut last = self.last_mb_request.lock().expect("mutex poisoned");
-            let dur = last.map(|t| {
-                let elapsed = t.elapsed();
-                if elapsed < Duration::from_millis(MB_RATE_LIMIT_MS) {
-                    Duration::from_millis(MB_RATE_LIMIT_MS) - elapsed
-                } else {
-                    Duration::ZERO
-                }
-            });
-            *last = Some(Instant::now());
-            dur
-        };
-        if let Some(d) = sleep_duration {
-            if d > Duration::ZERO {
-                sleep(d).await;
-            }
-        }
+        self.mb_rate_limit().await;
         let url = format!("{}/recording/{}", self.mb_base, recording_id);
         let rec = self.client
             .get(&url)
             .query(&[
-                ("inc", "releases+release-groups+artist-credits+media"),
+                ("inc", "releases+release-groups+artist-credits+media+recordings"),
                 ("fmt", "json"),
             ])
             .send().await?
@@ -229,11 +254,28 @@ impl MusicBrainzService {
             }
         }
 
-        // Disc count
+        // Disc/track position from media; also yields totaldiscs, discnumber, tracknumber, totaltracks
         if let Some(media) = &release.media {
-            let disc_count = media.len();
-            if disc_count > 1 {
-                tags.insert("totaldiscs".into(), disc_count.to_string());
+            tags.insert("totaldiscs".into(), media.len().to_string());
+            'outer: for medium in media {
+                if let Some(tracks) = &medium.tracks {
+                    for track in tracks {
+                        if !track.recording.as_ref().map(|r| r.id == rec.id).unwrap_or(false) {
+                            continue;
+                        }
+                        let disc_num = medium.position.unwrap_or(1);
+                        tags.insert("discnumber".into(), disc_num.to_string());
+                        if let Some(pos) = track.position {
+                            tags.insert("tracknumber".into(), pos.to_string());
+                        } else if let Some(num) = &track.number {
+                            tags.insert("tracknumber".into(), num.clone());
+                        }
+                        if let Some(tc) = medium.track_count {
+                            tags.insert("totaltracks".into(), tc.to_string());
+                        }
+                        break 'outer;
+                    }
+                }
             }
         }
 
@@ -242,6 +284,33 @@ impl MusicBrainzService {
             if let Some(pt) = &rg.primary_type {
                 tags.insert("releasetype".into(), pt.to_lowercase());
             }
+            if let Some(rg_id) = &rg.id {
+                tags.insert("musicbrainz_releasegroupid".into(), rg_id.clone());
+            }
+        }
+
+        // Release status and country
+        if let Some(status) = &release.status {
+            tags.insert("releasestatus".into(), status.to_lowercase());
+        }
+        if let Some(country) = &release.country {
+            tags.insert("releasecountry".into(), country.clone());
+        }
+
+        // MusicBrainz artist IDs
+        if let Some(artist_id) = rec.artist_credit.as_ref()
+            .and_then(|ac| ac.first())
+            .and_then(|a| a.artist.as_ref())
+            .map(|ar| ar.id.clone())
+        {
+            tags.insert("musicbrainz_artistid".into(), artist_id);
+        }
+        if let Some(albumartist_id) = release.artist_credit.as_ref()
+            .and_then(|ac| ac.first())
+            .and_then(|a| a.artist.as_ref())
+            .map(|ar| ar.id.clone())
+        {
+            tags.insert("musicbrainz_albumartistid".into(), albumartist_id);
         }
 
         tags
@@ -261,26 +330,7 @@ impl MusicBrainzService {
             r#"recording:"{title}" AND artist:"{artist}" AND release:"{album}""#
         );
 
-        // Rate-limit like get_recording
-        let sleep_duration = {
-            let mut last = self.last_mb_request.lock().expect("mutex poisoned");
-            let dur = last.map(|t| {
-                let elapsed = t.elapsed();
-                if elapsed < Duration::from_millis(MB_RATE_LIMIT_MS) {
-                    Duration::from_millis(MB_RATE_LIMIT_MS) - elapsed
-                } else {
-                    Duration::ZERO
-                }
-            });
-            *last = Some(Instant::now());
-            dur
-        };
-        if let Some(d) = sleep_duration {
-            if d > Duration::ZERO {
-                sleep(d).await;
-            }
-        }
-
+        self.mb_rate_limit().await;
         let url = format!("{}/recording/", self.mb_base);
         let resp: serde_json::Value = self
             .client

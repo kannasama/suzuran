@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 
-use crate::{dal::{Store, UpsertArtProfile, UpsertEncodingProfile, UpsertTrack, UpsertVirtualLibrary, VirtualLibrarySourceInput}, error::AppError, models::{ArtProfile, EncodingProfile, Job, Library, LibraryProfile, OrganizationRule, Session, Setting, TagSuggestion, Theme, TotpEntry, Track, TrackLink, UpsertLibraryProfile, UpsertTagSuggestion, User, VirtualLibrary, VirtualLibrarySource, VirtualLibraryTrack, WebauthnChallenge, WebauthnCredential}};
+use crate::{dal::{Store, UpsertArtProfile, UpsertEncodingProfile, UpsertTrack, UpsertVirtualLibrary, VirtualLibrarySourceInput}, error::AppError, models::{ArtProfile, EncodingProfile, Issue, Job, Library, LibraryProfile, OrganizationRule, Session, Setting, TagSuggestion, Theme, TotpEntry, Track, TrackLink, UpsertIssue, UpsertLibraryProfile, UpsertTagSuggestion, User, VirtualLibrary, VirtualLibrarySource, VirtualLibraryTrack, WebauthnChallenge, WebauthnCredential}};
 use sqlx::SqlitePool;
 
 pub struct SqliteStore {
@@ -423,15 +423,26 @@ impl Store for SqliteStore {
     async fn update_library(
         &self, id: i64, name: &str, scan_enabled: bool, scan_interval_secs: i64,
         auto_organize_on_ingest: bool, tag_encoding: &str,
+        maintenance_interval_secs: Option<i64>,
     ) -> Result<Option<Library>, AppError> {
         sqlx::query_as::<_, Library>(
             "UPDATE libraries SET name=?1, scan_enabled=?2, scan_interval_secs=?3,
-             auto_organize_on_ingest=?4, tag_encoding=?5
-             WHERE id=?6 RETURNING *",
+             auto_organize_on_ingest=?4, tag_encoding=?5, maintenance_interval_secs=?6
+             WHERE id=?7 RETURNING *",
         )
         .bind(name).bind(scan_enabled).bind(scan_interval_secs)
-        .bind(auto_organize_on_ingest).bind(tag_encoding).bind(id)
+        .bind(auto_organize_on_ingest).bind(tag_encoding)
+        .bind(maintenance_interval_secs).bind(id)
         .fetch_optional(&self.pool).await.map_err(AppError::Database)
+    }
+
+    async fn set_default_library(&self, id: i64) -> Result<(), AppError> {
+        let mut tx = self.pool.begin().await.map_err(AppError::Database)?;
+        sqlx::query("UPDATE libraries SET is_default = 0")
+            .execute(&mut *tx).await.map_err(AppError::Database)?;
+        sqlx::query("UPDATE libraries SET is_default = 1 WHERE id = ?1")
+            .bind(id).execute(&mut *tx).await.map_err(AppError::Database)?;
+        tx.commit().await.map_err(AppError::Database)
     }
 
     async fn delete_library(&self, id: i64) -> Result<(), AppError> {
@@ -735,6 +746,90 @@ impl Store for SqliteStore {
         .await
         .map(|_| ())
         .map_err(AppError::Database)
+    }
+
+    async fn find_active_source_track_by_mb_id(
+        &self,
+        library_id: i64,
+        mb_recording_id: &str,
+    ) -> Result<Option<Track>, AppError> {
+        sqlx::query_as::<_, Track>(
+            "SELECT * FROM tracks \
+             WHERE library_id = ?1 \
+               AND status = 'active' \
+               AND library_profile_id IS NULL \
+               AND json_extract(tags, '$.musicbrainz_recordingid') = ?2 \
+             LIMIT 1",
+        )
+        .bind(library_id)
+        .bind(mb_recording_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(AppError::Database)
+    }
+
+    async fn find_active_source_track_by_tags(
+        &self,
+        library_id: i64,
+        albumartist_lower: &str,
+        album_lower: &str,
+        disc: &str,
+        track_num: &str,
+    ) -> Result<Option<Track>, AppError> {
+        sqlx::query_as::<_, Track>(
+            "SELECT * FROM tracks \
+             WHERE library_id = ?1 \
+               AND status = 'active' \
+               AND library_profile_id IS NULL \
+               AND LOWER(COALESCE(albumartist, artist, '')) = ?2 \
+               AND LOWER(COALESCE(album, '')) = ?3 \
+               AND COALESCE(discnumber, '1') = ?4 \
+               AND (COALESCE(tracknumber, '0') = ?5 \
+                 OR COALESCE(tracknumber, '0') LIKE (?5 || '/%')) \
+             LIMIT 1",
+        )
+        .bind(library_id)
+        .bind(albumartist_lower)
+        .bind(album_lower)
+        .bind(disc)
+        .bind(track_num)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(AppError::Database)
+    }
+
+    async fn find_active_source_track_by_fingerprint(
+        &self,
+        library_id: i64,
+        fingerprint: &str,
+    ) -> Result<Option<Track>, AppError> {
+        sqlx::query_as::<_, Track>(
+            "SELECT * FROM tracks \
+             WHERE library_id = ?1 \
+               AND status = 'active' \
+               AND library_profile_id IS NULL \
+               AND acoustid_fingerprint = ?2 \
+             LIMIT 1",
+        )
+        .bind(library_id)
+        .bind(fingerprint)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(AppError::Database)
+    }
+
+    async fn set_track_library_profile(
+        &self,
+        track_id: i64,
+        library_profile_id: i64,
+    ) -> Result<(), AppError> {
+        sqlx::query("UPDATE tracks SET library_profile_id = ?2 WHERE id = ?1")
+            .bind(track_id)
+            .bind(library_profile_id)
+            .execute(&self.pool)
+            .await
+            .map(|_| ())
+            .map_err(AppError::Database)
     }
 
     async fn enqueue_job(
@@ -1111,6 +1206,19 @@ impl Store for SqliteStore {
         .map_err(AppError::Database)
     }
 
+    async fn list_track_links_by_library(&self, library_id: i64) -> Result<Vec<TrackLink>, AppError> {
+        sqlx::query_as::<_, TrackLink>(
+            "SELECT tl.source_track_id, tl.derived_track_id, tl.created_at
+             FROM track_links tl
+             JOIN tracks t ON t.id = tl.source_track_id
+             WHERE t.library_id = ?1",
+        )
+        .bind(library_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(AppError::Database)
+    }
+
     async fn update_track_tags(&self, track_id: i64, tags: serde_json::Value) -> Result<(), AppError> {
         let tags_str = serde_json::to_string(&tags).unwrap_or_else(|_| "{}".to_string());
         let t = tags.as_object().cloned().unwrap_or_default();
@@ -1163,6 +1271,34 @@ impl Store for SqliteStore {
             return Err(AppError::NotFound(format!("track {track_id}")));
         }
         Ok(())
+    }
+
+    async fn update_track_audio_properties(
+        &self,
+        track_id: i64,
+        duration_secs: Option<f64>,
+        bitrate: Option<i64>,
+        sample_rate: Option<i64>,
+        channels: Option<i64>,
+        bit_depth: Option<i64>,
+        has_embedded_art: bool,
+    ) -> Result<(), AppError> {
+        let has_embedded_art_int: i64 = if has_embedded_art { 1 } else { 0 };
+        sqlx::query(
+            "UPDATE tracks SET duration_secs=?1, bitrate=?2, sample_rate=?3,
+             channels=?4, bit_depth=?5, has_embedded_art=?6 WHERE id=?7",
+        )
+        .bind(duration_secs)
+        .bind(bitrate)
+        .bind(sample_rate)
+        .bind(channels)
+        .bind(bit_depth)
+        .bind(has_embedded_art_int)
+        .bind(track_id)
+        .execute(&self.pool)
+        .await
+        .map(|_| ())
+        .map_err(AppError::Database)
     }
 
     // ── virtual libraries ─────────────────────────────────────────
@@ -1291,5 +1427,100 @@ impl Store for SqliteStore {
             .await
             .map(|_| ())
             .map_err(AppError::Database)
+    }
+
+    // ── issues ────────────────────────────────────────────────────
+
+    async fn upsert_issue(&self, dto: UpsertIssue) -> Result<Issue, AppError> {
+        // SQLite: INSERT OR REPLACE loses the old id; use INSERT + ON CONFLICT UPDATE
+        sqlx::query_as::<_, Issue>(
+            r#"INSERT INTO issues (library_id, track_id, issue_type, detail, severity, dismissed, resolved, updated_at)
+               VALUES (?1, ?2, ?3, ?4, ?5, 0, 0, datetime('now'))
+               ON CONFLICT (track_id, issue_type) DO UPDATE
+                 SET detail = excluded.detail, severity = excluded.severity,
+                     dismissed = 0, resolved = 0, updated_at = datetime('now')
+               RETURNING *"#,
+        )
+        .bind(dto.library_id)
+        .bind(dto.track_id)
+        .bind(&dto.issue_type)
+        .bind(&dto.detail)
+        .bind(&dto.severity)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(AppError::Database)
+    }
+
+    async fn resolve_issue(&self, track_id: i64, issue_type: &str) -> Result<(), AppError> {
+        sqlx::query(
+            "UPDATE issues SET resolved = 1, updated_at = datetime('now') WHERE track_id = ?1 AND issue_type = ?2",
+        )
+        .bind(track_id)
+        .bind(issue_type)
+        .execute(&self.pool)
+        .await
+        .map(|_| ())
+        .map_err(AppError::Database)
+    }
+
+    async fn dismiss_issue(&self, id: i64) -> Result<(), AppError> {
+        sqlx::query("UPDATE issues SET dismissed = 1, updated_at = datetime('now') WHERE id = ?1")
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map(|_| ())
+            .map_err(AppError::Database)
+    }
+
+    async fn list_issues(
+        &self,
+        library_id: Option<i64>,
+        issue_type: Option<&str>,
+        include_dismissed: bool,
+    ) -> Result<Vec<Issue>, AppError> {
+        let mut conditions: Vec<String> = vec!["resolved = 0".into()];
+        if !include_dismissed {
+            conditions.push("dismissed = 0".into());
+        }
+        let mut param_idx = 1usize;
+        if library_id.is_some() {
+            conditions.push(format!("library_id = ?{param_idx}"));
+            param_idx += 1;
+        }
+        if issue_type.is_some() {
+            conditions.push(format!("issue_type = ?{param_idx}"));
+        }
+        let where_clause = conditions.join(" AND ");
+        let sql = format!(
+            "SELECT * FROM issues WHERE {where_clause} ORDER BY \
+             CASE severity WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END ASC, \
+             created_at DESC"
+        );
+        let mut q = sqlx::query_as::<_, Issue>(&sql);
+        if let Some(lid) = library_id {
+            q = q.bind(lid);
+        }
+        if let Some(it) = issue_type {
+            q = q.bind(it);
+        }
+        q.fetch_all(&self.pool).await.map_err(AppError::Database)
+    }
+
+    async fn get_issue(&self, id: i64) -> Result<Option<Issue>, AppError> {
+        sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = ?1")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(AppError::Database)
+    }
+
+    async fn issue_count(&self) -> Result<i64, AppError> {
+        let row: (i64,) = sqlx::query_as(
+            "SELECT COUNT(*) FROM issues WHERE resolved = 0 AND dismissed = 0",
+        )
+        .fetch_one(&self.pool)
+        .await
+        .map_err(AppError::Database)?;
+        Ok(row.0)
     }
 }

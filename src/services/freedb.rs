@@ -1,9 +1,14 @@
 use reqwest::Client;
-use std::{collections::HashMap, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::{Duration, Instant}};
+use tokio::{sync::Mutex, time::sleep};
+
+/// gnudb.org has no published hard rate limit; 1 req/sec is safe and polite.
+const FREEDB_RATE_LIMIT_MS: u64 = 1000;
 
 pub struct FreedBService {
     client: Client,
     base_url: String,
+    last_request: Arc<Mutex<Option<Instant>>>,
 }
 
 #[derive(Debug)]
@@ -26,7 +31,20 @@ impl FreedBService {
             .timeout(Duration::from_secs(15))
             .build()
             .expect("failed to build FreeDB HTTP client");
-        Self { client, base_url }
+        Self { client, base_url, last_request: Arc::new(Mutex::new(None)) }
+    }
+
+    /// Wait until at least FREEDB_RATE_LIMIT_MS has elapsed since the last request.
+    /// Holds the async lock across the sleep to prevent concurrent burst.
+    async fn rate_limit(&self) {
+        let mut guard = self.last_request.lock().await;
+        if let Some(prev) = *guard {
+            let elapsed = prev.elapsed();
+            if elapsed < Duration::from_millis(FREEDB_RATE_LIMIT_MS) {
+                sleep(Duration::from_millis(FREEDB_RATE_LIMIT_MS) - elapsed).await;
+            }
+        }
+        *guard = Some(Instant::now());
     }
 
     /// Look up a disc by CDDB disc ID. Returns first matching candidate, or None.
@@ -63,6 +81,7 @@ impl FreedBService {
     }
 
     async fn cddb_request(&self, cmd: &str) -> anyhow::Result<String> {
+        self.rate_limit().await;
         let text = self
             .client
             .get(&self.base_url)
@@ -95,6 +114,7 @@ impl FreedBService {
             .trim_end_matches('/');
         let search_url = format!("{}/search/search", search_base);
 
+        self.rate_limit().await;
         let html = self.client
             .get(&search_url)
             .query(&[("keywords", &keywords), ("type", &"0".to_string())])

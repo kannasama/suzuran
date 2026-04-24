@@ -5,13 +5,14 @@ use chrono::{DateTime, Utc};
 
 use serde_json::Value as JsonValue;
 
-use crate::{error::AppError, models::{ArtProfile, EncodingProfile, Job, Library, OrganizationRule, Session, Setting, TagSuggestion, Theme, TotpEntry, Track, TrackLink, User, VirtualLibrary, VirtualLibrarySource, VirtualLibraryTrack, WebauthnChallenge, WebauthnCredential}};
+use crate::{error::AppError, models::{ArtProfile, EncodingProfile, Issue, Job, Library, OrganizationRule, Session, Setting, TagSuggestion, Theme, TotpEntry, Track, TrackLink, User, VirtualLibrary, VirtualLibrarySource, VirtualLibraryTrack, WebauthnChallenge, WebauthnCredential}};
 
 pub use crate::models::UpsertTagSuggestion;
 pub use crate::models::UpsertEncodingProfile;
 pub use crate::models::UpsertArtProfile;
 pub use crate::models::UpsertVirtualLibrary;
 pub use crate::models::{UpsertLibraryProfile, LibraryProfile};
+pub use crate::models::UpsertIssue;
 
 #[derive(Debug, Clone)]
 pub struct VirtualLibrarySourceInput {
@@ -204,6 +205,7 @@ pub trait Store: Send + Sync {
         scan_interval_secs: i64,
         auto_organize_on_ingest: bool,
         tag_encoding: &str,
+        maintenance_interval_secs: Option<i64>,
     ) -> Result<Option<Library>, AppError>;
     async fn delete_library(&self, id: i64) -> Result<(), AppError>;
     async fn set_library_org_rule(
@@ -211,6 +213,7 @@ pub trait Store: Send + Sync {
         library_id: i64,
         organization_rule_id: Option<i64>,
     ) -> Result<(), AppError>;
+    async fn set_default_library(&self, id: i64) -> Result<(), AppError>;
 
     // ── library profiles ──────────────────────────────────────────
     async fn create_library_profile(&self, p: &UpsertLibraryProfile) -> Result<LibraryProfile, AppError>;
@@ -289,6 +292,40 @@ pub trait Store: Send + Sync {
         duration_secs: f64,
     ) -> Result<(), AppError>;
 
+    /// Find an active, source-only (library_profile_id IS NULL) track in the given library
+    /// whose tags contain the specified MusicBrainz recording ID.
+    async fn find_active_source_track_by_mb_id(
+        &self,
+        library_id: i64,
+        mb_recording_id: &str,
+    ) -> Result<Option<Track>, AppError>;
+
+    /// Find an active, source-only track by the normalised tag tuple
+    /// (albumartist_lower, album_lower, disc, track_num).
+    /// disc/track_num should already be normalised by the caller.
+    async fn find_active_source_track_by_tags(
+        &self,
+        library_id: i64,
+        albumartist_lower: &str,
+        album_lower: &str,
+        disc: &str,
+        track_num: &str,
+    ) -> Result<Option<Track>, AppError>;
+
+    /// Find an active, source-only track by AcoustID fingerprint string.
+    async fn find_active_source_track_by_fingerprint(
+        &self,
+        library_id: i64,
+        fingerprint: &str,
+    ) -> Result<Option<Track>, AppError>;
+
+    /// Set a track's library_profile_id (used when a displaced track becomes a derived copy).
+    async fn set_track_library_profile(
+        &self,
+        track_id: i64,
+        library_profile_id: i64,
+    ) -> Result<(), AppError>;
+
     // ── encoding profiles ─────────────────────────────────────────
     async fn create_encoding_profile(&self, dto: UpsertEncodingProfile) -> Result<EncodingProfile, AppError>;
     async fn get_encoding_profile(&self, id: i64) -> Result<EncodingProfile, AppError>;
@@ -311,6 +348,7 @@ pub trait Store: Send + Sync {
     ) -> Result<TrackLink, AppError>;
     async fn list_derived_tracks(&self, source_id: i64) -> Result<Vec<TrackLink>, AppError>;
     async fn list_source_tracks(&self, derived_id: i64) -> Result<Vec<TrackLink>, AppError>;
+    async fn list_track_links_by_library(&self, library_id: i64) -> Result<Vec<TrackLink>, AppError>;
 
     // ── tag suggestions ───────────────────────────────────────────
     async fn create_tag_suggestion(&self, dto: UpsertTagSuggestion) -> Result<TagSuggestion, AppError>;
@@ -320,6 +358,16 @@ pub trait Store: Send + Sync {
     async fn pending_tag_suggestion_count(&self) -> Result<i64, AppError>;
     async fn update_track_tags(&self, track_id: i64, tags: serde_json::Value) -> Result<(), AppError>;
     async fn set_track_has_embedded_art(&self, track_id: i64, has_art: bool) -> Result<(), AppError>;
+    async fn update_track_audio_properties(
+        &self,
+        track_id: i64,
+        duration_secs: Option<f64>,
+        bitrate: Option<i64>,
+        sample_rate: Option<i64>,
+        channels: Option<i64>,
+        bit_depth: Option<i64>,
+        has_embedded_art: bool,
+    ) -> Result<(), AppError>;
 
     // ── virtual libraries ─────────────────────────────────────────
     async fn create_virtual_library(&self, dto: UpsertVirtualLibrary) -> Result<VirtualLibrary, AppError>;
@@ -335,4 +383,20 @@ pub trait Store: Send + Sync {
     async fn upsert_virtual_library_track(&self, vlib_id: i64, track_id: i64, link_path: &str) -> Result<(), AppError>;
     async fn list_virtual_library_tracks(&self, vlib_id: i64) -> Result<Vec<VirtualLibraryTrack>, AppError>;
     async fn clear_virtual_library_tracks(&self, vlib_id: i64) -> Result<(), AppError>;
+
+    // ── issues ────────────────────────────────────────────────────
+    /// Upsert an issue for the given track+type. Creates if absent, updates detail
+    /// and clears resolved/dismissed flags if the condition has re-appeared.
+    async fn upsert_issue(&self, dto: UpsertIssue) -> Result<Issue, AppError>;
+    /// Mark an issue as resolved (condition cleared on the last maintenance pass).
+    async fn resolve_issue(&self, track_id: i64, issue_type: &str) -> Result<(), AppError>;
+    async fn dismiss_issue(&self, id: i64) -> Result<(), AppError>;
+    async fn list_issues(
+        &self,
+        library_id: Option<i64>,
+        issue_type: Option<&str>,
+        include_dismissed: bool,
+    ) -> Result<Vec<Issue>, AppError>;
+    async fn get_issue(&self, id: i64) -> Result<Option<Issue>, AppError>;
+    async fn issue_count(&self) -> Result<i64, AppError>;
 }

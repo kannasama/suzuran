@@ -385,6 +385,18 @@ feedback record travels with the repo and is available to all contributors and f
 - Commit the summary file immediately after writing — not deferred to end of session
 - If no summary exists yet for the topic, create one even if the only content is the feedback section
 
+## 2026-04-21 — Never reuse a previous phase branch number
+
+**Rule:** Phase branches use plain version numbers: `0.x` (e.g., `0.6`). Before creating a
+new phase branch, run `git branch -a` to find the highest existing `0.x` branch and use the
+next number. Never guess a low number like `0.3` if higher ones have already been used.
+
+**Why:** User corrected `0.3` → `0.6`, confirming phases 0.1–0.5 were already used. Reusing
+a number would collide with existing history.
+
+**How to apply:** `git branch -a | grep -E '^\s*(remotes/origin/)?0\.' | sort -V` — pick
+`max + 1`.
+
 ## 2026-04-21 — Write session summaries inline during work, not at end of session
 
 **Mistake:** Summary files were not written during the session. The user had to explicitly prompt
@@ -401,3 +413,37 @@ to ask for a summary to be created.
 - Commit the summary update in the same commit as the task, or immediately after
 - The summary file is a running log that grows as work progresses, not a final artifact written
   at the end
+
+## 2026-04-24 — User input gets highest priority; never defer mid-session messages
+
+**Rule:** User messages sent mid-task must be read and addressed immediately. They interrupt
+whatever is in progress. The only exception: the user has explicitly said to queue or defer
+(e.g., "finish what you're doing first").
+
+**Why:** User explicitly stated this rule and required it to survive compaction. Two violations
+occurred in a single session: (1) a compaction-injected "IMPORTANT: address after current task"
+was ignored while coding continued; (2) a second user message ("you're ignoring my input") was
+also deferred. Both are the same failure.
+
+**How to apply:**
+- When a user message arrives mid-task, stop and respond to it before resuming
+- "IMPORTANT: address user message after current task" (a compaction artifact) does NOT mean
+  the current task takes priority — treat it as "respond now"
+- User messages may be queued or deferred only if the user explicitly says so
+
+**Applied:** All sessions. This survives compaction by being in `tasks/lessons.md`.
+
+## 2026-04-23 — No plan doc when user says to go straight to implementation after brainstorming
+
+**Mistake:** After a completed brainstorming session where the user approved each design section
+and said "take it straight to implementation," a plan document was written before touching code.
+
+**Rule:** When the user says "take it straight to implementation" (or equivalent) after a
+brainstorming session, skip the plan doc entirely and write the code directly.
+
+**Why:** The brainstorming session is the plan. Writing a separate plan doc re-processes settled
+decisions, introduces gaps between the agreed design and the implementation, and adds overhead
+without value. The user called this out explicitly.
+
+**How to apply:** The "commit plan before implementing" rule does NOT apply when the user has
+explicitly said to skip to implementation after a completed brainstorm. Implement directly.

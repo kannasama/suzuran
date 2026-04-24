@@ -3,6 +3,7 @@ pub mod art_profiles;
 pub mod auth;
 pub mod encoding_profiles;
 pub mod ingest;
+pub mod issues;
 pub mod jobs;
 pub mod libraries;
 pub mod library_profiles;
@@ -41,6 +42,7 @@ pub fn api_router(_state: AppState) -> Router<AppState> {
         .nest("/uploads", uploads::router())
         .nest("/library-profiles", library_profiles::router())
         .nest("/ingest", ingest::router())
+        .nest("/issues", issues::router())
         .nest("/search", search::router())
         .nest("/admin", migrate::router())
         .merge(transcode::router())

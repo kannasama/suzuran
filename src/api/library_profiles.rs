@@ -87,6 +87,33 @@ async fn delete_profile(
     _admin: AdminUser,
     Path(id): Path<i64>,
 ) -> Result<StatusCode, AppError> {
+    let profile = state.db.get_library_profile(id).await?;
+
+    let library = state.db.get_library(profile.library_id).await?
+        .ok_or_else(|| AppError::NotFound(format!("library {} not found", profile.library_id)))?;
+    let root = library.root_path.trim_end_matches('/').to_string();
+
+    // Remove all derived tracks that belong to this profile
+    let derived_tracks = state.db
+        .list_tracks_by_profile(profile.library_id, Some(id))
+        .await?;
+
+    for track in derived_tracks {
+        // Delete the file on disk (best-effort — don't abort if it fails)
+        let abs_path = format!("{}/{}", root, track.relative_path.trim_start_matches('/'));
+        if let Err(e) = tokio::fs::remove_file(&abs_path).await {
+            tracing::warn!(
+                track_id = track.id,
+                path = %abs_path,
+                "delete_profile: failed to remove file: {e}"
+            );
+        }
+        // Remove the track record (deletes associated track_links via CASCADE)
+        if let Err(e) = state.db.mark_track_removed(track.id).await {
+            tracing::warn!(track_id = track.id, "delete_profile: failed to remove track: {e}");
+        }
+    }
+
     state.db.delete_library_profile(id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
