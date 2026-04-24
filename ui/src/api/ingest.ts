@@ -39,6 +39,10 @@ export function getStagedTracks(): Promise<Track[]> {
   return client.get<Track[]>('/ingest/staged').then(r => r.data)
 }
 
+export function getStagedCount(): Promise<number> {
+  return client.get<{ count: number }>('/ingest/count').then(r => r.data.count)
+}
+
 export function submitTrack(payload: ProcessStagedPayload): Promise<{ job_id: number }> {
   return client.post<{ job_id: number }>('/ingest/submit', payload).then(r => r.data)
 }

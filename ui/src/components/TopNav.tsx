@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '../contexts/AuthContext'
-import { tagSuggestionsApi } from '../api/tagSuggestions'
+import { getStagedCount } from '../api/ingest'
 
 export function TopNav() {
   const { user, logout } = useAuth()
@@ -11,8 +11,8 @@ export function TopNav() {
   const menuRef = useRef<HTMLDivElement>(null)
 
   const { data: inboxCount = 0 } = useQuery({
-    queryKey: ['inbox-count'],
-    queryFn: () => tagSuggestionsApi.count(),
+    queryKey: ['ingest-count'],
+    queryFn: getStagedCount,
     refetchInterval: 30_000,
   })
 

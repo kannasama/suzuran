@@ -20,6 +20,7 @@ use crate::{
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/staged", get(list_staged))
+        .route("/count", get(count_staged))
         .route("/submit", post(submit))
         .route("/supersede-check", post(supersede_check))
 }
@@ -35,6 +36,19 @@ async fn list_staged(
         all_tracks.extend(tracks);
     }
     Ok(Json(all_tracks))
+}
+
+async fn count_staged(
+    State(state): State<AppState>,
+    _auth: AuthUser,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let libraries = state.db.list_libraries().await?;
+    let mut count: usize = 0;
+    for lib in libraries {
+        let tracks = state.db.list_tracks_by_status(lib.id, "staged").await?;
+        count += tracks.len();
+    }
+    Ok(Json(serde_json::json!({ "count": count })))
 }
 
 async fn submit(

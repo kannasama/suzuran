@@ -407,7 +407,7 @@ export function LibraryPage() {
     mutationFn: (id: number) => tagSuggestionsApi.accept(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['tag-suggestions'] })
-      qc.invalidateQueries({ queryKey: ['inbox-count'] })
+      qc.invalidateQueries({ queryKey: ['ingest-count'] })
       qc.invalidateQueries({ queryKey: ['library-tracks', selectedLibraryId] })
     },
   })
@@ -909,7 +909,7 @@ function BulkEditPanel({
     setSavedCount(count)
     if (errors.length > 0) setError(`${errors.length} failed: ${errors[0]}`)
     qc.invalidateQueries({ queryKey: ['tag-suggestions'] })
-    qc.invalidateQueries({ queryKey: ['inbox-count'] })
+    qc.invalidateQueries({ queryKey: ['ingest-count'] })
   }
 
   return (
