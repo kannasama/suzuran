@@ -49,6 +49,26 @@ Branch: `0.6`
 - `24d786e` — feat: tabbed edit panel (Task 5)
 - `878c05e` — feat: maintenance job (Task 6)
 
+### Task 7: Issues tab
+- `migrations/postgres/0033_jobs_add_maintenance.sql`, `migrations/sqlite/0033_jobs_add_maintenance.sql`: Added `maintenance` to job_type CHECK constraint
+- `migrations/postgres/0034_issues.sql`, `migrations/sqlite/0034_issues.sql`: New `issues` table with unique index on `(track_id, issue_type)`
+- `src/models/mod.rs`: `Issue` + `UpsertIssue` structs
+- `src/dal/mod.rs`: `upsert_issue`, `resolve_issue`, `dismiss_issue`, `list_issues`, `get_issue`, `issue_count` in Store trait
+- `src/dal/postgres.rs`, `src/dal/sqlite.rs`: Implementations (ON CONFLICT upsert pattern)
+- `src/jobs/maintenance.rs`: Updated to upsert `missing_file`, `bad_audio_properties`, `untagged` issues; resolves issues when conditions clear
+- `src/api/issues.rs`: New router — `GET /issues`, `GET /issues/count`, `POST /issues/:id/dismiss`, `POST /issues/rescan`
+- `src/api/mod.rs`: Registered `/issues` route
+- `ui/src/types/issue.ts`: `Issue` type
+- `ui/src/api/issues.ts`: `issuesApi.list/count/dismiss/rescan`
+- `ui/src/pages/IssuesPage.tsx`: Issues table with library/type filters, show-dismissed toggle, Rescan (bad audio) and Dismiss actions
+- `ui/src/App.tsx`: Added `/issues` route
+- `ui/src/components/TopNav.tsx`: Issues nav item gets a yellow badge with unresolved/undismissed count
+
+## Commits
+- `d55ee6c` — pre-session state (prior session docs)
+- `24d786e` — feat: tabbed edit panel (Task 5)
+- `878c05e` — feat: maintenance job (Task 6)
+- `f31954a` — feat: issues tab (Task 7)
+
 ## Pending
-- Task 7: Issues tab — missing files, bad audio properties, untagged tracks; dismissable + auto-cleared; rescan/remove actions
 - Field-level selection in Ingest accept flow (currently only Library BulkEditPanel)
