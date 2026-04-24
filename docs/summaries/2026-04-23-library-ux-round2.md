@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-23  
 **Branch:** 0.6  
-**Commits:** ba38525 (UI), 7df32a4 (backend)
+**Commits:** ba38525 (UI round 1), 7df32a4 (backend fixes), 474b036 (derived tracks)
 
 ## What Was Implemented
 
@@ -52,3 +52,17 @@ All changes in `ui/src/pages/LibraryPage.tsx` and `ui/src/components/TrackEditPa
 - Wired into `transcode.rs` as a second skip check after `is_compatible`
 - `is_compatible` semantics preserved unchanged (upscaling guard only); existing
   tests all pass
+
+**Derived tracks as child rows (item 5)**
+- `src/dal/`: new `list_track_links_by_library(library_id)` method (postgres +
+  sqlite); single JOIN query — no N+1 per track
+- `src/api/libraries.rs`: `list_tracks` now returns `Vec<TrackRow>` where
+  `TrackRow = { ...Track, derived_tracks: Vec<Track> }` (flattened via serde);
+  derived tracks are removed from the top-level list and nested under their
+  source; sorted by bitrate desc (highest quality first)
+- `ui/src/types/track.ts`: `derived_tracks?: Track[]` added
+- `ui/src/pages/LibraryPage.tsx`: each `TrackRow` is wrapped in
+  `React.Fragment` and followed by zero or more `DerivedTrackRow` entries
+- `DerivedTrackRow`: `↳` connector in checkbox column; profile dir name
+  (first path segment of `relative_path`) in title column; format/bitrate/
+  duration from the derived track; no checkbox, not selectable
