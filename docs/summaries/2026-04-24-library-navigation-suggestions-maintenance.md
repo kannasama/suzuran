@@ -64,11 +64,36 @@ Branch: `0.6`
 - `ui/src/App.tsx`: Added `/issues` route
 - `ui/src/components/TopNav.tsx`: Issues nav item gets a yellow badge with unresolved/undismissed count
 
+### Bug Fix — Three post-Task-7 fixes (f7392f3)
+
+**Fix 1: M4A bitrate reads as 0k after maintenance job**
+- `src/tagger/mod.rs`: `overall_bitrate()` returns `Some(0)` for M4A containers (not `None`), so the
+  `or_else(|| audio_bitrate())` fallback never fired. Added `.filter(|&b| b > 0)` before the
+  `or_else` to treat zero as absent and fall through to `audio_bitrate()`.
+
+**Fix 2: Deleting a library profile must clean up derived tracks**
+- `src/api/library_profiles.rs`: `delete_profile` now calls `list_tracks_by_profile(library_id, Some(id))`,
+  removes each file from disk (best-effort), calls `mark_track_removed` for each, then deletes the profile.
+
+**Fix 3: Suggestions don't show all available MusicBrainz fields**
+- `src/services/musicbrainz.rs`:
+  - `get_recording` `inc` extended with `+recordings` so track listings within each medium are returned
+  - `MbRelease` gains `country: Option<String>`
+  - `MbReleaseGroup` gains `id: Option<String>` and `secondary_types: Option<Vec<String>>`
+  - `MbMedia` gains `tracks: Option<Vec<MbTrack>>`; new `MbTrack` and `MbTrackRecording` structs
+  - `to_tag_map` now emits: `totaldiscs` (always), `discnumber`, `tracknumber`, `totaltracks`
+    (from track position match), `releasestatus`, `releasecountry`, `musicbrainz_artistid`,
+    `musicbrainz_albumartistid`, `musicbrainz_releasegroupid`
+- `tests/musicbrainz_service.rs`: Added `country: None` to two `MbRelease` literals
+- `ui/src/pages/LibraryPage.tsx`: `FIELD_LABELS` map derived from `BULK_EDIT_FIELDS`; `SuggestionReviewPane`
+  shows human-readable field names (e.g. "MB Artist ID") instead of raw keys, with the raw key as a tooltip
+
 ## Commits
 - `d55ee6c` — pre-session state (prior session docs)
 - `24d786e` — feat: tabbed edit panel (Task 5)
 - `878c05e` — feat: maintenance job (Task 6)
 - `f31954a` — feat: issues tab (Task 7)
+- `f7392f3` — fix: m4a bitrate, profile delete cleanup, suggestion field coverage
 
 ## Pending
 - Field-level selection in Ingest accept flow (currently only Library BulkEditPanel)
