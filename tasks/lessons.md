@@ -414,6 +414,25 @@ to ask for a summary to be created.
 - The summary file is a running log that grows as work progresses, not a final artifact written
   at the end
 
+## 2026-04-24 — User input gets highest priority; never defer mid-session messages
+
+**Rule:** User messages sent mid-task must be read and addressed immediately. They interrupt
+whatever is in progress. The only exception: the user has explicitly said to queue or defer
+(e.g., "finish what you're doing first").
+
+**Why:** User explicitly stated this rule and required it to survive compaction. Two violations
+occurred in a single session: (1) a compaction-injected "IMPORTANT: address after current task"
+was ignored while coding continued; (2) a second user message ("you're ignoring my input") was
+also deferred. Both are the same failure.
+
+**How to apply:**
+- When a user message arrives mid-task, stop and respond to it before resuming
+- "IMPORTANT: address user message after current task" (a compaction artifact) does NOT mean
+  the current task takes priority — treat it as "respond now"
+- User messages may be queued or deferred only if the user explicitly says so
+
+**Applied:** All sessions. This survives compaction by being in `tasks/lessons.md`.
+
 ## 2026-04-23 — No plan doc when user says to go straight to implementation after brainstorming
 
 **Mistake:** After a completed brainstorming session where the user approved each design section
