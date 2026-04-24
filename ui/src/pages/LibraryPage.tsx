@@ -8,6 +8,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { getLibrary, listLibraries, listLibraryTracks, triggerMaintenance } from '../api/libraries'
 import { enqueueLookup } from '../api/tracks'
 import { tagSuggestionsApi } from '../api/tagSuggestions'
+import { getJob } from '../api/jobs'
 import client from '../api/client'
 import type { Track } from '../types/track'
 import type { TagSuggestion } from '../types/tagSuggestion'
@@ -479,18 +480,39 @@ export function LibraryPage() {
   async function handleScan() {
     if (selectedLibraryId == null) return
     try {
-      await client.post('/jobs/scan', { library_id: selectedLibraryId })
+      const res = await client.post<{ id: number }>('/jobs/scan', { library_id: selectedLibraryId })
+      const jobId = res.data.id
       setScanQueued(true)
-      setTimeout(() => setScanQueued(false), 2000)
+      const libId = selectedLibraryId
+      const timer = setInterval(async () => {
+        try {
+          const job = await getJob(jobId)
+          if (job.status === 'completed' || job.status === 'failed') {
+            clearInterval(timer)
+            setScanQueued(false)
+            qc.invalidateQueries({ queryKey: ['library-tracks', libId] })
+          }
+        } catch { clearInterval(timer); setScanQueued(false) }
+      }, 2000)
     } catch { /* ignore */ }
   }
 
   async function handleMaintenance() {
     if (selectedLibraryId == null) return
     try {
-      await triggerMaintenance(selectedLibraryId)
+      const { job_id } = await triggerMaintenance(selectedLibraryId)
       setMaintenanceQueued(true)
-      setTimeout(() => setMaintenanceQueued(false), 2000)
+      const libId = selectedLibraryId
+      const timer = setInterval(async () => {
+        try {
+          const job = await getJob(job_id)
+          if (job.status === 'completed' || job.status === 'failed') {
+            clearInterval(timer)
+            setMaintenanceQueued(false)
+            qc.invalidateQueries({ queryKey: ['library-tracks', libId] })
+          }
+        } catch { clearInterval(timer); setMaintenanceQueued(false) }
+      }, 2000)
     } catch { /* ignore */ }
   }
 
@@ -547,8 +569,8 @@ export function LibraryPage() {
             <div className="ml-auto flex gap-1 items-center">
               {selectedLibraryId != null && selectedVirtualLibraryId == null && (
                 <>
-                  {scanQueued && <span className="text-xs text-accent mr-1">Scan queued</span>}
-                  {maintenanceQueued && <span className="text-xs text-accent mr-1">Maintenance queued</span>}
+                  {scanQueued && <span className="text-xs text-accent mr-1">Scanning…</span>}
+                  {maintenanceQueued && <span className="text-xs text-accent mr-1">Maintaining…</span>}
                   <button
                     onClick={handleScan}
                     className="text-xs text-text-muted bg-bg-panel border border-border rounded px-2 py-0.5 hover:text-text-primary hover:border-accent"
