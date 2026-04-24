@@ -362,16 +362,12 @@ export function LibraryPage() {
   function handleContextMenu(e: React.MouseEvent, track: Track) {
     e.preventDefault()
     e.stopPropagation()
-    if (!selectedTrackIds.has(track.id)) {
-      setSelectedTrackIds(new Set([track.id]))
-      lastSelectedIdRef.current = track.id
-    }
     setContextMenu({
       x: e.clientX,
       y: e.clientY,
       items: [
-        { label: 'Lookup', action: () => { lookupMutation.mutate(track.id); setContextMenu(null) } },
-        { label: 'Search', action: () => { setSearchTrack(track); setContextMenu(null) } },
+        { label: 'Identify via AcoustID',       action: () => { lookupMutation.mutate(track.id); setContextMenu(null) } },
+        { label: 'Search MusicBrainz / FreeDB…', action: () => { setSearchTrack(track); setContextMenu(null) } },
         null,
         { label: 'Select All',   action: () => { toggleSelectAll(); setContextMenu(null) } },
         { label: 'Deselect All', action: () => { setSelectedTrackIds(new Set()); setContextMenu(null) } },
@@ -384,8 +380,8 @@ export function LibraryPage() {
   function handleThreeDotsClick(track: Track, x: number, y: number) {
     const suggestion = suggestionsByTrack[track.id]
     const items: MenuItem[] = [
-      { label: 'Lookup', action: () => { lookupMutation.mutate(track.id); setContextMenu(null) } },
-      { label: 'Search', action: () => { setSearchTrack(track); setContextMenu(null) } },
+      { label: 'Identify via AcoustID',        action: () => { lookupMutation.mutate(track.id); setContextMenu(null) } },
+      { label: 'Search MusicBrainz / FreeDB…', action: () => { setSearchTrack(track); setContextMenu(null) } },
     ]
     if (suggestion) {
       const pct = Math.round(suggestion.confidence * 100)
@@ -941,7 +937,7 @@ function BulkEditPanel({
             onClick={onClose}
             className="text-xs text-text-muted hover:text-text-primary border border-border rounded px-2 py-0.5"
           >
-            Clear
+            Close
           </button>
         </div>
       </div>
@@ -976,9 +972,26 @@ function BulkEditPanel({
 
 // ── ContextMenu ────────────────────────────────────────────────────────────────
 function ContextMenu({ x, y, items }: { x: number; y: number; items: MenuItem[] }) {
+  const ref = React.useRef<HTMLDivElement>(null)
+  const [pos, setPos] = React.useState({ x, y })
+
+  React.useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    let nx = x
+    let ny = y
+    if (nx + rect.width > window.innerWidth)   nx = window.innerWidth  - rect.width  - 4
+    if (ny + rect.height > window.innerHeight) ny = window.innerHeight - rect.height - 4
+    if (nx < 4) nx = 4
+    if (ny < 4) ny = 4
+    setPos({ x: nx, y: ny })
+  }, [x, y])
+
   return (
     <div
-      style={{ position: 'fixed', left: x, top: y }}
+      ref={ref}
+      style={{ position: 'fixed', left: pos.x, top: pos.y }}
       className="z-[100] bg-bg-panel border border-border rounded shadow-lg py-1 min-w-[140px]"
       onClick={e => e.stopPropagation()}
       onContextMenu={e => e.preventDefault()}
