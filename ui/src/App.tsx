@@ -7,6 +7,7 @@ import { RegisterPage } from './pages/RegisterPage'
 import { LibraryPage } from './pages/LibraryPage'
 import OrganizationPage from './pages/OrganizationPage'
 import IngestPage from './pages/IngestPage'
+import IssuesPage from './pages/IssuesPage'
 import SettingsPage from './pages/SettingsPage'
 import AccountPage from './pages/AccountPage'
 import TwoFactorPage from './pages/TwoFactorPage'
@@ -62,6 +63,10 @@ function AppRoutes() {
       <Route
         path="/account"
         element={user ? <AccountPage /> : <Navigate to="/login" replace />}
+      />
+      <Route
+        path="/issues"
+        element={user ? <IssuesPage /> : <Navigate to="/login" replace />}
       />
       <Route
         path="/jobs"

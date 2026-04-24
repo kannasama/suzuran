@@ -5,13 +5,14 @@ use chrono::{DateTime, Utc};
 
 use serde_json::Value as JsonValue;
 
-use crate::{error::AppError, models::{ArtProfile, EncodingProfile, Job, Library, OrganizationRule, Session, Setting, TagSuggestion, Theme, TotpEntry, Track, TrackLink, User, VirtualLibrary, VirtualLibrarySource, VirtualLibraryTrack, WebauthnChallenge, WebauthnCredential}};
+use crate::{error::AppError, models::{ArtProfile, EncodingProfile, Issue, Job, Library, OrganizationRule, Session, Setting, TagSuggestion, Theme, TotpEntry, Track, TrackLink, User, VirtualLibrary, VirtualLibrarySource, VirtualLibraryTrack, WebauthnChallenge, WebauthnCredential}};
 
 pub use crate::models::UpsertTagSuggestion;
 pub use crate::models::UpsertEncodingProfile;
 pub use crate::models::UpsertArtProfile;
 pub use crate::models::UpsertVirtualLibrary;
 pub use crate::models::{UpsertLibraryProfile, LibraryProfile};
+pub use crate::models::UpsertIssue;
 
 #[derive(Debug, Clone)]
 pub struct VirtualLibrarySourceInput {
@@ -382,4 +383,20 @@ pub trait Store: Send + Sync {
     async fn upsert_virtual_library_track(&self, vlib_id: i64, track_id: i64, link_path: &str) -> Result<(), AppError>;
     async fn list_virtual_library_tracks(&self, vlib_id: i64) -> Result<Vec<VirtualLibraryTrack>, AppError>;
     async fn clear_virtual_library_tracks(&self, vlib_id: i64) -> Result<(), AppError>;
+
+    // ── issues ────────────────────────────────────────────────────
+    /// Upsert an issue for the given track+type. Creates if absent, updates detail
+    /// and clears resolved/dismissed flags if the condition has re-appeared.
+    async fn upsert_issue(&self, dto: UpsertIssue) -> Result<Issue, AppError>;
+    /// Mark an issue as resolved (condition cleared on the last maintenance pass).
+    async fn resolve_issue(&self, track_id: i64, issue_type: &str) -> Result<(), AppError>;
+    async fn dismiss_issue(&self, id: i64) -> Result<(), AppError>;
+    async fn list_issues(
+        &self,
+        library_id: Option<i64>,
+        issue_type: Option<&str>,
+        include_dismissed: bool,
+    ) -> Result<Vec<Issue>, AppError>;
+    async fn get_issue(&self, id: i64) -> Result<Option<Issue>, AppError>;
+    async fn issue_count(&self) -> Result<i64, AppError>;
 }

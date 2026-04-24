@@ -3,6 +3,7 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '../contexts/AuthContext'
 import { getStagedCount } from '../api/ingest'
+import { issuesApi } from '../api/issues'
 
 export function TopNav() {
   const { user, logout } = useAuth()
@@ -14,6 +15,12 @@ export function TopNav() {
     queryKey: ['ingest-count'],
     queryFn: getStagedCount,
     refetchInterval: 30_000,
+  })
+
+  const { data: issuesCount = 0 } = useQuery({
+    queryKey: ['issues-count'],
+    queryFn: () => issuesApi.count(),
+    refetchInterval: 60_000,
   })
 
   // Close on outside click
@@ -75,7 +82,26 @@ export function TopNav() {
           </span>
         )}
       </NavLink>
-      {navItem('/issues', 'Issues')}
+      <NavLink
+        to="/issues"
+        className={({ isActive }) =>
+          `text-xs px-3 py-2 border-b-2 transition-colors inline-flex items-center ${
+            isActive
+              ? 'text-accent border-accent'
+              : 'text-text-muted border-transparent hover:text-text-secondary'
+          }`
+        }
+      >
+        Issues
+        {issuesCount > 0 && (
+          <span className="ml-1.5 inline-flex items-center justify-center
+                           h-4 min-w-[1rem] px-1 rounded-full
+                           text-[10px] font-bold
+                           bg-yellow-500 text-bg-base">
+            {issuesCount > 99 ? '99+' : issuesCount}
+          </span>
+        )}
+      </NavLink>
       {navItem('/jobs', 'Jobs')}
       {(user?.role === 'admin' || user?.role === 'library_admin') && navItem('/organization', 'Organization')}
 

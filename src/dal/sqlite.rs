@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 
-use crate::{dal::{Store, UpsertArtProfile, UpsertEncodingProfile, UpsertTrack, UpsertVirtualLibrary, VirtualLibrarySourceInput}, error::AppError, models::{ArtProfile, EncodingProfile, Job, Library, LibraryProfile, OrganizationRule, Session, Setting, TagSuggestion, Theme, TotpEntry, Track, TrackLink, UpsertLibraryProfile, UpsertTagSuggestion, User, VirtualLibrary, VirtualLibrarySource, VirtualLibraryTrack, WebauthnChallenge, WebauthnCredential}};
+use crate::{dal::{Store, UpsertArtProfile, UpsertEncodingProfile, UpsertTrack, UpsertVirtualLibrary, VirtualLibrarySourceInput}, error::AppError, models::{ArtProfile, EncodingProfile, Issue, Job, Library, LibraryProfile, OrganizationRule, Session, Setting, TagSuggestion, Theme, TotpEntry, Track, TrackLink, UpsertIssue, UpsertLibraryProfile, UpsertTagSuggestion, User, VirtualLibrary, VirtualLibrarySource, VirtualLibraryTrack, WebauthnChallenge, WebauthnCredential}};
 use sqlx::SqlitePool;
 
 pub struct SqliteStore {
@@ -1427,5 +1427,100 @@ impl Store for SqliteStore {
             .await
             .map(|_| ())
             .map_err(AppError::Database)
+    }
+
+    // ── issues ────────────────────────────────────────────────────
+
+    async fn upsert_issue(&self, dto: UpsertIssue) -> Result<Issue, AppError> {
+        // SQLite: INSERT OR REPLACE loses the old id; use INSERT + ON CONFLICT UPDATE
+        sqlx::query_as::<_, Issue>(
+            r#"INSERT INTO issues (library_id, track_id, issue_type, detail, severity, dismissed, resolved, updated_at)
+               VALUES (?1, ?2, ?3, ?4, ?5, 0, 0, datetime('now'))
+               ON CONFLICT (track_id, issue_type) DO UPDATE
+                 SET detail = excluded.detail, severity = excluded.severity,
+                     dismissed = 0, resolved = 0, updated_at = datetime('now')
+               RETURNING *"#,
+        )
+        .bind(dto.library_id)
+        .bind(dto.track_id)
+        .bind(&dto.issue_type)
+        .bind(&dto.detail)
+        .bind(&dto.severity)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(AppError::Database)
+    }
+
+    async fn resolve_issue(&self, track_id: i64, issue_type: &str) -> Result<(), AppError> {
+        sqlx::query(
+            "UPDATE issues SET resolved = 1, updated_at = datetime('now') WHERE track_id = ?1 AND issue_type = ?2",
+        )
+        .bind(track_id)
+        .bind(issue_type)
+        .execute(&self.pool)
+        .await
+        .map(|_| ())
+        .map_err(AppError::Database)
+    }
+
+    async fn dismiss_issue(&self, id: i64) -> Result<(), AppError> {
+        sqlx::query("UPDATE issues SET dismissed = 1, updated_at = datetime('now') WHERE id = ?1")
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map(|_| ())
+            .map_err(AppError::Database)
+    }
+
+    async fn list_issues(
+        &self,
+        library_id: Option<i64>,
+        issue_type: Option<&str>,
+        include_dismissed: bool,
+    ) -> Result<Vec<Issue>, AppError> {
+        let mut conditions: Vec<String> = vec!["resolved = 0".into()];
+        if !include_dismissed {
+            conditions.push("dismissed = 0".into());
+        }
+        let mut param_idx = 1usize;
+        if library_id.is_some() {
+            conditions.push(format!("library_id = ?{param_idx}"));
+            param_idx += 1;
+        }
+        if issue_type.is_some() {
+            conditions.push(format!("issue_type = ?{param_idx}"));
+        }
+        let where_clause = conditions.join(" AND ");
+        let sql = format!(
+            "SELECT * FROM issues WHERE {where_clause} ORDER BY \
+             CASE severity WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END ASC, \
+             created_at DESC"
+        );
+        let mut q = sqlx::query_as::<_, Issue>(&sql);
+        if let Some(lid) = library_id {
+            q = q.bind(lid);
+        }
+        if let Some(it) = issue_type {
+            q = q.bind(it);
+        }
+        q.fetch_all(&self.pool).await.map_err(AppError::Database)
+    }
+
+    async fn get_issue(&self, id: i64) -> Result<Option<Issue>, AppError> {
+        sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = ?1")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(AppError::Database)
+    }
+
+    async fn issue_count(&self) -> Result<i64, AppError> {
+        let row: (i64,) = sqlx::query_as(
+            "SELECT COUNT(*) FROM issues WHERE resolved = 0 AND dismissed = 0",
+        )
+        .fetch_one(&self.pool)
+        .await
+        .map_err(AppError::Database)?;
+        Ok(row.0)
     }
 }

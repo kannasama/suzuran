@@ -285,3 +285,25 @@ pub struct VirtualLibraryTrack {
     pub source_track_id: i64,
     pub link_path: String,
 }
+
+#[derive(Debug, Clone, sqlx::FromRow, serde::Serialize, serde::Deserialize)]
+pub struct Issue {
+    pub id: i64,
+    pub library_id: i64,
+    pub track_id: Option<i64>,
+    pub issue_type: String,
+    pub detail: Option<String>,
+    pub severity: String,
+    pub dismissed: bool,
+    pub resolved: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+pub struct UpsertIssue {
+    pub library_id: i64,
+    pub track_id: Option<i64>,
+    pub issue_type: String,
+    pub detail: Option<String>,
+    pub severity: String,
+}
