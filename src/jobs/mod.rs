@@ -2,6 +2,7 @@ pub mod art_process;
 pub mod cue_split;
 pub mod fingerprint;
 pub mod freedb_lookup;
+pub mod maintenance;
 pub mod mb_lookup;
 pub mod normalize;
 pub mod organize;
@@ -95,4 +96,10 @@ pub struct ArtProcessPayload {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct VirtualSyncPayload {
     pub virtual_library_id: i64,
+}
+
+/// Payload for the `maintenance` job type.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct MaintenancePayload {
+    pub library_id: i64,
 }

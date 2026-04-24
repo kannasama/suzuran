@@ -31,6 +31,7 @@ pub fn router() -> Router<AppState> {
         .route("/", get(list_libraries).post(create_library))
         .route("/:id", get(get_library).put(update_library).delete(delete_library))
         .route("/:id/tracks", get(list_tracks))
+        .route("/:id/maintenance", axum::routing::post(trigger_maintenance))
 }
 
 async fn list_libraries(
@@ -174,4 +175,22 @@ async fn list_tracks(
         .collect();
 
     Ok(Json(rows))
+}
+
+async fn trigger_maintenance(
+    State(state): State<AppState>,
+    _admin: AdminUser,
+    Path(id): Path<i64>,
+) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
+    // Verify library exists
+    state.db
+        .get_library(id)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("library {id} not found")))?;
+
+    let job = state.db
+        .enqueue_job("maintenance", serde_json::json!({ "library_id": id }), 2)
+        .await?;
+
+    Ok((StatusCode::ACCEPTED, Json(serde_json::json!({ "job_id": job.id }))))
 }

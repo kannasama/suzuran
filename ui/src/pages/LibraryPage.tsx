@@ -5,7 +5,7 @@ import { LibraryTree, type BrowseMode } from '../components/LibraryTree'
 import { AlternativesPanel } from '../components/AlternativesPanel'
 import { IngestSearchDialog } from '../components/IngestSearchDialog'
 import { useAuth } from '../contexts/AuthContext'
-import { getLibrary, listLibraries, listLibraryTracks } from '../api/libraries'
+import { getLibrary, listLibraries, listLibraryTracks, triggerMaintenance } from '../api/libraries'
 import { enqueueLookup } from '../api/tracks'
 import { tagSuggestionsApi } from '../api/tagSuggestions'
 import client from '../api/client'
@@ -149,6 +149,7 @@ export function LibraryPage() {
   const [selectedLibraryId, setSelectedLibraryId] = useState<number | null>(null)
   const [selectedVirtualLibraryId, setSelectedVirtualLibraryId] = useState<number | null>(null)
   const [scanQueued, setScanQueued] = useState(false)
+  const [maintenanceQueued, setMaintenanceQueued] = useState(false)
   const [visibleColumns, setVisibleColumns] = useState<Set<string>>(loadColumnVisibility)
   const [showColumnPicker, setShowColumnPicker] = useState(false)
   const pickerRef = useRef<HTMLDivElement>(null)
@@ -479,6 +480,15 @@ export function LibraryPage() {
     } catch { /* ignore */ }
   }
 
+  async function handleMaintenance() {
+    if (selectedLibraryId == null) return
+    try {
+      await triggerMaintenance(selectedLibraryId)
+      setMaintenanceQueued(true)
+      setTimeout(() => setMaintenanceQueued(false), 2000)
+    } catch { /* ignore */ }
+  }
+
   function getToolbarLabel() {
     if (selectedLibraryId == null && selectedVirtualLibraryId == null) return 'Select a library'
     if (selectedVirtualLibraryId != null) return `Virtual Library #${selectedVirtualLibraryId}`
@@ -533,12 +543,20 @@ export function LibraryPage() {
               {selectedLibraryId != null && selectedVirtualLibraryId == null && (
                 <>
                   {scanQueued && <span className="text-xs text-accent mr-1">Scan queued</span>}
+                  {maintenanceQueued && <span className="text-xs text-accent mr-1">Maintenance queued</span>}
                   <button
                     onClick={handleScan}
                     className="text-xs text-text-muted bg-bg-panel border border-border rounded px-2 py-0.5 hover:text-text-primary hover:border-accent"
                     title="Scan this library for new/changed files"
                   >
                     Scan
+                  </button>
+                  <button
+                    onClick={handleMaintenance}
+                    className="text-xs text-text-muted bg-bg-panel border border-border rounded px-2 py-0.5 hover:text-text-primary hover:border-accent"
+                    title="Re-read audio properties and mark missing files as removed"
+                  >
+                    Maintain
                   </button>
                 </>
               )}

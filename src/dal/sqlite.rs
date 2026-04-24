@@ -1273,6 +1273,34 @@ impl Store for SqliteStore {
         Ok(())
     }
 
+    async fn update_track_audio_properties(
+        &self,
+        track_id: i64,
+        duration_secs: Option<f64>,
+        bitrate: Option<i64>,
+        sample_rate: Option<i64>,
+        channels: Option<i64>,
+        bit_depth: Option<i64>,
+        has_embedded_art: bool,
+    ) -> Result<(), AppError> {
+        let has_embedded_art_int: i64 = if has_embedded_art { 1 } else { 0 };
+        sqlx::query(
+            "UPDATE tracks SET duration_secs=?1, bitrate=?2, sample_rate=?3,
+             channels=?4, bit_depth=?5, has_embedded_art=?6 WHERE id=?7",
+        )
+        .bind(duration_secs)
+        .bind(bitrate)
+        .bind(sample_rate)
+        .bind(channels)
+        .bind(bit_depth)
+        .bind(has_embedded_art_int)
+        .bind(track_id)
+        .execute(&self.pool)
+        .await
+        .map(|_| ())
+        .map_err(AppError::Database)
+    }
+
     // ── virtual libraries ─────────────────────────────────────────
 
     async fn create_virtual_library(&self, dto: UpsertVirtualLibrary) -> Result<VirtualLibrary, AppError> {

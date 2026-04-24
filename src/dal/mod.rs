@@ -357,6 +357,16 @@ pub trait Store: Send + Sync {
     async fn pending_tag_suggestion_count(&self) -> Result<i64, AppError>;
     async fn update_track_tags(&self, track_id: i64, tags: serde_json::Value) -> Result<(), AppError>;
     async fn set_track_has_embedded_art(&self, track_id: i64, has_art: bool) -> Result<(), AppError>;
+    async fn update_track_audio_properties(
+        &self,
+        track_id: i64,
+        duration_secs: Option<f64>,
+        bitrate: Option<i64>,
+        sample_rate: Option<i64>,
+        channels: Option<i64>,
+        bit_depth: Option<i64>,
+        has_embedded_art: bool,
+    ) -> Result<(), AppError>;
 
     // ── virtual libraries ─────────────────────────────────────────
     async fn create_virtual_library(&self, dto: UpsertVirtualLibrary) -> Result<VirtualLibrary, AppError>;

@@ -61,3 +61,8 @@ export async function listLibraryTracks(libraryId: number): Promise<Track[]> {
   const res = await client.get<Track[]>(`/libraries/${libraryId}/tracks`)
   return res.data
 }
+
+export async function triggerMaintenance(libraryId: number): Promise<{ job_id: number }> {
+  const res = await client.post<{ job_id: number }>(`/libraries/${libraryId}/maintenance`)
+  return res.data
+}
