@@ -94,6 +94,23 @@ Branch: `0.6`
 - `878c05e` — feat: maintenance job (Task 6)
 - `f31954a` — feat: issues tab (Task 7)
 - `f7392f3` — fix: m4a bitrate, profile delete cleanup, suggestion field coverage
+- `8f640d0` — fix: scan and maintenance buttons poll job status and refresh tracks on completion
+- `f183c9d` — fix: quality column — separate lossless (bit-depth/kHz) and lossy (kbps) views
+
+### Bug Fix — Scan/Maintain buttons not refreshing track list (8f640d0)
+
+`ui/src/pages/LibraryPage.tsx`: Both handlers now capture the returned `job_id` and poll
+`GET /jobs/:id` every 2 s. When status is `completed` or `failed`, the interval clears and
+`qc.invalidateQueries({ queryKey: ['library-tracks'] })` fires. Status labels updated from
+"queued" → "Scanning…" / "Maintaining…".
+
+### Bug Fix — Quality column showing wrong values (f183c9d)
+
+`formatBitrate(bps)` was dividing by 1000 treating kbps as bps — so a 256 kbps AAC track
+displayed as "0k". Replaced with `formatQuality(bitrate, bitDepth, sampleRate)`:
+- `bit_depth` present (FLAC, WAV, ALAC): shows `"{depth}-bit / {rate}kHz"`
+- `bit_depth` null (AAC, MP3, Opus): shows `"{kbps}k"` — no division
+Column renamed **Bitrate → Quality**, widened from `w-14` to `w-24`.
 
 ## Pending
 - Field-level selection in Ingest accept flow (currently only Library BulkEditPanel)
