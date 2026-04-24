@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { TopNav } from '../components/TopNav'
-import { LibraryTree } from '../components/LibraryTree'
+import { LibraryTree, type BrowseMode } from '../components/LibraryTree'
 import { AlternativesPanel } from '../components/AlternativesPanel'
 import { IngestSearchDialog } from '../components/IngestSearchDialog'
 import { useAuth } from '../contexts/AuthContext'
@@ -163,6 +163,8 @@ export function LibraryPage() {
   const sortMenuRef = useRef<HTMLDivElement>(null)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null)
   const [altPanelTrackId, setAltPanelTrackId] = useState<number | null>(null)
+  const [browseMode, setBrowseMode] = useState<BrowseMode | null>(null)
+  const [browseFilter, setBrowseFilter] = useState<string | null>(null)
 
   // ── Dismiss handlers ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -252,6 +254,41 @@ export function LibraryPage() {
     return map
   }, [suggestions])
 
+  // ── Browse helpers ─────────────────────────────────────────────────────────────
+  function getBrowseValue(track: Track, mode: BrowseMode): string {
+    switch (mode) {
+      case 'artist':      return track.artist ?? ''
+      case 'albumartist': return track.albumartist ?? ''
+      case 'album':       return track.album ?? ''
+      case 'genre':       return track.genre ?? ''
+    }
+  }
+
+  const BROWSE_LABEL: Record<BrowseMode, string> = {
+    artist:      'Artist',
+    albumartist: 'Album Artist',
+    album:       'Album',
+    genre:       'Genre',
+  }
+
+  const browseValues = useMemo(() => {
+    if (!browseMode) return []
+    const counts = new Map<string, number>()
+    for (const t of tracks) {
+      const v = getBrowseValue(t, browseMode) || '—'
+      counts.set(v, (counts.get(v) ?? 0) + 1)
+    }
+    return [...counts.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([val, count]) => ({ val, count }))
+  }, [tracks, browseMode])
+
+  // Tracks scoped by active browse filter (State C), or all tracks otherwise
+  const displayTracks = useMemo(() => {
+    if (!browseMode || !browseFilter) return tracks
+    return tracks.filter(t => (getBrowseValue(t, browseMode) || '—') === browseFilter)
+  }, [tracks, browseMode, browseFilter])
+
   // ── Display groups + flat/selected track lists ────────────────────────────────
   const displayGroups = useMemo(() => {
     function getTrackSortVal(t: Track, key: SortByKey): string | number {
@@ -297,10 +334,10 @@ export function LibraryPage() {
       }
     }
     if (groupBy === 'none') {
-      return [{ key: '', tracks: sortTracks(tracks) }]
+      return [{ key: '', tracks: sortTracks(displayTracks) }]
     }
     const groupMap = new Map<string, Track[]>()
-    for (const t of tracks) {
+    for (const t of displayTracks) {
       const k = getGroupKey(t)
       if (!groupMap.has(k)) groupMap.set(k, [])
       groupMap.get(k)!.push(t)
@@ -363,10 +400,10 @@ export function LibraryPage() {
   }
 
   function toggleSelectAll() {
-    if (selectedTrackIds.size === tracks.length && tracks.length > 0) {
+    if (selectedTrackIds.size === displayTracks.length && displayTracks.length > 0) {
       setSelectedTrackIds(new Set())
     } else {
-      setSelectedTrackIds(new Set(tracks.map((t: Track) => t.id)))
+      setSelectedTrackIds(new Set(displayTracks.map((t: Track) => t.id)))
     }
   }
 
@@ -458,9 +495,32 @@ export function LibraryPage() {
             isAdmin={isAdmin}
             isLibraryAdmin={isLibraryAdmin}
             selectedLibraryId={selectedLibraryId}
-            onSelectLibrary={id => { setSelectedLibraryId(id); setSelectedVirtualLibraryId(null); setAltPanelTrackId(null) }}
+            onSelectLibrary={id => {
+              setSelectedLibraryId(id)
+              setSelectedVirtualLibraryId(null)
+              setAltPanelTrackId(null)
+              setBrowseMode(null)
+              setBrowseFilter(null)
+              setSelectedTrackIds(new Set())
+            }}
             selectedVirtualLibraryId={selectedVirtualLibraryId}
-            onSelectVirtualLibrary={id => { setSelectedVirtualLibraryId(id); setSelectedLibraryId(null); setAltPanelTrackId(null) }}
+            onSelectVirtualLibrary={id => {
+              setSelectedVirtualLibraryId(id)
+              setSelectedLibraryId(null)
+              setAltPanelTrackId(null)
+              setBrowseMode(null)
+              setBrowseFilter(null)
+              setSelectedTrackIds(new Set())
+            }}
+            selectedBrowseMode={browseMode}
+            onSelectBrowseMode={(libraryId, mode) => {
+              setSelectedLibraryId(libraryId)
+              setSelectedVirtualLibraryId(null)
+              setAltPanelTrackId(null)
+              setBrowseMode(mode)
+              setBrowseFilter(null)
+              setSelectedTrackIds(new Set())
+            }}
           />
         </aside>
 
@@ -568,13 +628,31 @@ export function LibraryPage() {
             </div>
           </div>
 
-          {/* Column headers */}
+          {/* Breadcrumb bar — shown in State C (browse mode + filter active) */}
+          {browseMode && browseFilter && (
+            <div className="flex items-center gap-2 px-3 py-2 bg-bg-surface border-b border-border flex-shrink-0">
+              <span className="text-xs text-text-muted">{BROWSE_LABEL[browseMode]}</span>
+              <span className="text-text-muted/50 text-xs">›</span>
+              <span className="text-xs text-text-primary font-medium truncate">{browseFilter}</span>
+              <span className="text-xs text-text-muted/60 ml-1">({displayTracks.length})</span>
+              <button
+                onClick={() => setBrowseFilter(null)}
+                className="ml-auto text-xs text-text-muted hover:text-text-primary border border-border rounded px-2 py-0.5 shrink-0"
+                title="Back to browse list"
+              >
+                ← Back
+              </button>
+            </div>
+          )}
+
+          {/* Column headers — hidden in State B (browse list) */}
+          {!(browseMode && !browseFilter) && (
           <div className="flex items-center gap-0 px-2 py-1 bg-bg-panel border-b border-border text-text-muted text-[11px] uppercase tracking-wider flex-shrink-0">
             <span className="w-5 shrink-0 flex items-center">
               <input
                 type="checkbox"
-                checked={tracks.length > 0 && selectedTrackIds.size === tracks.length}
-                ref={el => { if (el) el.indeterminate = selectedTrackIds.size > 0 && selectedTrackIds.size < tracks.length }}
+                checked={displayTracks.length > 0 && selectedTrackIds.size === displayTracks.length}
+                ref={el => { if (el) el.indeterminate = selectedTrackIds.size > 0 && selectedTrackIds.size < displayTracks.length }}
                 onChange={toggleSelectAll}
                 className="accent-[color:var(--accent)] cursor-pointer"
                 title="Select all"
@@ -610,6 +688,7 @@ export function LibraryPage() {
               )}
             </div>
           </div>
+          )} {/* end column headers conditional */}
 
           {/* Track list + bulk edit panel */}
           <div className="flex-1 flex flex-col overflow-hidden">
@@ -622,11 +701,34 @@ export function LibraryPage() {
                 <div className="flex items-center justify-center h-32 text-text-muted text-xs">
                   Loading tracks…
                 </div>
+              ) : browseMode && !browseFilter ? (
+                /* ── State B: Browse value list ─────────────────────────────── */
+                <div>
+                  <div className="flex items-center px-3 py-1 bg-bg-panel border-b border-border text-[11px] uppercase tracking-wider text-text-muted flex-shrink-0">
+                    <span className="flex-1">{BROWSE_LABEL[browseMode]}</span>
+                    <span className="w-16 text-right">Tracks</span>
+                  </div>
+                  {browseValues.length === 0 ? (
+                    <div className="flex items-center justify-center h-32 text-text-muted text-xs">
+                      No tracks in this library. Run a scan to discover files.
+                    </div>
+                  ) : browseValues.map(({ val, count }) => (
+                    <div
+                      key={val}
+                      className="flex items-center px-3 py-1.5 border-b border-border-subtle hover:bg-bg-row-hover cursor-pointer select-none"
+                      onClick={() => setBrowseFilter(val)}
+                    >
+                      <span className="flex-1 text-xs text-text-primary truncate pr-4">{val}</span>
+                      <span className="text-xs text-text-muted font-mono w-16 text-right shrink-0">{count}</span>
+                    </div>
+                  ))}
+                </div>
               ) : tracks.length === 0 ? (
                 <div className="flex items-center justify-center h-32 text-text-muted text-xs">
                   No tracks in this library. Run a scan to discover files.
                 </div>
               ) : (
+                /* ── State A / C: Track list ────────────────────────────────── */
                 displayGroups.map(({ key, tracks: groupTracks }) => (
                   <div key={key || '__all__'}>
                     {groupBy !== 'none' && (
