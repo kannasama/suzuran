@@ -84,7 +84,7 @@ const COLUMNS: ColumnDef[] = [
   { key: 'year',     label: 'Year',                          className: 'w-10' },
   { key: 'genre',    label: 'Genre',                         className: 'flex-1' },
   { key: 'format',   label: 'Format',                        className: 'w-12' },
-  { key: 'bitrate',  label: 'Bitrate',                       className: 'w-14' },
+  { key: 'bitrate',  label: 'Quality',                       className: 'w-24' },
   { key: 'duration', label: 'Duration', headerLabel: 'Time', className: 'w-10' },
   { key: 'actions',  label: 'Actions',                       className: 'w-16' },
 ]
@@ -109,9 +109,13 @@ function formatDuration(secs?: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
-function formatBitrate(bps?: number): string {
-  if (bps == null) return '—'
-  return `${Math.round(bps / 1000)}k`
+function formatQuality(bitrate?: number, bitDepth?: number, sampleRate?: number): string {
+  if (bitDepth != null) {
+    const khz = sampleRate != null ? (sampleRate / 1000).toFixed(sampleRate % 1000 === 0 ? 0 : 1) : null
+    return khz != null ? `${bitDepth}-bit / ${khz}kHz` : `${bitDepth}-bit`
+  }
+  if (bitrate != null) return `${bitrate}k`
+  return '—'
 }
 
 function getFileExtension(path: string): string {
@@ -908,7 +912,7 @@ function TrackRow({
           </span>
         )}
         {visibleColumns.has('bitrate') && (
-          <span className="w-14 shrink-0 text-text-muted font-mono">{formatBitrate(track.bitrate)}</span>
+          <span className="w-24 shrink-0 text-text-muted font-mono text-[11px]">{formatQuality(track.bitrate, track.bit_depth, track.sample_rate)}</span>
         )}
         {visibleColumns.has('duration') && (
           <span className="w-10 shrink-0 text-text-muted font-mono">{formatDuration(track.duration_secs)}</span>
@@ -989,7 +993,7 @@ function DerivedTrackRow({
         </span>
       )}
       {visibleColumns.has('bitrate') && (
-        <span className="w-14 shrink-0 font-mono">{formatBitrate(derived.bitrate)}</span>
+        <span className="w-24 shrink-0 font-mono text-[11px]">{formatQuality(derived.bitrate, derived.bit_depth, derived.sample_rate)}</span>
       )}
       {visibleColumns.has('duration') && (
         <span className="w-10 shrink-0 font-mono">{formatDuration(derived.duration_secs)}</span>
