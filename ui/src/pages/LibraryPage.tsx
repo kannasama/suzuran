@@ -5,7 +5,7 @@ import { LibraryTree } from '../components/LibraryTree'
 import { AlternativesPanel } from '../components/AlternativesPanel'
 import { IngestSearchDialog } from '../components/IngestSearchDialog'
 import { useAuth } from '../contexts/AuthContext'
-import { getLibrary, listLibraryTracks } from '../api/libraries'
+import { getLibrary, listLibraries, listLibraryTracks } from '../api/libraries'
 import { enqueueLookup } from '../api/tracks'
 import { tagSuggestionsApi } from '../api/tagSuggestions'
 import client from '../api/client'
@@ -213,6 +213,18 @@ export function LibraryPage() {
   }
 
   // ── Queries ───────────────────────────────────────────────────────────────────
+  const { data: libraries = [] } = useQuery({
+    queryKey: ['libraries'],
+    queryFn: listLibraries,
+  })
+
+  // Auto-select default library on first load
+  useEffect(() => {
+    if (selectedLibraryId != null || selectedVirtualLibraryId != null) return
+    const def = libraries.find(l => l.is_default)
+    if (def) setSelectedLibraryId(def.id)
+  }, [libraries, selectedLibraryId, selectedVirtualLibraryId])
+
   const { data: selectedLibrary } = useQuery({
     queryKey: ['library', selectedLibraryId],
     queryFn: () => getLibrary(selectedLibraryId!),

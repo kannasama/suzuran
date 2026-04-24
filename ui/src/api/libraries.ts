@@ -11,6 +11,8 @@ export interface Library {
   auto_organize_on_ingest: boolean
   tag_encoding: string
   organization_rule_id: number | null
+  is_default: boolean
+  maintenance_interval_secs: number | null
 }
 
 export interface CreateLibraryInput {
@@ -27,6 +29,8 @@ export interface UpdateLibraryInput {
   auto_organize_on_ingest: boolean
   tag_encoding: string
   organization_rule_id: number | null
+  is_default: boolean
+  maintenance_interval_secs: number | null
 }
 
 export async function listLibraries(): Promise<Library[]> {

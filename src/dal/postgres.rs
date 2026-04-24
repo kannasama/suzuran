@@ -418,15 +418,26 @@ impl Store for PgStore {
     async fn update_library(
         &self, id: i64, name: &str, scan_enabled: bool, scan_interval_secs: i64,
         auto_organize_on_ingest: bool, tag_encoding: &str,
+        maintenance_interval_secs: Option<i64>,
     ) -> Result<Option<Library>, AppError> {
         sqlx::query_as::<_, Library>(
             "UPDATE libraries SET name=$1, scan_enabled=$2, scan_interval_secs=$3,
-             auto_organize_on_ingest=$4, tag_encoding=$5
-             WHERE id=$6 RETURNING *",
+             auto_organize_on_ingest=$4, tag_encoding=$5, maintenance_interval_secs=$6
+             WHERE id=$7 RETURNING *",
         )
         .bind(name).bind(scan_enabled).bind(scan_interval_secs)
-        .bind(auto_organize_on_ingest).bind(tag_encoding).bind(id)
+        .bind(auto_organize_on_ingest).bind(tag_encoding)
+        .bind(maintenance_interval_secs).bind(id)
         .fetch_optional(&self.pool).await.map_err(AppError::Database)
+    }
+
+    async fn set_default_library(&self, id: i64) -> Result<(), AppError> {
+        let mut tx = self.pool.begin().await.map_err(AppError::Database)?;
+        sqlx::query("UPDATE libraries SET is_default = FALSE")
+            .execute(&mut *tx).await.map_err(AppError::Database)?;
+        sqlx::query("UPDATE libraries SET is_default = TRUE WHERE id = $1")
+            .bind(id).execute(&mut *tx).await.map_err(AppError::Database)?;
+        tx.commit().await.map_err(AppError::Database)
     }
 
     async fn delete_library(&self, id: i64) -> Result<(), AppError> {

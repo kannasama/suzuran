@@ -69,6 +69,8 @@ pub struct Library {
     pub auto_organize_on_ingest: bool,
     pub tag_encoding: String,
     pub organization_rule_id: Option<i64>,
+    pub is_default: bool,
+    pub maintenance_interval_secs: Option<i64>,
     pub created_at: DateTime<Utc>,
 }
 

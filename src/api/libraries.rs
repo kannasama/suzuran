@@ -83,6 +83,9 @@ struct UpdateLibraryRequest {
     #[serde(default = "default_utf8")]
     tag_encoding: String,
     organization_rule_id: Option<i64>,
+    #[serde(default)]
+    is_default: bool,
+    maintenance_interval_secs: Option<i64>,
 }
 
 fn default_utf8() -> String { "utf8".into() }
@@ -95,12 +98,16 @@ async fn update_library(
 ) -> Result<Json<Library>, AppError> {
     let lib = state.db
         .update_library(id, &body.name, body.scan_enabled, body.scan_interval_secs,
-            body.auto_organize_on_ingest, &body.tag_encoding)
+            body.auto_organize_on_ingest, &body.tag_encoding, body.maintenance_interval_secs)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("library {id} not found")))?;
     state.db.set_library_org_rule(id, body.organization_rule_id).await?;
+    if body.is_default {
+        state.db.set_default_library(id).await?;
+    }
     Ok(Json(Library {
         organization_rule_id: body.organization_rule_id,
+        is_default: body.is_default,
         ..lib
     }))
 }

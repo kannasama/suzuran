@@ -46,6 +46,10 @@ export function LibraryFormModal({ library, onClose }: Props) {
   const [autoOrganize, setAutoOrganize] = useState(
     library?.auto_organize_on_ingest ?? false,
   )
+  const [isDefault, setIsDefault] = useState(library?.is_default ?? false)
+  const [maintenanceIntervalSecs, setMaintenanceIntervalSecs] = useState<string>(
+    library?.maintenance_interval_secs != null ? String(library.maintenance_interval_secs) : '',
+  )
 
   const [error, setError] = useState<string | null>(null)
 
@@ -166,6 +170,10 @@ export function LibraryFormModal({ library, onClose }: Props) {
         auto_organize_on_ingest: autoOrganize,
         tag_encoding: tagEncoding,
         organization_rule_id: organizationRuleId,
+        is_default: isDefault,
+        maintenance_interval_secs: maintenanceIntervalSecs.trim() !== ''
+          ? Number(maintenanceIntervalSecs)
+          : null,
       })
     } else {
       createMutation.mutate({
@@ -319,6 +327,35 @@ export function LibraryFormModal({ library, onClose }: Props) {
                     }`}
                   >
                     {autoOrganize ? 'On' : 'Off'}
+                  </button>
+                </label>
+              </div>
+
+              {/* Maintenance + default */}
+              <div className="flex gap-3 items-start">
+                <label className="flex flex-col gap-1 flex-1">
+                  <span className="text-text-muted text-xs uppercase tracking-wider">Maintenance Interval (sec)</span>
+                  <input
+                    type="number"
+                    min={60}
+                    value={maintenanceIntervalSecs}
+                    onChange={e => setMaintenanceIntervalSecs(e.target.value)}
+                    placeholder="Disabled"
+                    className="bg-bg-base border border-border text-text-primary text-xs px-2 py-1.5 rounded focus:outline-none focus:border-accent placeholder:text-text-muted/50"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 shrink-0">
+                  <span className="text-text-muted text-xs uppercase tracking-wider">Default</span>
+                  <button
+                    type="button"
+                    onClick={() => setIsDefault(v => !v)}
+                    className={`text-xs rounded px-3 py-1.5 font-medium border transition-colors ${
+                      isDefault
+                        ? 'bg-accent text-bg-base border-transparent hover:opacity-90'
+                        : 'bg-transparent text-text-secondary border-border hover:border-accent hover:text-text-primary'
+                    }`}
+                  >
+                    {isDefault ? 'Yes' : 'No'}
                   </button>
                 </label>
               </div>

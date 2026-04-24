@@ -204,6 +204,7 @@ pub trait Store: Send + Sync {
         scan_interval_secs: i64,
         auto_organize_on_ingest: bool,
         tag_encoding: &str,
+        maintenance_interval_secs: Option<i64>,
     ) -> Result<Option<Library>, AppError>;
     async fn delete_library(&self, id: i64) -> Result<(), AppError>;
     async fn set_library_org_rule(
@@ -211,6 +212,7 @@ pub trait Store: Send + Sync {
         library_id: i64,
         organization_rule_id: Option<i64>,
     ) -> Result<(), AppError>;
+    async fn set_default_library(&self, id: i64) -> Result<(), AppError>;
 
     // ── library profiles ──────────────────────────────────────────
     async fn create_library_profile(&self, p: &UpsertLibraryProfile) -> Result<LibraryProfile, AppError>;
