@@ -40,7 +40,7 @@
 
 ### Library View
 
-- [ ] **T6 — Relative path / filename columns**
+- [x] **T6 — Relative path / filename columns**
   Add `relative_path` and `filename` (basename of `relative_path`) to column picker and table.
   Files: `ui/src/hooks/useUserPrefs.ts`, `ui/src/pages/LibraryPage.tsx`
 
@@ -51,6 +51,12 @@
   Files: `ui/src/pages/LibraryPage.tsx`, `ui/src/api/tracks.ts`
 
 ## Progress Log
+
+### T6 — Relative path / filename columns
+- Added `filename` (basename) and `relative_path` (full path) to `COLUMNS` in LibraryPage and `DEFAULT_COL_WIDTHS` in `useUserPrefs`.
+- Both columns are opt-in (hidden by default); `DEFAULT_VISIBLE_COLS` excludes them.
+- Render cells added to both `TrackRow` and `DerivedTrackRow`.
+- Committed.
 
 ### T8 — Show track filename in ingest review
 - Track title span converted to a flex column: title on line 1, filename (basename of `relative_path`) on line 2 in muted monospace.

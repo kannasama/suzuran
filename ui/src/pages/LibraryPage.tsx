@@ -89,8 +89,10 @@ const COLUMNS: ColumnDef[] = [
   { key: 'genre',    label: 'Genre'                        },
   { key: 'format',   label: 'Format'                       },
   { key: 'bitrate',  label: 'Quality'                      },
-  { key: 'duration', label: 'Duration', headerLabel: 'Time'},
-  { key: 'actions',  label: 'Actions'                      },
+  { key: 'duration',      label: 'Duration',  headerLabel: 'Time' },
+  { key: 'filename',      label: 'Filename'                       },
+  { key: 'relative_path', label: 'Path'                           },
+  { key: 'actions',       label: 'Actions'                        },
 ]
 
 // Checkbox column width (fixed, never resizable)
@@ -1124,6 +1126,16 @@ function TrackRow({
         {visibleColumns.has('duration') && (
           <span style={w('duration')} className="py-0.5 text-text-muted font-mono">{formatDuration(track.duration_secs)}</span>
         )}
+        {visibleColumns.has('filename') && (
+          <span style={w('filename')} className="py-0.5 text-text-muted font-mono text-[11px] truncate px-1">
+            {track.relative_path.split('/').pop() ?? '—'}
+          </span>
+        )}
+        {visibleColumns.has('relative_path') && (
+          <span style={w('relative_path')} className="py-0.5 text-text-muted font-mono text-[10px] truncate px-1">
+            {track.relative_path}
+          </span>
+        )}
         {visibleColumns.has('actions') && (
           <span style={w('actions')} className="py-0.5 flex items-center gap-1 justify-end pr-1">
             {suggestion && (
@@ -1197,6 +1209,16 @@ function DerivedTrackRow({
       )}
       {visibleColumns.has('duration') && (
         <span style={w('duration')} className="py-0.5 font-mono">{formatDuration(derived.duration_secs)}</span>
+      )}
+      {visibleColumns.has('filename') && (
+        <span style={w('filename')} className="py-0.5 font-mono text-[11px] truncate px-1">
+          {derived.relative_path.split('/').pop() ?? '—'}
+        </span>
+      )}
+      {visibleColumns.has('relative_path') && (
+        <span style={w('relative_path')} className="py-0.5 font-mono text-[10px] truncate px-1">
+          {derived.relative_path}
+        </span>
       )}
       {visibleColumns.has('actions') && <span style={w('actions')} className="py-0.5" />}
     </div>

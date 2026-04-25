@@ -19,19 +19,24 @@ export type SortByKey   = 'tracknumber' | 'discnumber' | 'title' | 'artist' | 'a
 export type SortLevel   = { key: SortByKey; dir: 'asc' | 'desc' }
 
 export const DEFAULT_COL_WIDTHS: Record<string, number> = {
-  num:      28,
-  title:    240,
-  artist:   160,
-  album:    160,
-  year:     44,
-  genre:    100,
-  format:   52,
-  bitrate:  96,
-  duration: 44,
-  actions:  64,
+  num:           28,
+  title:         240,
+  artist:        160,
+  album:         160,
+  year:          44,
+  genre:         100,
+  format:        52,
+  bitrate:       96,
+  duration:      44,
+  actions:       64,
+  filename:      200,
+  relative_path: 300,
 }
 
-const ALL_COLUMN_KEYS = Object.keys(DEFAULT_COL_WIDTHS)
+// Columns visible by default — path/filename columns are opt-in
+const DEFAULT_VISIBLE_COLS = Object.keys(DEFAULT_COL_WIDTHS).filter(
+  k => k !== 'filename' && k !== 'relative_path'
+)
 
 // ── localStorage helpers ───────────────────────────────────────────────────────
 function lsGet<T>(key: string, fallback: T): T {
@@ -70,7 +75,7 @@ function loadInitialPrefs() {
     groupBy:        lsGet<GroupByKey>(PREF_GROUP_BY, 'none'),
     sortLevels:     lsGet<SortLevel[]>(PREF_SORT_LEVELS, [{ key: 'tracknumber', dir: 'asc' }]),
     colWidths:      lsGet<Record<string, number>>(PREF_COL_WIDTHS, DEFAULT_COL_WIDTHS),
-    visibleCols:    new Set<string>(lsGet<string[]>(PREF_VISIBLE_COLS, ALL_COLUMN_KEYS)),
+    visibleCols:    new Set<string>(lsGet<string[]>(PREF_VISIBLE_COLS, DEFAULT_VISIBLE_COLS)),
     editPanelHeight: lsGet<number>(PREF_EDIT_PANEL_H, DEFAULT_EDIT_PANEL_HEIGHT),
   }
 }
