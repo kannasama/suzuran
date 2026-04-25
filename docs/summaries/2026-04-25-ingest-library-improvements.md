@@ -178,6 +178,25 @@ Multiple rounds of diagnosis on the organize job revealed compounding bugs. Outs
 
 **Note on rescue:** Files currently at library root without extension (corrupted by prior runs) will be rescued by Fix A+B: organize job finds file at `library_root/TUMENECO/...` (extensionless), detects format via magic bytes, moves to `library_root/source/TUMENECO/.../<filename>.<ext>`.
 
+### 2026-04-25 — Round 5 critical organize fixes (commit: 3f29399)
+
+Three root-cause fixes applied after files were found at library root, extensionless, following an organize run:
+
+**Fix A — `src/jobs/organize.rs`:**
+1. **`source/` prefix enforced** — rule template output is now always prefixed with `source/` before constructing the destination path. Prior: raw rule output was used directly, placing files at library root.
+2. **Extension preservation** — extension is taken from `track.relative_path`; if absent (previously corrupted extensionless files), file bytes are probed for audio magic signatures (fLaC→flac, OggS→ogg, RIFF→wav, wvpk→wv, ftyp@4→m4a, ID3/0xFF→mp3) to recover the correct extension. Files without a detectable extension are skipped with a warning.
+3. **Ingest tracks skipped** — tracks with `relative_path` starting with `ingest/` are now rejected immediately (the organize job is only meaningful for active `source/` tracks).
+4. **Derived track re-organize** — after successfully moving a source track, `list_derived_tracks` is queried and a new `organize` job is enqueued for each linked derived track.
+5. **Rescue of already-corrupted files** — the same path-construction logic applies when `old_abs` is an extensionless file at library root; magic-byte probe detects format, file is moved to correct `source/` location with extension restored.
+
+**Fix B — `src/dal/postgres.rs`:**
+- `payload->>$2` → `payload->>$2::text` — postgres was unable to infer the type of `$2` in a JSONB subscript expression, causing a runtime error during CUE split dedup checks.
+
+**Fix C — `tests/organize_job.rs`:**
+- Updated expected paths: `"Pink Floyd/1979 - The Wall/06 - Comfortably Numb"` → `"source/Pink Floyd/1979 - The Wall/06 - Comfortably Numb.flac"`
+
+Files: `src/jobs/organize.rs`, `src/dal/postgres.rs`, `tests/organize_job.rs`
+
 ### 2026-04-25 — Round 4 follow-up fixes (version: 1.0.0-4)
 
 Five issues reported after round 3:
