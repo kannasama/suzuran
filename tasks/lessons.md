@@ -473,6 +473,17 @@ all planning documents regardless of which skill generated them.
 **How to apply:** When writing any spec or plan doc, always use `docs/plans/` as the target
 directory. Check sibling files for the naming convention before creating the file.
 
+## 2026-04-25 — Present plan before implementing — eighth reminder
+
+**Mistake:** User confirmed the fix direction for issue 2 ("sanitizing the path is still the appropriate fix") and added context about issue 3. This was read as approval to implement. It was not. Approval requires an explicit affirmative ("proceed", "yes", "looks good") — contextual confirmation of a diagnosis is not approval. This is the eighth recurrence (2026-04-11, 2026-04-15, 2026-04-20, 2026-04-21, 2026-04-25 ×4).
+
+**Rule:** A user confirming that a proposed fix is correct does NOT constitute approval to implement. The plan-gate requires an explicit affirmative before any file is touched.
+
+**How to apply:**
+1. Present plan, end response
+2. If user replies with context, clarification, or "yes that's the right fix" — acknowledge and ask again: "Shall I proceed?"
+3. Only implement after a clear "proceed" / "yes" / "go ahead"
+
 ## 2026-04-25 — Present plan before implementing — seventh reminder
 
 **Mistake:** User reported an organize job logging an incorrect "already organized" skip. The fix
