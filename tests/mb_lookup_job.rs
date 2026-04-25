@@ -40,10 +40,7 @@ async fn test_mb_lookup_creates_suggestion() {
             "status": "Official",
             "media": [{"position": 1, "track-count": 1, "tracks": [
                 {"position": 1, "number": "1", "recording": {"id": "rec-1"}}
-            ]}],
-            "artist-credit": null,
-            "release-group": null,
-            "label-info": null
+            ]}]
         })))
         .mount(&mb_server)
         .await;
