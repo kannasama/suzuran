@@ -473,6 +473,25 @@ all planning documents regardless of which skill generated them.
 **How to apply:** When writing any spec or plan doc, always use `docs/plans/` as the target
 directory. Check sibling files for the naming convention before creating the file.
 
+## 2026-04-25 — Present plan before implementing — sixth reminder
+
+**Mistake:** User reported a failing test in the Docker build output. The cause was immediately
+diagnosed (missing `/release/rel-1` mock in `test_mb_lookup_creates_suggestion`) and the fix was
+applied directly — without presenting the diagnosis or waiting for approval. This is the sixth
+recurrence (2026-04-11, 2026-04-15, 2026-04-20, 2026-04-21, 2026-04-25 ×2).
+
+**Rule:** No code, no file edits, no agent dispatches until a plan has been presented and the
+user has explicitly approved it. Applies equally to test fixes as to feature code.
+
+**Aggravating pattern:** Build errors and test failures create urgency. That urgency is the exact
+trigger that causes the gate to be skipped. When a build log arrives with a clear error, the
+correct response is: describe the cause and proposed fix, then stop and wait.
+
+**How to apply:**
+1. Build/test error received → output root cause + proposed change (file, line, what changes)
+2. End the response — no edits
+3. Wait for explicit approval
+
 ## 2026-04-25 — Present plan before implementing — fifth reminder
 
 **Mistake:** User reported a failing MB lookup (400 Bad Request). The bug was diagnosed and the
