@@ -54,7 +54,7 @@
   field checkboxes in IngestPage so users can accept a subset of suggested tags per track.
   Files: `ui/src/pages/IngestPage.tsx`
 
-- [ ] **T11 — Group ingest tracks by scanned folder**
+- [x] **T11 — Group ingest tracks by scanned folder**
   Add folder-based grouping to the ingest view: tracks are grouped by the parent directory of
   their `relative_path` (i.e., the folder they were dropped into under `ingest/`). Most albums
   map 1:1 to a folder, making it easy to track which files belong to the same import batch.
@@ -73,6 +73,13 @@
   Files: `ui/src/pages/LibraryPage.tsx`, `ui/src/api/tracks.ts`
 
 ## Progress Log
+
+### T11 — Group ingest tracks by scanned folder
+- Added `groupMode: 'album' | 'folder'` state.
+- `getIngestFolder(relativePath)` helper strips `ingest/` prefix, returns parent dir (or `(root)` for flat files).
+- Group key switches based on mode; folder mode shows the ingest subdirectory path as the group header.
+- Album/Folder toggle added to the batch accept bar (pill-style segmented button).
+- Committed.
 
 ### T4 — Fix duplicate derived tracks on supersede
 Two root causes identified and fixed in `process_staged.rs`:

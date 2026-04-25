@@ -42,9 +42,16 @@ const ALBUM_EDIT_FIELDS: TagField[] = [
   { key: 'musicbrainz_releaseid',      label: 'MB Release ID',        fullWidth: true },
 ]
 
+function getIngestFolder(relativePath: string): string {
+  const stripped = relativePath.replace(/^ingest\//, '')
+  const lastSlash = stripped.lastIndexOf('/')
+  return lastSlash === -1 ? '(root)' : stripped.slice(0, lastSlash)
+}
+
 export default function IngestPage() {
   const qc = useQueryClient()
   const [threshold, setThreshold] = useState(80)
+  const [groupMode, setGroupMode] = useState<'album' | 'folder'>('album')
   const [searchTrack, setSearchTrack] = useState<Track | null>(null)
   const [submitAlbum, setSubmitAlbum] = useState<string | null>(null)
   const [editingTrackId, setEditingTrackId] = useState<number | null>(null)
@@ -113,10 +120,12 @@ export default function IngestPage() {
     }
   }
 
-  // Group tracks by album
+  // Group tracks by album or by ingest folder
   const groups: Record<string, Track[]> = {}
   for (const track of stagedTracks) {
-    const key = track.album ?? 'Unknown Album'
+    const key = groupMode === 'folder'
+      ? getIngestFolder(track.relative_path)
+      : (track.album ?? 'Unknown Album')
     if (!groups[key]) groups[key] = []
     groups[key].push(track)
   }
@@ -142,6 +151,21 @@ export default function IngestPage() {
               ? 'No staged tracks'
               : `${stagedTracks.length} staged track${stagedTracks.length !== 1 ? 's' : ''}`}
           </span>
+          {/* Group mode toggle */}
+          <div className="flex items-center border border-border rounded overflow-hidden text-[11px] font-mono">
+            <button
+              onClick={() => setGroupMode('album')}
+              className={`px-2 py-0.5 ${groupMode === 'album' ? 'bg-accent text-bg-base' : 'text-text-muted hover:text-text-primary'}`}
+            >
+              Album
+            </button>
+            <button
+              onClick={() => setGroupMode('folder')}
+              className={`px-2 py-0.5 border-l border-border ${groupMode === 'folder' ? 'bg-accent text-bg-base' : 'text-text-muted hover:text-text-primary'}`}
+            >
+              Folder
+            </button>
+          </div>
           <div className="flex items-center gap-2 ml-auto">
             <span className="text-xs text-text-muted">Accept all ≥</span>
             <input
