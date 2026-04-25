@@ -27,6 +27,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/:id", get(get_track_meta))
         .route("/:id/stream", get(stream))
+        .route("/:id/art", get(get_track_art))
         .route("/:id/lookup", post(enqueue_lookup))
         .route("/delete", post(schedule_delete))
 }
@@ -188,4 +189,45 @@ pub async fn stream(
     }
 
     builder.body(body).map_err(|e| AppError::Internal(anyhow::anyhow!("response build error: {e}")))
+}
+
+/// GET /api/v1/tracks/:id/art
+/// Returns the embedded cover art bytes from the audio file.
+/// 404 if the track has no embedded art.
+pub async fn get_track_art(
+    _auth: AuthUser,
+    Path(track_id): Path<i64>,
+    State(state): State<AppState>,
+) -> Result<Response, AppError> {
+    let (abs_path, track) = resolve_track_path(&state, track_id).await?;
+
+    if !track.has_embedded_art {
+        return Err(AppError::NotFound(format!("track {track_id} has no embedded art")));
+    }
+
+    let path_str = abs_path.to_string_lossy().into_owned();
+    let (data, mime_str) = tokio::task::spawn_blocking(move || -> anyhow::Result<(Vec<u8>, &'static str)> {
+        use lofty::{file::AudioFile, picture::MimeType, probe::Probe};
+        let tagged = Probe::open(&path_str)?.read()?;
+        let pic = tagged
+            .primary_tag()
+            .and_then(|tag| tag.pictures().first())
+            .ok_or_else(|| anyhow::anyhow!("no embedded art found in file"))?;
+        let mime = match pic.mime_type() {
+            Some(MimeType::Png) => "image/png",
+            _ => "image/jpeg",
+        };
+        Ok((pic.data().to_vec(), mime))
+    })
+    .await
+    .map_err(|e| AppError::Internal(anyhow::anyhow!("spawn_blocking: {e}")))?
+    .map_err(|_| AppError::NotFound(format!("track {track_id} has no embedded art")))?;
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, mime_str)
+        .header(header::CONTENT_LENGTH, data.len().to_string())
+        .header(header::CACHE_CONTROL, "public, max-age=3600")
+        .body(Body::from(data))
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("response build error: {e}")))
 }

@@ -45,7 +45,7 @@ async fn test_apply_suggestion_updates_file_and_db() {
     .await;
 
     // Apply the suggestion
-    apply_suggestion(&store, &suggestion, None).await.unwrap();
+    apply_suggestion(&store, &suggestion, None, true).await.unwrap();
 
     // --- Verify DB ---
     let updated_track = store.get_track(track_id).await.unwrap().unwrap();
@@ -116,6 +116,6 @@ async fn test_apply_suggestion_missing_track_returns_error() {
     .await;
     suggestion.track_id = 99999; // override to nonexistent id
 
-    let result = apply_suggestion(&store, &suggestion, None).await;
+    let result = apply_suggestion(&store, &suggestion, None, true).await;
     assert!(result.is_err(), "should fail with NotFound for missing track");
 }

@@ -9,6 +9,7 @@ pub async fn apply_suggestion(
     store: &Arc<dyn Store>,
     suggestion: &TagSuggestion,
     fields: Option<&[String]>,
+    apply_art: bool,
 ) -> Result<(), AppError> {
     let track = store
         .get_track(suggestion.track_id)
@@ -58,19 +59,21 @@ pub async fn apply_suggestion(
     tagger::write_tags(std::path::Path::new(&full_path), &string_map)
         .map_err(|e| AppError::Internal(anyhow::anyhow!("lofty write failed: {e}")))?;
 
-    // If the suggestion includes a cover art URL, enqueue an embed job
-    if let Some(url) = &suggestion.cover_art_url {
-        store
-            .enqueue_job(
-                "art_process",
-                serde_json::json!({
-                    "track_id": suggestion.track_id,
-                    "action": "embed",
-                    "source_url": url,
-                }),
-                3,
-            )
-            .await?;
+    // If the suggestion includes a cover art URL and the caller opted in, enqueue embed job
+    if apply_art {
+        if let Some(url) = &suggestion.cover_art_url {
+            store
+                .enqueue_job(
+                    "art_process",
+                    serde_json::json!({
+                        "track_id": suggestion.track_id,
+                        "action": "embed",
+                        "source_url": url,
+                    }),
+                    3,
+                )
+                .await?;
+        }
     }
 
     Ok(())
