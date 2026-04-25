@@ -949,7 +949,7 @@ impl Store for PgStore {
         value: &str,
     ) -> Result<Vec<Job>, AppError> {
         sqlx::query_as::<_, Job>(
-            "SELECT * FROM jobs WHERE job_type = $1 AND payload->>$2 = $3",
+            "SELECT * FROM jobs WHERE job_type = $1 AND payload->>$2::text = $3",
         )
         .bind(job_type)
         .bind(key)

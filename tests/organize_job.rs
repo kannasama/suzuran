@@ -64,7 +64,7 @@ async fn organize_moves_file_and_updates_path() {
     let payload = serde_json::to_value(OrganizePayload { track_id: track.id, dry_run: false }).unwrap();
     let result = handler.run(db.clone(), payload).await.unwrap();
 
-    let expected_new = "Pink Floyd/1979 - The Wall/06 - Comfortably Numb";
+    let expected_new = "source/Pink Floyd/1979 - The Wall/06 - Comfortably Numb.flac";
     assert_eq!(result["new_path"], serde_json::json!(expected_new));
     assert_eq!(result["moved"], serde_json::json!(true));
 
