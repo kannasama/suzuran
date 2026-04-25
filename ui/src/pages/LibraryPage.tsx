@@ -6,7 +6,7 @@ import { AlternativesPanel } from '../components/AlternativesPanel'
 import { IngestSearchDialog } from '../components/IngestSearchDialog'
 import { useAuth } from '../contexts/AuthContext'
 import { getLibrary, listLibraries, listLibraryTracks, triggerMaintenance } from '../api/libraries'
-import { enqueueLookup } from '../api/tracks'
+import { enqueueLookup, scheduleDelete } from '../api/tracks'
 import { tagSuggestionsApi } from '../api/tagSuggestions'
 import { getJob } from '../api/jobs'
 import client from '../api/client'
@@ -174,6 +174,14 @@ export function LibraryPage() {
   const [altPanelTrackId, setAltPanelTrackId] = useState<number | null>(null)
   const [browseMode, setBrowseMode] = useState<BrowseMode | null>(null)
   const [browseFilter, setBrowseFilter] = useState<string | null>(null)
+  const [showActionsMenu, setShowActionsMenu] = useState(false)
+  const actionsMenuRef = useRef<HTMLDivElement>(null)
+  // deleteConfirm: null = closed; object = open with context
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    ids: number[]
+    label: string          // e.g. "3 tracks" or "Album — Dark Side of the Moon (10 tracks)"
+  } | null>(null)
+  const [deleteSubmitting, setDeleteSubmitting] = useState(false)
 
   // ── Dismiss handlers ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -188,7 +196,7 @@ export function LibraryPage() {
   }, [showColumnPicker])
 
   useEffect(() => {
-    if (!showGroupMenu && !showSortMenu) return
+    if (!showGroupMenu && !showSortMenu && !showActionsMenu) return
     function handleMouseDown(e: MouseEvent) {
       if (showGroupMenu && groupMenuRef.current && !groupMenuRef.current.contains(e.target as Node)) {
         setShowGroupMenu(false)
@@ -196,10 +204,13 @@ export function LibraryPage() {
       if (showSortMenu && sortMenuRef.current && !sortMenuRef.current.contains(e.target as Node)) {
         setShowSortMenu(false)
       }
+      if (showActionsMenu && actionsMenuRef.current && !actionsMenuRef.current.contains(e.target as Node)) {
+        setShowActionsMenu(false)
+      }
     }
     document.addEventListener('mousedown', handleMouseDown)
     return () => document.removeEventListener('mousedown', handleMouseDown)
-  }, [showGroupMenu, showSortMenu])
+  }, [showGroupMenu, showSortMenu, showActionsMenu])
 
   useEffect(() => {
     if (!contextMenu) return
@@ -452,6 +463,8 @@ export function LibraryPage() {
         { label: 'Deselect All', action: () => { setSelectedTrackIds(new Set()); setContextMenu(null) } },
         null,
         { label: 'Copy Path', action: () => { navigator.clipboard.writeText(track.relative_path); setContextMenu(null) } },
+        null,
+        { label: 'Delete track…', action: () => { setDeleteConfirm({ ids: [track.id], label: '1 track' }); setContextMenu(null) } },
       ],
     })
   }
@@ -478,6 +491,8 @@ export function LibraryPage() {
         },
       })
     }
+    items.push(null)
+    items.push({ label: 'Delete track…', action: () => { setDeleteConfirm({ ids: [track.id], label: '1 track' }); setContextMenu(null) } })
     setContextMenu({ x, y, items })
   }
 
@@ -499,6 +514,25 @@ export function LibraryPage() {
   const lookupMutation = useMutation({
     mutationFn: (trackId: number) => enqueueLookup(trackId),
   })
+
+  async function handleBulkLookup(ids: number[]) {
+    setShowActionsMenu(false)
+    for (const id of ids) {
+      await enqueueLookup(id).catch(() => {})
+    }
+  }
+
+  async function handleConfirmDelete() {
+    if (!deleteConfirm) return
+    setDeleteSubmitting(true)
+    try {
+      await scheduleDelete(deleteConfirm.ids)
+      setDeleteConfirm(null)
+      setSelectedTrackIds(new Set())
+      qc.invalidateQueries({ queryKey: ['library-tracks', selectedLibraryId] })
+    } catch { /* ignore */ }
+    setDeleteSubmitting(false)
+  }
 
   async function handleScan() {
     if (selectedLibraryId == null) return
@@ -609,6 +643,38 @@ export function LibraryPage() {
                     Maintain
                   </button>
                 </>
+              )}
+              {/* Actions dropdown — visible when tracks selected */}
+              {selectedTrackIds.size > 0 && (
+                <div ref={actionsMenuRef} className="relative">
+                  <button
+                    onClick={() => setShowActionsMenu(v => !v)}
+                    className={`text-xs bg-bg-panel border rounded px-2 py-0.5 ${showActionsMenu ? 'border-accent text-accent' : 'border-border text-text-muted hover:text-text-primary'}`}
+                  >
+                    Actions ({selectedTrackIds.size}) ▾
+                  </button>
+                  {showActionsMenu && (
+                    <div className="absolute right-0 top-full mt-1 z-50 bg-bg-panel border border-border rounded shadow-lg py-1 min-w-[180px]">
+                      <button
+                        onClick={() => handleBulkLookup([...selectedTrackIds])}
+                        className="block w-full text-left px-3 py-1 text-xs text-text-primary hover:bg-bg-row-hover"
+                      >
+                        AcoustID Lookup ({selectedTrackIds.size})
+                      </button>
+                      <div className="border-t border-border my-1" />
+                      <button
+                        onClick={() => {
+                          const ids = [...selectedTrackIds]
+                          setDeleteConfirm({ ids, label: `${ids.length} track${ids.length !== 1 ? 's' : ''}` })
+                          setShowActionsMenu(false)
+                        }}
+                        className="block w-full text-left px-3 py-1 text-xs text-destructive hover:bg-bg-row-hover"
+                      >
+                        Delete {selectedTrackIds.size} track{selectedTrackIds.size !== 1 ? 's' : ''}…
+                      </button>
+                    </div>
+                  )}
+                </div>
               )}
               {/* Group by */}
               <div ref={groupMenuRef} className="relative">
@@ -809,9 +875,18 @@ export function LibraryPage() {
                 displayGroups.map(({ key, tracks: groupTracks }) => (
                   <div key={key || '__all__'}>
                     {groupBy !== 'none' && (
-                      <div className="px-3 py-1 bg-bg-panel border-b border-border text-[11px] font-mono flex items-center gap-2 sticky top-0 z-10">
+                      <div className="px-3 py-0.5 bg-bg-panel border-b border-border text-xs font-mono flex items-center gap-2 sticky top-0 z-10">
                         <span className="text-text-primary font-medium">{key}</span>
                         <span className="text-text-muted/60">{groupTracks.length}</span>
+                        <button
+                          className="ml-auto text-xs border border-border text-text-muted rounded px-1.5 py-0 hover:border-accent hover:text-text-secondary transition-colors leading-none"
+                          onClick={e => {
+                            e.stopPropagation()
+                            const ids = groupTracks.map((t: Track) => t.id)
+                            setDeleteConfirm({ ids, label: `${key} (${ids.length} track${ids.length !== 1 ? 's' : ''})` })
+                          }}
+                          title="Delete album"
+                        >⋯</button>
                       </div>
                     )}
                     {groupTracks.map((track: Track) => (
@@ -872,6 +947,15 @@ export function LibraryPage() {
 
       {contextMenu && (
         <ContextMenu x={contextMenu.x} y={contextMenu.y} items={contextMenu.items} />
+      )}
+
+      {deleteConfirm && (
+        <DeleteConfirmModal
+          label={deleteConfirm.label}
+          submitting={deleteSubmitting}
+          onCancel={() => setDeleteConfirm(null)}
+          onConfirm={handleConfirmDelete}
+        />
       )}
     </div>
   )
@@ -1356,6 +1440,63 @@ function SuggestionReviewPane({
             </span>
           </div>
         ))}
+      </div>
+    </div>
+  )
+}
+
+// ── DeleteConfirmModal ─────────────────────────────────────────────────────────
+function DeleteConfirmModal({
+  label,
+  submitting,
+  onCancel,
+  onConfirm,
+}: {
+  label: string
+  submitting: boolean
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60"
+      onClick={e => { if (e.target === e.currentTarget) onCancel() }}
+    >
+      <div className="bg-bg-panel border border-border rounded shadow-2xl w-[420px] flex flex-col">
+        {/* Header */}
+        <div className="px-5 pt-4 pb-3 border-b border-border">
+          <h2 className="text-sm font-semibold text-text-primary">Schedule deletion</h2>
+        </div>
+        {/* Body */}
+        <div className="px-5 py-4 flex flex-col gap-3">
+          <p className="text-xs text-text-primary">
+            The following will be scheduled for deletion from disk:
+          </p>
+          <div className="bg-bg-base border border-border rounded px-3 py-2 text-xs font-mono text-text-secondary">
+            {label}
+          </div>
+          <p className="text-xs text-text-muted">
+            Deletion runs after a <span className="text-text-primary font-medium">15-minute delay</span>.
+            You can cancel it from the <span className="text-text-primary font-medium">Jobs</span> page before it runs.
+          </p>
+        </div>
+        {/* Footer */}
+        <div className="px-5 pb-4 pt-1 flex justify-end gap-2">
+          <button
+            onClick={onCancel}
+            disabled={submitting}
+            className="text-xs border border-border text-text-muted rounded px-3 py-1 hover:text-text-primary hover:border-accent disabled:opacity-40"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={submitting}
+            className="text-xs bg-destructive text-white rounded px-3 py-1 font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {submitting ? 'Scheduling…' : 'Schedule Deletion'}
+          </button>
+        </div>
       </div>
     </div>
   )
