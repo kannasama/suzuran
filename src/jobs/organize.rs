@@ -77,8 +77,15 @@ impl JobHandler for OrganizeJobHandler {
         let old_abs = std::path::Path::new(&library.root_path).join(&track.relative_path);
         let new_abs = std::path::Path::new(&library.root_path).join(&new_relative);
 
-        if track.relative_path == new_relative {
-            tracing::info!(track_id = p.track_id, path = %new_relative, "organize: track already at correct location — skipped");
+        // Guard: source file must exist. If not, the DB path is stale — log and skip.
+        if !old_abs.exists() {
+            tracing::warn!(track_id = p.track_id, path = %track.relative_path, "organize: source file not found at DB path — skipped");
+            return Ok(serde_json::json!({ "skipped": true, "reason": "source file not found", "db_path": track.relative_path }));
+        }
+
+        // If the resolved absolute paths are the same the file is already at the correct location.
+        if old_abs == new_abs {
+            tracing::info!(track_id = p.track_id, path = %new_relative, "organize: file already at rule-dictated location");
             return Ok(serde_json::json!({ "skipped": true, "reason": "already organized", "path": new_relative }));
         }
 

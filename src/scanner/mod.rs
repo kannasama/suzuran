@@ -118,13 +118,21 @@ pub async fn scan_library(
             };
 
             if !needs_scan {
-                // Hash unchanged — but ensure the track is present as "staged" in case it was
-                // previously removed and the file was dropped back into ingest/.
+                // Hash unchanged — ensure the DB record is "staged" in case the file was
+                // previously removed and dropped back into ingest/.
                 if let Some((id, _)) = existing.get(&rel_path) {
-                    let _ = db.set_track_status(*id, "staged").await;
+                    tracing::debug!(path = %rel_path, track_id = id, "scanner/ingest: hash unchanged, re-staging existing record");
+                    if let Err(e) = db.set_track_status(*id, "staged").await {
+                        tracing::warn!(path = %rel_path, error = %e, "scanner/ingest: failed to re-stage track");
+                    }
+                } else {
+                    // needs_scan=false but path not in existing — shouldn't happen, log it
+                    tracing::warn!(path = %rel_path, "scanner/ingest: needs_scan=false but path absent from existing map");
                 }
                 continue;
             }
+
+            tracing::debug!(path = %rel_path, is_new, "scanner/ingest: scanning file");
 
             let abs_path_clone = abs_path.clone();
             let tag_result = tokio::task::spawn_blocking(move || {
@@ -184,6 +192,7 @@ pub async fn scan_library(
 
             if is_new {
                 result.inserted += 1;
+                tracing::debug!(path = %rel_path, track_id = track.id, "scanner/ingest: inserted new staged track");
                 // Enqueue fingerprint for newly staged tracks
                 db.enqueue_job(
                     "fingerprint",
@@ -193,6 +202,7 @@ pub async fn scan_library(
                 .await?;
             } else {
                 result.updated += 1;
+                tracing::debug!(path = %rel_path, track_id = track.id, "scanner/ingest: updated existing track");
             }
         }
 
@@ -385,6 +395,7 @@ pub async fn scan_library(
     // Mark ingest tracks as removed when no longer present in ingest/
     for (rel_path, (id, _)) in &existing {
         if rel_path.starts_with("ingest/") && !seen_paths.contains(rel_path) {
+            tracing::debug!(path = %rel_path, track_id = id, "scanner/ingest: marking removed — no longer on disk");
             db.set_track_status(*id, "removed").await?;
             result.removed += 1;
         }
