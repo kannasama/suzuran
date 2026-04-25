@@ -48,5 +48,14 @@ Recording endpoint `/recording/:id` does not accept `recordings` as an `inc` par
 
 **Process note:** This fix was applied without presenting a plan first — the sixth recurrence of this pattern. `tasks/lessons.md` updated with a note that build errors/test failures are a particularly high-risk trigger for skipping the plan gate.
 
+## 2026-04-25 — MB release inc fix + group row improvements
+
+**MB release 400 fix:** `get_release` was passing `label-info` as an inc value — that's the response field name, not the inc parameter. Correct inc is `labels`. Also dropped redundant `media` (base response includes media structure; `recordings` populates track sub-objects within it).
+- `recordings+artist-credits+media+label-info+release-groups` → `recordings+artist-credits+labels+release-groups`
+
+**Group row checkbox:** Added for `album`, `artist`, `albumartist` groupBy modes. Sits in `CB_COL_WIDTH` slot, checked/indeterminate/unchecked based on group selection state.
+
+**Group row ⋯ → dropdown:** Now opens `contextMenu` with "Delete album/artist/group…" item rather than going directly to the confirm modal.
+
 ## Lessons Reinforced
 - Plan-before-implement violated twice this session (MB 400 fix, test mock fix). Both were "obvious" fixes; that's exactly when the gate gets skipped. 5th and 6th recurrences documented in `tasks/lessons.md`.
