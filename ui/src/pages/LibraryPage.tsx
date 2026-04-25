@@ -12,7 +12,8 @@ import { getJob } from '../api/jobs'
 import client from '../api/client'
 import type { Track } from '../types/track'
 import type { TagSuggestion } from '../types/tagSuggestion'
-import { useUserPrefs } from '../hooks/useUserPrefs'
+import { useUserPrefs, DEFAULT_COL_WIDTHS } from '../hooks/useUserPrefs'
+import type { GroupByKey, SortByKey } from '../hooks/useUserPrefs'
 import { Checkbox } from '../components/Checkbox'
 
 // ── Tag field definitions ──────────────────────────────────────────────────────
@@ -76,20 +77,23 @@ function getTrackTagValue(track: Track, key: string): string {
 }
 
 // ── Column definitions ─────────────────────────────────────────────────────────
-interface ColumnDef { key: string; label: string; headerLabel?: string; className: string }
+interface ColumnDef { key: string; label: string; headerLabel?: string }
 
 const COLUMNS: ColumnDef[] = [
-  { key: 'num',      label: 'Track #',  headerLabel: '#',    className: 'w-6' },
-  { key: 'title',    label: 'Title',                         className: 'flex-[3]' },
-  { key: 'artist',   label: 'Artist',                        className: 'flex-[2]' },
-  { key: 'album',    label: 'Album',                         className: 'flex-[2]' },
-  { key: 'year',     label: 'Year',                          className: 'w-10' },
-  { key: 'genre',    label: 'Genre',                         className: 'flex-1' },
-  { key: 'format',   label: 'Format',                        className: 'w-12' },
-  { key: 'bitrate',  label: 'Quality',                       className: 'w-24' },
-  { key: 'duration', label: 'Duration', headerLabel: 'Time', className: 'w-10' },
-  { key: 'actions',  label: 'Actions',                       className: 'w-16' },
+  { key: 'num',      label: 'Track #',  headerLabel: '#'   },
+  { key: 'title',    label: 'Title'                        },
+  { key: 'artist',   label: 'Artist'                       },
+  { key: 'album',    label: 'Album'                        },
+  { key: 'year',     label: 'Year'                         },
+  { key: 'genre',    label: 'Genre'                        },
+  { key: 'format',   label: 'Format'                       },
+  { key: 'bitrate',  label: 'Quality'                      },
+  { key: 'duration', label: 'Duration', headerLabel: 'Time'},
+  { key: 'actions',  label: 'Actions'                      },
 ]
+
+// Checkbox column width (fixed, never resizable)
+const CB_COL_WIDTH = 24
 
 
 function formatDuration(secs?: number): string {
@@ -115,7 +119,6 @@ function getFileExtension(path: string): string {
 }
 
 // ── Sort / group types ─────────────────────────────────────────────────────────
-import type { GroupByKey, SortByKey } from '../hooks/useUserPrefs'
 type MenuItem = { label: string; action: () => void } | null
 
 const GROUP_OPTIONS: { key: GroupByKey; label: string }[] = [
@@ -151,8 +154,13 @@ export function LibraryPage() {
   const {
     groupBy, setGroupBy,
     sortLevels, setSortLevels,
+    colWidths, setColWidths,
     visibleCols: visibleColumns, toggleColumn,
   } = useUserPrefs()
+  // liveWidths tracks widths during drag without persisting on every pixel move
+  const [liveWidths, setLiveWidths] = useState<Record<string, number>>(colWidths)
+  useEffect(() => { setLiveWidths(colWidths) }, [colWidths])
+  const resizingRef = useRef<{ key: string; startX: number; startWidth: number } | null>(null)
   const [showColumnPicker, setShowColumnPicker] = useState(false)
   const pickerRef = useRef<HTMLDivElement>(null)
   const [searchTrack, setSearchTrack] = useState<Track | null>(null)
@@ -204,6 +212,37 @@ export function LibraryPage() {
       document.removeEventListener('scroll', handleScroll, true)
     }
   }, [contextMenu])
+
+  // ── Column resize handlers ────────────────────────────────────────────────────
+  const handleResizeMouseMove = useRef((e: MouseEvent) => {
+    const r = resizingRef.current
+    if (!r) return
+    const newWidth = Math.max(40, r.startWidth + (e.clientX - r.startX))
+    setLiveWidths(prev => ({ ...prev, [r.key]: newWidth }))
+  }).current
+
+  const handleResizeMouseUp = useRef(() => {
+    document.removeEventListener('mousemove', handleResizeMouseMove)
+    document.removeEventListener('mouseup', handleResizeMouseUp)
+    document.body.style.userSelect = ''
+    setLiveWidths(prev => {
+      setColWidths(prev)
+      return prev
+    })
+    resizingRef.current = null
+  }).current
+
+  function handleResizeMouseDown(key: string, e: React.MouseEvent) {
+    e.preventDefault()
+    resizingRef.current = {
+      key,
+      startX: e.clientX,
+      startWidth: liveWidths[key] ?? DEFAULT_COL_WIDTHS[key] ?? 80,
+    }
+    document.body.style.userSelect = 'none'
+    document.addEventListener('mousemove', handleResizeMouseMove)
+    document.addEventListener('mouseup', handleResizeMouseUp)
+  }
 
   // ── Queries ───────────────────────────────────────────────────────────────────
   const { data: libraries = [] } = useQuery({
@@ -676,23 +715,36 @@ export function LibraryPage() {
 
           {/* Column headers — hidden in State B (browse list) */}
           {!(browseMode && !browseFilter) && (
-          <div className="flex items-center gap-0 px-2 py-1 bg-bg-panel border-b border-border text-text-muted text-[11px] uppercase tracking-wider flex-shrink-0">
-            <span className="w-5 shrink-0 flex items-center">
+          <div className="flex items-stretch gap-0 bg-bg-panel border-b border-border text-text-muted text-[11px] uppercase tracking-wider flex-shrink-0 select-none">
+            {/* Checkbox column — fixed, not resizable */}
+            <div style={{ width: CB_COL_WIDTH, flexShrink: 0 }} className="flex items-center justify-center py-1">
               <Checkbox
                 checked={displayTracks.length > 0 && selectedTrackIds.size === displayTracks.length}
                 indeterminate={selectedTrackIds.size > 0 && selectedTrackIds.size < displayTracks.length}
                 onChange={toggleSelectAll}
                 title="Select all"
               />
-            </span>
+            </div>
             {COLUMNS.map(col => visibleColumns.has(col.key) && (
-              <span key={col.key} className={col.className + ' shrink-0'}>
-                {col.headerLabel ?? col.label}
-              </span>
+              <div
+                key={col.key}
+                className="relative flex items-center justify-center py-1 border-l border-border hover:bg-bg-row-hover group"
+                style={{ width: liveWidths[col.key] ?? DEFAULT_COL_WIDTHS[col.key], flexShrink: 0 }}
+              >
+                <span className="truncate px-2">{col.headerLabel ?? col.label}</span>
+                {col.key !== 'actions' && (
+                  <div
+                    className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize flex items-center justify-center text-text-muted/40 group-hover:text-accent z-10"
+                    onMouseDown={e => handleResizeMouseDown(col.key, e)}
+                  >
+                    ⋮
+                  </div>
+                )}
+              </div>
             ))}
-            <div ref={pickerRef} className="relative w-6 shrink-0 ml-auto">
+            <div ref={pickerRef} className="relative flex items-center justify-center border-l border-border ml-auto" style={{ width: 24, flexShrink: 0 }}>
               <span
-                className="text-accent cursor-pointer hover:opacity-70 transition-opacity block text-center"
+                className="text-accent cursor-pointer hover:opacity-70 transition-opacity"
                 onClick={() => setShowColumnPicker(v => !v)}
                 title="Customize columns"
               >
@@ -767,6 +819,7 @@ export function LibraryPage() {
                         <TrackRow
                           track={track}
                           visibleColumns={visibleColumns}
+                          colWidths={liveWidths}
                           suggestion={suggestionsByTrack[track.id]}
                           isSelected={selectedTrackIds.has(track.id)}
                           isShowingAlt={altPanelTrackId === track.id}
@@ -781,6 +834,7 @@ export function LibraryPage() {
                             key={dt.id}
                             derived={dt}
                             visibleColumns={visibleColumns}
+                            colWidths={liveWidths}
                           />
                         ))}
                       </React.Fragment>
@@ -827,6 +881,7 @@ export function LibraryPage() {
 function TrackRow({
   track,
   visibleColumns,
+  colWidths,
   suggestion,
   isSelected,
   isShowingAlt,
@@ -838,6 +893,7 @@ function TrackRow({
 }: {
   track: Track
   visibleColumns: Set<string>
+  colWidths: Record<string, number>
   suggestion?: TagSuggestion
   isSelected: boolean
   isShowingAlt: boolean
@@ -848,48 +904,49 @@ function TrackRow({
   onCloseAlt: () => void
 }) {
   const pct = suggestion ? Math.round(suggestion.confidence * 100) : null
+  const w = (key: string) => ({ width: colWidths[key] ?? DEFAULT_COL_WIDTHS[key], flexShrink: 0, overflow: 'hidden' })
 
   return (
     <>
       <div
-        className={`flex items-center gap-0 px-2 py-0.5 border-b border-border-subtle text-xs hover:bg-bg-row-hover cursor-pointer select-none ${isSelected ? 'bg-accent/10' : ''}`}
+        className={`flex items-center gap-0 border-b border-border-subtle text-xs hover:bg-bg-row-hover cursor-pointer select-none ${isSelected ? 'bg-accent/10' : ''}`}
         onClick={onRowClick}
         onContextMenu={onContextMenu}
       >
-        <span className="w-5 shrink-0 flex items-center" onClick={e => e.stopPropagation()}>
+        <span style={{ width: CB_COL_WIDTH, flexShrink: 0 }} className="flex items-center justify-center py-0.5" onClick={e => e.stopPropagation()}>
           <Checkbox checked={isSelected} onChange={onCheckboxChange} />
         </span>
         {visibleColumns.has('num') && (
-          <span className="w-6 shrink-0 text-text-muted font-mono">{track.tracknumber ?? '—'}</span>
+          <span style={w('num')} className="py-0.5 text-text-muted font-mono">{track.tracknumber ?? '—'}</span>
         )}
         {visibleColumns.has('title') && (
-          <span className="flex-[3] shrink-0 text-text-primary truncate pr-2">{track.title ?? '—'}</span>
+          <span style={w('title')} className="py-0.5 text-text-primary truncate px-1">{track.title ?? '—'}</span>
         )}
         {visibleColumns.has('artist') && (
-          <span className="flex-[2] shrink-0 text-text-secondary truncate pr-2">{track.artist ?? '—'}</span>
+          <span style={w('artist')} className="py-0.5 text-text-secondary truncate px-1">{track.artist ?? '—'}</span>
         )}
         {visibleColumns.has('album') && (
-          <span className="flex-[2] shrink-0 text-text-secondary truncate pr-2">{track.album ?? '—'}</span>
+          <span style={w('album')} className="py-0.5 text-text-secondary truncate px-1">{track.album ?? '—'}</span>
         )}
         {visibleColumns.has('year') && (
-          <span className="w-10 shrink-0 text-text-muted">{track.date?.slice(0, 4) ?? '—'}</span>
+          <span style={w('year')} className="py-0.5 text-text-muted">{track.date?.slice(0, 4) ?? '—'}</span>
         )}
         {visibleColumns.has('genre') && (
-          <span className="flex-1 shrink-0 text-text-muted truncate pr-2">{track.genre ?? '—'}</span>
+          <span style={w('genre')} className="py-0.5 text-text-muted truncate px-1">{track.genre ?? '—'}</span>
         )}
         {visibleColumns.has('format') && (
-          <span className="w-12 shrink-0 text-text-muted font-mono uppercase text-[10px]">
+          <span style={w('format')} className="py-0.5 text-text-muted font-mono uppercase text-[10px]">
             {getFileExtension(track.relative_path)}
           </span>
         )}
         {visibleColumns.has('bitrate') && (
-          <span className="w-24 shrink-0 text-text-muted font-mono text-[11px]">{formatQuality(track.bitrate, track.bit_depth, track.sample_rate)}</span>
+          <span style={w('bitrate')} className="py-0.5 text-text-muted font-mono text-[11px]">{formatQuality(track.bitrate, track.bit_depth, track.sample_rate)}</span>
         )}
         {visibleColumns.has('duration') && (
-          <span className="w-10 shrink-0 text-text-muted font-mono">{formatDuration(track.duration_secs)}</span>
+          <span style={w('duration')} className="py-0.5 text-text-muted font-mono">{formatDuration(track.duration_secs)}</span>
         )}
         {visibleColumns.has('actions') && (
-          <span className="w-16 shrink-0 flex items-center gap-1 justify-end">
+          <span style={w('actions')} className="py-0.5 flex items-center gap-1 justify-end pr-1">
             {suggestion && (
               <span
                 className={`text-[10px] font-mono ${pct! >= 80 ? 'text-green-400' : 'text-yellow-400'}`}
@@ -926,52 +983,43 @@ function TrackRow({
 function DerivedTrackRow({
   derived,
   visibleColumns,
+  colWidths,
 }: {
   derived: Track
   visibleColumns: Set<string>
+  colWidths: Record<string, number>
 }) {
   // The first path segment is the derived-dir-name set by the library profile
   // e.g. "aac-192k/Artist/Album/track.m4a" → "aac-192k"
   const profileLabel = derived.relative_path.split('/')[0] ?? '—'
+  const w = (key: string) => ({ width: colWidths[key] ?? DEFAULT_COL_WIDTHS[key], flexShrink: 0, overflow: 'hidden' })
 
   return (
-    <div className="flex items-center gap-0 px-2 py-0.5 border-b border-border-subtle text-xs text-text-muted/60 select-none bg-bg-base/40">
+    <div className="flex items-center gap-0 border-b border-border-subtle text-xs text-text-muted/60 select-none bg-bg-base/40">
       {/* indent + connector in place of checkbox */}
-      <span className="w-5 shrink-0 flex items-center justify-center text-text-muted/40 text-[10px]">↳</span>
-      {visibleColumns.has('num') && (
-        <span className="w-6 shrink-0" />
-      )}
+      <span style={{ width: CB_COL_WIDTH, flexShrink: 0 }} className="flex items-center justify-center py-0.5 text-text-muted/40 text-[10px]">↳</span>
+      {visibleColumns.has('num') && <span style={w('num')} className="py-0.5" />}
       {visibleColumns.has('title') && (
-        <span className="flex-[3] shrink-0 truncate pr-2 font-mono text-[10px] text-text-muted/70">
+        <span style={w('title')} className="py-0.5 truncate px-1 font-mono text-[10px] text-text-muted/70">
           {profileLabel}
         </span>
       )}
-      {visibleColumns.has('artist') && (
-        <span className="flex-[2] shrink-0" />
-      )}
-      {visibleColumns.has('album') && (
-        <span className="flex-[2] shrink-0" />
-      )}
-      {visibleColumns.has('year') && (
-        <span className="w-10 shrink-0" />
-      )}
-      {visibleColumns.has('genre') && (
-        <span className="flex-1 shrink-0" />
-      )}
+      {visibleColumns.has('artist')   && <span style={w('artist')}   className="py-0.5" />}
+      {visibleColumns.has('album')    && <span style={w('album')}    className="py-0.5" />}
+      {visibleColumns.has('year')     && <span style={w('year')}     className="py-0.5" />}
+      {visibleColumns.has('genre')    && <span style={w('genre')}    className="py-0.5" />}
       {visibleColumns.has('format') && (
-        <span className="w-12 shrink-0 font-mono uppercase text-[10px]">
+        <span style={w('format')} className="py-0.5 font-mono uppercase text-[10px]">
           {getFileExtension(derived.relative_path)}
         </span>
       )}
       {visibleColumns.has('bitrate') && (
-        <span className="w-24 shrink-0 font-mono text-[11px]">{formatQuality(derived.bitrate, derived.bit_depth, derived.sample_rate)}</span>
+        <span style={w('bitrate')} className="py-0.5 font-mono text-[11px]">{formatQuality(derived.bitrate, derived.bit_depth, derived.sample_rate)}</span>
       )}
       {visibleColumns.has('duration') && (
-        <span className="w-10 shrink-0 font-mono">{formatDuration(derived.duration_secs)}</span>
+        <span style={w('duration')} className="py-0.5 font-mono">{formatDuration(derived.duration_secs)}</span>
       )}
-      {visibleColumns.has('actions') && (
-        <span className="w-16 shrink-0" />
-      )}
+      {visibleColumns.has('actions') && <span style={w('actions')} className="py-0.5" />}
     </div>
   )
 }
