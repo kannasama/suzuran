@@ -143,6 +143,41 @@ User confirmed: FLAC superseding files also landed in source root without organi
 - Supersede badge inline spans: lossless shows kHz + bit-depth, lossy shows combined `kHz / Nk` span.
 - Committed.
 
+### 2026-04-25 — Round 5 organize job fixes (pending — branch: fix/cue-split-ingest-flow)
+
+Multiple rounds of diagnosis on the organize job revealed compounding bugs. Outstanding fixes approved, not yet implemented:
+
+**Root cause chain:**
+1. `process_staged` correctly imports to `source/2018.05.06 [TMNC-026].../track.flac` (folder preserves ingest name)
+2. T4's auto-organize-on-import fires the organize job immediately
+3. Organize job has NO `source/` prefix enforcement — rule template `{albumartist}/{album}/...` produces `TUMENECO/Re:TMNC Acoustic Collection/...` (no `source/` prefix, no file extension)
+4. Organize job renames file to `library_root/TUMENECO/Re:TMNC Acoustic Collection/01-13 - おやすみララバイ` — wrong location, no extension, DB updated to match
+5. Subsequent Re-organize attempts: DB path == rule output → "already organized" skip (including my `162b308` absolute-path fix which also skipped correctly since both resolved to the same abs path)
+6. My `162b308` organized a DIFFERENT batch where DB still had `source/...` path — those files were moved to library root without extension (breaking the files further)
+
+**Key diagnostic log:** `organize: file already at rule-dictated location track_id=189 path=TUMENECO/Re:TMNC Acoustic Collection/01-13 - おやすみララバイ`
+— path has no `source/` prefix and no file extension; file was at library root, not organized directory.
+
+**Additional issue:** organize job processed `ingest/` tracks (staged files) when Re-organize group included them — moved ingest files out of ingest/, scanner then marked them removed.
+
+**Additional issue:** derived transcoded files not moved when source track is re-organized.
+
+**Additional issue:** postgres `error returned from database: could not determine data type of parameter $2` — source query unknown, needs identification.
+
+**Approved fix plan (Fix A–E):**
+
+**Fix A — `src/jobs/organize.rs`:**
+1. Always prepend `source/` to rule output if not already present (`new_abs` = `root/source/<rule_output>`, DB written as `source/<rule_output>`)
+2. Preserve file extension: get ext from `track.relative_path`; if empty (previously corrupted), probe `old_abs` file header (magic bytes: fLaC, ID3, OggS, RIFF, ftyp, wvpk) to detect audio format → append correct extension
+3. Skip tracks with `ingest/` prefix — log warn, return skipped
+4. After successfully moving source track: query derived tracks linked to it, enqueue organize job for each
+
+**Fix B — `src/dal/postgres.rs`:** Find ambiguous `$2` bind parameter
+
+**Fix C — organize tests:** Update to expect `source/…` paths and proper extensions
+
+**Note on rescue:** Files currently at library root without extension (corrupted by prior runs) will be rescued by Fix A+B: organize job finds file at `library_root/TUMENECO/...` (extensionless), detects format via magic bytes, moves to `library_root/source/TUMENECO/.../<filename>.<ext>`.
+
 ### 2026-04-25 — Round 4 follow-up fixes (version: 1.0.0-4)
 
 Five issues reported after round 3:
