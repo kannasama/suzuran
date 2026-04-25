@@ -529,6 +529,26 @@ must be treated as a signal to slow down, not permission to skip the gate.
 2. End the response — do not touch any file
 3. Wait for explicit approval before writing a single character of code
 
+## 2026-04-25 — Check git branch before starting any implementation — seventh reminder
+
+**Mistake:** User approved a plan for cue_split.rs and LibraryPage fixes. File edits began
+immediately on `main` without running `git branch` or creating a branch first. Branch was only
+created after the user pointed it out mid-implementation.
+
+**Pattern:** The gate continues to be skipped whenever a plan approval arrives and the "just
+start" impulse fires. The branch check must happen between plan approval and first keystroke.
+
+**Rule:** The sequence is always:
+1. Plan presented → user approves
+2. `git branch` → confirm NOT on main
+3. `git checkout -b <branch>` if on main → then write first character of code
+
+Step 2 and 3 are not optional and cannot be deferred. Plan approval is not permission to edit
+files — it is permission to branch and then edit files.
+
+**How to apply:** After every plan approval, before every first Edit/Write/Bash-that-modifies-code:
+run `git branch`, read the output, branch if needed. No exceptions.
+
 ## 2026-04-25 — Current release version is v1.0.0-1
 
 **Fact:** As of 2026-04-25, all four development phases are complete and the project was released
