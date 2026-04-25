@@ -194,6 +194,23 @@ async fn handle_process_staged(
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!("rename ingest→source: {e}")))?;
 
+    // 8.1 Remove empty ingest parent directories left behind by the move.
+    {
+        let ingest_root = format!("{}/ingest", root_path);
+        let mut dir = Path::new(&src_abs)
+            .parent()
+            .map(|p| p.to_path_buf());
+        while let Some(d) = dir {
+            if d.to_string_lossy() == ingest_root || !d.starts_with(&ingest_root) {
+                break;
+            }
+            match tokio::fs::remove_dir(&d).await {
+                Ok(_) => { dir = d.parent().map(|p| p.to_path_buf()); }
+                Err(_) => break, // not empty or other error — stop climbing
+            }
+        }
+    }
+
     // 8.5 Write folder art from embedded art when no cover_art_url was provided
     if staged_payload.write_folder_art && staged_payload.cover_art_url.is_none() {
         let folder_art_filename = store

@@ -15,7 +15,7 @@
   `TagDiffTable` — field | current | new value (inline editable). No separate form.
   Files: `ui/src/pages/IngestPage.tsx`
 
-- [ ] **T3 — Empty folder cleanup after process_staged**
+- [x] **T3 — Empty folder cleanup after process_staged**
   After moving files from `ingest/` → `source/`, walk up parent dirs and `remove_dir` each level
   while empty.
   Files: `src/jobs/process_staged.rs`
