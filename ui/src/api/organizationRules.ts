@@ -40,7 +40,7 @@ export async function deleteRule(id: number): Promise<void> {
   await client.delete(`/organization-rules/${id}`)
 }
 
-export async function enqueueOrganize(trackIds: number[]): Promise<{ enqueued: number }> {
-  const res = await client.post<{ enqueued: number }>('/organization-rules/apply', { track_ids: trackIds })
+export async function enqueueOrganize(libraryId: number, trackIds: number[]): Promise<{ enqueued: number }> {
+  const res = await client.post<{ enqueued: number }>('/organization-rules/apply', { library_id: libraryId, track_ids: trackIds })
   return res.data
 }

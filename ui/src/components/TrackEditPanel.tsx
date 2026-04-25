@@ -55,15 +55,17 @@ const EDIT_TAG_FIELDS: TagField[] = [
 export function TrackEditPanel({
   track,
   suggestion,
+  overrideTags,
   onClose,
 }: {
   track: Track
   suggestion: TagSuggestion | undefined
+  overrideTags?: Record<string, string>
   onClose: () => void
 }) {
   const qc = useQueryClient()
 
-  const initialTags = suggestion?.suggested_tags ?? {}
+  const initialTags = overrideTags ?? suggestion?.suggested_tags ?? {}
   const trackFallback: Record<string, string> = {
     title:       track.title       ?? '',
     artist:      track.artist      ?? '',
@@ -82,7 +84,7 @@ export function TrackEditPanel({
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
 
-  // Art state — initialise from existing suggestion url or empty
+  // Art state — prefer override art url (from selected alt), then suggestion, then empty
   const initialArtUrl = suggestion?.cover_art_url ?? ''
   const [artUrl, setArtUrl] = useState(initialArtUrl)
   const [artUploading, setArtUploading] = useState(false)
@@ -129,10 +131,21 @@ export function TrackEditPanel({
     setSaving(true)
     setSaveError(null)
     try {
-      const tags: Record<string, string> = {}
-      for (const { key } of EDIT_TAG_FIELDS) {
-        if (fields[key].trim() !== '') tags[key] = fields[key].trim()
+      // Start with any tags from the existing suggestion that the edit form doesn't cover,
+      // so no tag data is silently dropped when the user saves a partial edit.
+      const editKeys = new Set(EDIT_TAG_FIELDS.map(f => f.key))
+      const extraTags: Record<string, string> = {}
+      if (suggestion) {
+        for (const [k, v] of Object.entries(suggestion.suggested_tags as Record<string, string>)) {
+          if (!editKeys.has(k) && v) extraTags[k] = v
+        }
       }
+      const formTags: Record<string, string> = {}
+      for (const { key } of EDIT_TAG_FIELDS) {
+        if (fields[key].trim() !== '') formTags[key] = fields[key].trim()
+      }
+      // Form fields take priority over extras from the existing suggestion
+      const tags = { ...extraTags, ...formTags }
       await tagSuggestionsApi.create({
         track_id: track.id,
         source: 'mb_search',
@@ -140,9 +153,9 @@ export function TrackEditPanel({
         confidence: 1.0,
         ...(artUrl ? { cover_art_url: artUrl } : {}),
       })
-      // Reject any existing lower-confidence suggestion so it cannot be
-      // accidentally "Accepted" after this manual edit is saved.
-      if (suggestion && suggestion.confidence < 1.0) {
+      // Always reject the existing suggestion (any confidence) — the new merged
+      // suggestion replaces it entirely, preventing duplicate confidence-1.0 entries.
+      if (suggestion) {
         await tagSuggestionsApi.reject(suggestion.id).catch(() => {})
       }
       qc.invalidateQueries({ queryKey: ['tag-suggestions'] })

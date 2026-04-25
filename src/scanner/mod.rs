@@ -199,7 +199,7 @@ pub async fn scan_library(
                 .await?;
             let active = existing_jobs
                 .iter()
-                .any(|j| j.status == "pending" || j.status == "running" || j.status == "completed");
+                .any(|j| j.status == "pending" || j.status == "running");
             if !active {
                 db.enqueue_job(
                     "cue_split",
@@ -362,7 +362,7 @@ pub async fn scan_library(
                 .await?;
             let active = existing_jobs
                 .iter()
-                .any(|j| j.status == "pending" || j.status == "running" || j.status == "completed");
+                .any(|j| j.status == "pending" || j.status == "running");
             if !active {
                 db.enqueue_job(
                     "cue_split",

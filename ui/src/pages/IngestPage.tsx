@@ -605,6 +605,15 @@ function AlbumGroup({
             )
           }
 
+          // Hoist alt override computation so both TrackEditPanel and IngestDiffPanel use the same values
+          const trackAltIdx = altIdxByTrack[track.id] ?? null
+          const effectiveAltIdx = suggestion && suggestion.confidence < 1.0
+            ? (trackAltIdx !== null ? trackAltIdx : selectedAltIdx)
+            : null
+          const altOverride = effectiveAltIdx !== null && suggestion
+            ? suggestion.alternatives?.[effectiveAltIdx]
+            : undefined
+
           return (
             <div key={track.id} className="px-3 py-2 flex flex-col gap-2">
               {/* Track meta row */}
@@ -694,42 +703,41 @@ function AlbumGroup({
               )}
 
               {/* Inline edit panel */}
-              {isEditing && (
+              {isEditing && suggestion && (
                 <TrackEditPanel
+                  key={`${suggestion.id}-${effectiveAltIdx ?? 'none'}`}
                   track={track}
                   suggestion={suggestion}
+                  overrideTags={altOverride?.suggested_tags}
+                  onClose={onEditClose}
+                />
+              )}
+              {isEditing && !suggestion && (
+                <TrackEditPanel
+                  track={track}
+                  suggestion={undefined}
                   onClose={onEditClose}
                 />
               )}
 
               {/* Tag diff with field selection */}
-              {!isEditing && suggestion && (() => {
-                // Per-track selection overrides album-level; neither applies to manual edits (confidence 1.0)
-                const trackAltIdx = altIdxByTrack[track.id] ?? null
-                const effectiveAltIdx = suggestion.confidence < 1.0
-                  ? (trackAltIdx !== null ? trackAltIdx : selectedAltIdx)
-                  : null
-                const altOverride = effectiveAltIdx !== null
-                  ? suggestion.alternatives?.[effectiveAltIdx]
-                  : undefined
-                return (
-                  <IngestDiffPanel
-                    key={`${suggestion.id}-${effectiveAltIdx ?? 'none'}`}
-                    track={track}
-                    suggestion={suggestion}
-                    applying={acceptPending === suggestion.id}
-                    rejecting={rejectPending === suggestion.id}
-                    onApply={(fields, applyArt) =>
-                      effectiveAltIdx !== null
-                        ? handleAcceptTrackWithAlt(suggestion, track.id, effectiveAltIdx, fields, applyArt)
-                        : handleAcceptTrack(suggestion.id, track.id, fields, applyArt)
-                    }
-                    onReject={() => onReject(suggestion.id)}
-                    overrideTags={altOverride?.suggested_tags}
-                    overrideArtUrl={altOverride !== undefined ? (altOverride.cover_art_url || null) : undefined}
-                  />
-                )
-              })()}
+              {!isEditing && suggestion && (
+                <IngestDiffPanel
+                  key={`${suggestion.id}-${effectiveAltIdx ?? 'none'}`}
+                  track={track}
+                  suggestion={suggestion}
+                  applying={acceptPending === suggestion.id}
+                  rejecting={rejectPending === suggestion.id}
+                  onApply={(fields, applyArt) =>
+                    effectiveAltIdx !== null
+                      ? handleAcceptTrackWithAlt(suggestion, track.id, effectiveAltIdx, fields, applyArt)
+                      : handleAcceptTrack(suggestion.id, track.id, fields, applyArt)
+                  }
+                  onReject={() => onReject(suggestion.id)}
+                  overrideTags={altOverride?.suggested_tags}
+                  overrideArtUrl={altOverride !== undefined ? (altOverride.cover_art_url || null) : undefined}
+                />
+              )}
               {!isEditing && !suggestion && (
                 <p className="text-text-muted text-[11px] italic px-1">
                   No lookup results — click <strong className="font-semibold not-italic text-text-secondary">Lookup</strong> to run fingerprint matching,{' '}
