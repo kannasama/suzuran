@@ -207,7 +207,7 @@ pub async fn get_track_art(
 
     let path_str = abs_path.to_string_lossy().into_owned();
     let (data, mime_str) = tokio::task::spawn_blocking(move || -> anyhow::Result<(Vec<u8>, &'static str)> {
-        use lofty::{file::AudioFile, picture::MimeType, probe::Probe};
+        use lofty::{file::TaggedFileExt, picture::MimeType, probe::Probe};
         let tagged = Probe::open(&path_str)?.read()?;
         let pic = tagged
             .primary_tag()
