@@ -13,6 +13,7 @@ import client from '../api/client'
 import type { Track } from '../types/track'
 import type { TagSuggestion } from '../types/tagSuggestion'
 import { useUserPrefs } from '../hooks/useUserPrefs'
+import { Checkbox } from '../components/Checkbox'
 
 // ── Tag field definitions ──────────────────────────────────────────────────────
 interface TagField { key: string; label: string; cols?: number }
@@ -677,12 +678,10 @@ export function LibraryPage() {
           {!(browseMode && !browseFilter) && (
           <div className="flex items-center gap-0 px-2 py-1 bg-bg-panel border-b border-border text-text-muted text-[11px] uppercase tracking-wider flex-shrink-0">
             <span className="w-5 shrink-0 flex items-center">
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={displayTracks.length > 0 && selectedTrackIds.size === displayTracks.length}
-                ref={el => { if (el) el.indeterminate = selectedTrackIds.size > 0 && selectedTrackIds.size < displayTracks.length }}
+                indeterminate={selectedTrackIds.size > 0 && selectedTrackIds.size < displayTracks.length}
                 onChange={toggleSelectAll}
-                className="accent-[color:var(--accent)] cursor-pointer"
                 title="Select all"
               />
             </span>
@@ -703,11 +702,9 @@ export function LibraryPage() {
                 <div className="absolute right-0 top-full mt-1 z-50 bg-bg-panel border border-border rounded shadow-lg py-1 min-w-[140px]">
                   {COLUMNS.map(col => (
                     <label key={col.key} className="flex items-center gap-2 px-3 py-1 hover:bg-bg-row-hover cursor-pointer">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={visibleColumns.has(col.key)}
                         onChange={() => toggleColumn(col.key)}
-                        className="accent-[color:var(--accent)]"
                       />
                       <span className="text-text-primary text-xs normal-case tracking-normal">{col.label}</span>
                     </label>
@@ -860,12 +857,7 @@ function TrackRow({
         onContextMenu={onContextMenu}
       >
         <span className="w-5 shrink-0 flex items-center" onClick={e => e.stopPropagation()}>
-          <input
-            type="checkbox"
-            checked={isSelected}
-            onChange={onCheckboxChange}
-            className="accent-[color:var(--accent)] cursor-pointer"
-          />
+          <Checkbox checked={isSelected} onChange={onCheckboxChange} />
         </span>
         {visibleColumns.has('num') && (
           <span className="w-6 shrink-0 text-text-muted font-mono">{track.tracknumber ?? '—'}</span>
@@ -1309,12 +1301,9 @@ function SuggestionReviewPane({
               {suggestedVal || <em className="not-italic text-text-muted/40">—</em>}
             </span>
             <span className="flex items-center justify-center">
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={checkedFields.has(key)}
                 onChange={() => toggleField(key)}
-                onClick={e => e.stopPropagation()}
-                className="accent-[color:var(--accent)] cursor-pointer"
               />
             </span>
           </div>
