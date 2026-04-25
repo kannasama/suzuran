@@ -140,6 +140,11 @@ export function TrackEditPanel({
         confidence: 1.0,
         ...(artUrl ? { cover_art_url: artUrl } : {}),
       })
+      // Reject any existing lower-confidence suggestion so it cannot be
+      // accidentally "Accepted" after this manual edit is saved.
+      if (suggestion && suggestion.confidence < 1.0) {
+        await tagSuggestionsApi.reject(suggestion.id).catch(() => {})
+      }
       qc.invalidateQueries({ queryKey: ['tag-suggestions'] })
       qc.invalidateQueries({ queryKey: ['inbox-count'] })
       onClose()
@@ -239,7 +244,7 @@ export function TrackEditPanel({
             disabled={saving}
             className="text-xs text-bg-base bg-accent rounded px-3 py-1 font-medium disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90"
           >
-            {saving ? 'Saving…' : 'Save'}
+            {saving ? 'Saving…' : 'Save Edits'}
           </button>
         </div>
       </div>

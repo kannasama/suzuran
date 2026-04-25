@@ -38,7 +38,7 @@
   header), so the user can identify which file is being processed.
   Files: `ui/src/pages/IngestPage.tsx`
 
-- [ ] **T9 — Clarify Save vs Accept; prevent Accept from overriding manual edits**
+- [x] **T9 — Clarify Save vs Accept; prevent Accept from overriding manual edits**
   In the ingest per-track edit flow, "Accept" on a suggestion was overwriting fields the user
   had manually saved via TrackEditPanel. Manual edits (confidence 1.0 suggestions) must take
   precedence over, or at least not be silently replaced by, accepting an auto-suggestion.
@@ -73,6 +73,13 @@
   Files: `ui/src/pages/LibraryPage.tsx`, `ui/src/api/tracks.ts`
 
 ## Progress Log
+
+### T9 — Clarify Save vs Apply; prevent Apply from overriding manual edits
+- `TrackEditPanel.handleSave`: after creating the confidence-1.0 manual suggestion, rejects the existing lower-confidence suggestion if present. Prevents the stale auto-suggestion from being applied after a manual edit.
+- "Save" button renamed "Save Edits" to distinguish it from "Apply" (which writes to the file).
+- IngestPage: "Accept" button renamed "Apply" with tooltip "Apply this suggestion's tags to the file".
+- After Apply succeeds, the track row collapses to a minimal "✓ Accepted" muted row; `acceptedTrackIds` set in AlbumGroup tracks which tracks are done.
+- Committed.
 
 ### T11 — Group ingest tracks by scanned folder
 - Added `groupMode: 'album' | 'folder'` state.

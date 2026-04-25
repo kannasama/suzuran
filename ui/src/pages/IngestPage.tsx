@@ -297,6 +297,12 @@ function AlbumGroup({
   const formatExt = firstTrack.relative_path.split('.').pop()?.toUpperCase() ?? '?'
   const [altTrackId, setAltTrackId] = useState<number | null>(null)
   const [editingAlbum, setEditingAlbum] = useState(false)
+  const [acceptedTrackIds, setAcceptedTrackIds] = useState<Set<number>>(new Set())
+
+  function handleAcceptTrack(suggestionId: number, trackId: number) {
+    onAccept(suggestionId)
+    setAcceptedTrackIds(prev => new Set([...prev, trackId]))
+  }
   const [showArtUpload, setShowArtUpload] = useState(false)
   const [expandedSupersede, setExpandedSupersede] = useState<number | null>(null)
 
@@ -398,6 +404,20 @@ function AlbumGroup({
           const pct = suggestion ? Math.round(suggestion.confidence * 100) : null
           const isEditing = editingTrackId === track.id
           const supersedeExpanded = expandedSupersede === track.id
+          const isAccepted = acceptedTrackIds.has(track.id)
+
+          if (isAccepted) {
+            return (
+              <div key={track.id} className="px-3 py-1.5 flex items-center gap-2 opacity-50">
+                <span className="text-text-muted font-mono text-xs w-6 shrink-0">{track.tracknumber ?? '—'}</span>
+                <span className="text-text-secondary text-xs flex-1 truncate">
+                  {track.title ?? track.relative_path.split('/').pop()}
+                </span>
+                <span className="text-[10px] font-mono text-green-400 border border-green-400/40 rounded px-1.5 py-0.5">✓ Accepted</span>
+              </div>
+            )
+          }
+
           return (
             <div key={track.id} className="px-3 py-2 flex flex-col gap-2">
               {/* Track meta row */}
@@ -443,11 +463,12 @@ function AlbumGroup({
                 <div className="flex items-center gap-1 shrink-0">
                   {suggestion && (
                     <button
-                      onClick={() => onAccept(suggestion.id)}
+                      onClick={() => handleAcceptTrack(suggestion.id, track.id)}
                       disabled={acceptPending === suggestion.id}
                       className="text-xs bg-accent text-bg-base rounded px-2 py-0.5 hover:opacity-90 disabled:opacity-50"
+                      title="Apply this suggestion's tags to the file"
                     >
-                      Accept
+                      {acceptPending === suggestion.id ? 'Applying…' : 'Apply'}
                     </button>
                   )}
                   <button
