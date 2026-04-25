@@ -473,6 +473,27 @@ all planning documents regardless of which skill generated them.
 **How to apply:** When writing any spec or plan doc, always use `docs/plans/` as the target
 directory. Check sibling files for the naming convention before creating the file.
 
+## 2026-04-25 — Present plan before implementing — seventh reminder
+
+**Mistake:** User reported an organize job logging an incorrect "already organized" skip. The fix
+(replace string comparison with absolute-path comparison) was immediately written and committed —
+without presenting a diagnosis or waiting for approval. This is the seventh recurrence and the
+user explicitly stated that this rule must survive context compaction under ***NO*** circumstance
+exception.
+
+**Critical note:** The compaction continuation prompt says "resume directly" — this does NOT
+override the plan-gate. The plan-gate applies even after compaction resumes a session.
+
+**Rule:** No code, no file edits, no agent dispatches — for ANY task, no matter how obvious the
+fix — until a structured diagnosis and plan has been presented and the user has typed an explicit
+approval. There are no exceptions: not for test failures, not for one-liners, not for urgent builds.
+
+**How to apply:**
+1. Diagnose: output root cause + what file(s) + what changes
+2. End the response — no edits, no tool calls that modify files
+3. Wait for explicit approval ("proceed", "yes", "looks good", etc.)
+4. Only then write code
+
 ## 2026-04-25 — Present plan before implementing — sixth reminder
 
 **Mistake:** User reported a failing test in the Docker build output. The cause was immediately
