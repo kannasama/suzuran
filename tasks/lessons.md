@@ -448,6 +448,19 @@ without value. The user called this out explicitly.
 **How to apply:** The "commit plan before implementing" rule does NOT apply when the user has
 explicitly said to skip to implementation after a completed brainstorm. Implement directly.
 
+## 2026-04-24 — Skip writing-plans after brainstorming; implement from spec directly
+
+**Rule:** After a completed brainstorming session that produced an approved spec, skip the
+`writing-plans` skill entirely and implement directly from the spec document.
+
+**Why:** The user has observed that `writing-plans` routinely leaves gaps between the design
+spec and the implementation plan — it re-processes already-settled decisions without adding
+value. The spec is the plan.
+
+**How to apply:** When the user says "skip straight to implementation" after approving a
+brainstorm spec, do NOT invoke `writing-plans`. Implement directly from the spec, using its
+sections as the task sequence. The spec commit already satisfies the "commit plan first" rule.
+
 ## 2026-04-24 — All plans and specs go in docs/plans/, not docs/superpowers/specs/
 
 **Rule:** The brainstorming skill's default spec path (`docs/superpowers/specs/`) is overridden
