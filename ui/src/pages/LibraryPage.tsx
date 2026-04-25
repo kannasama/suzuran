@@ -531,7 +531,7 @@ export function LibraryPage() {
     }
     items.push(null)
     items.push({ label: 'Update art…', action: () => { setArtUpdateModal({ trackIds: [track.id], label: track.title ?? track.relative_path.split('/').pop() ?? '1 track' }); setContextMenu(null) } })
-    items.push({ label: 'Re-organize…', action: () => { if (selectedLibraryId != null) enqueueOrganize(selectedLibraryId, [track.id]); setContextMenu(null) } })
+    items.push({ label: 'Re-organize…', action: () => { enqueueOrganize(track.library_id, [track.id]); setContextMenu(null) } })
     items.push({ label: 'Delete track…', action: () => { setDeleteConfirm({ ids: [track.id], label: '1 track' }); setContextMenu(null) } })
     setContextMenu({ x, y, items })
   }
@@ -976,7 +976,8 @@ export function LibraryPage() {
                                     setContextMenu(null)
                                   }},
                                   { label: 'Re-organize…', action: () => {
-                                    if (selectedLibraryId != null) enqueueOrganize(selectedLibraryId, groupIds)
+                                    const libId = groupTracks[0]?.library_id
+                                    if (libId != null) enqueueOrganize(libId, groupIds)
                                     setContextMenu(null)
                                   }},
                                   { label: deleteLabel, action: () => {
