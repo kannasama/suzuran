@@ -42,11 +42,6 @@ impl JobHandler for OrganizeJobHandler {
             vec![]
         };
 
-        if rule_pairs.is_empty() {
-            tracing::info!(track_id = p.track_id, "organize: no rule configured for library — skipped");
-            return Ok(serde_json::json!({ "skipped": true, "reason": "no rule configured" }));
-        }
-
         let new_relative = apply_rules(&rule_pairs, &tags);
 
         // Guard against path traversal in rule output, regardless of dry_run mode
@@ -60,8 +55,15 @@ impl JobHandler for OrganizeJobHandler {
             }
         }
 
+        // dry_run: always return the proposed path (null if no rule matched), never move anything
         if p.dry_run {
             return Ok(serde_json::json!({ "dry_run": true, "proposed_path": new_relative }));
+        }
+
+        // Non-dry-run: a rule must have matched; log and skip gracefully if not
+        if rule_pairs.is_empty() {
+            tracing::info!(track_id = p.track_id, "organize: no rule configured for library — skipped");
+            return Ok(serde_json::json!({ "skipped": true, "reason": "no rule configured" }));
         }
 
         let new_relative = match new_relative {
