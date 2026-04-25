@@ -12,6 +12,7 @@ import { getJob } from '../api/jobs'
 import client from '../api/client'
 import type { Track } from '../types/track'
 import type { TagSuggestion } from '../types/tagSuggestion'
+import { useUserPrefs } from '../hooks/useUserPrefs'
 
 // ── Tag field definitions ──────────────────────────────────────────────────────
 interface TagField { key: string; label: string; cols?: number }
@@ -89,18 +90,6 @@ const COLUMNS: ColumnDef[] = [
   { key: 'actions',  label: 'Actions',                       className: 'w-16' },
 ]
 
-const LS_KEY = 'suzuran:column-visibility'
-
-function loadColumnVisibility(): Set<string> {
-  try {
-    const raw = localStorage.getItem(LS_KEY)
-    if (raw) {
-      const arr = JSON.parse(raw)
-      if (Array.isArray(arr)) return new Set(arr as string[])
-    }
-  } catch { /* ignore */ }
-  return new Set(COLUMNS.map(c => c.key))
-}
 
 function formatDuration(secs?: number): string {
   if (secs == null) return '—'
@@ -125,9 +114,7 @@ function getFileExtension(path: string): string {
 }
 
 // ── Sort / group types ─────────────────────────────────────────────────────────
-type GroupByKey = 'none' | 'album' | 'artist' | 'albumartist' | 'year' | 'genre'
-type SortByKey = 'tracknumber' | 'discnumber' | 'title' | 'artist' | 'album' | 'year' | 'duration' | 'bitrate'
-type SortLevel = { key: SortByKey; dir: 'asc' | 'desc' }
+import type { GroupByKey, SortByKey } from '../hooks/useUserPrefs'
 type MenuItem = { label: string; action: () => void } | null
 
 const GROUP_OPTIONS: { key: GroupByKey; label: string }[] = [
@@ -160,14 +147,16 @@ export function LibraryPage() {
   const [selectedVirtualLibraryId, setSelectedVirtualLibraryId] = useState<number | null>(null)
   const [scanQueued, setScanQueued] = useState(false)
   const [maintenanceQueued, setMaintenanceQueued] = useState(false)
-  const [visibleColumns, setVisibleColumns] = useState<Set<string>>(loadColumnVisibility)
+  const {
+    groupBy, setGroupBy,
+    sortLevels, setSortLevels,
+    visibleCols: visibleColumns, toggleColumn,
+  } = useUserPrefs()
   const [showColumnPicker, setShowColumnPicker] = useState(false)
   const pickerRef = useRef<HTMLDivElement>(null)
   const [searchTrack, setSearchTrack] = useState<Track | null>(null)
   const [selectedTrackIds, setSelectedTrackIds] = useState<Set<number>>(new Set())
   const lastSelectedIdRef = useRef<number | null>(null)
-  const [groupBy, setGroupBy] = useState<GroupByKey>('none')
-  const [sortLevels, setSortLevels] = useState<SortLevel[]>([{ key: 'tracknumber', dir: 'asc' }])
   const [showGroupMenu, setShowGroupMenu] = useState(false)
   const [showSortMenu, setShowSortMenu] = useState(false)
   const groupMenuRef = useRef<HTMLDivElement>(null)
@@ -214,16 +203,6 @@ export function LibraryPage() {
       document.removeEventListener('scroll', handleScroll, true)
     }
   }, [contextMenu])
-
-  function toggleColumn(key: string) {
-    setVisibleColumns(prev => {
-      const next = new Set(prev)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
-      localStorage.setItem(LS_KEY, JSON.stringify([...next]))
-      return next
-    })
-  }
 
   // ── Queries ───────────────────────────────────────────────────────────────────
   const { data: libraries = [] } = useQuery({
