@@ -118,6 +118,11 @@ pub async fn scan_library(
             };
 
             if !needs_scan {
+                // Hash unchanged — but ensure the track is present as "staged" in case it was
+                // previously removed and the file was dropped back into ingest/.
+                if let Some((id, _)) = existing.get(&rel_path) {
+                    let _ = db.set_track_status(*id, "staged").await;
+                }
                 continue;
             }
 
