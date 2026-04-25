@@ -44,13 +44,20 @@
   Add `relative_path` and `filename` (basename of `relative_path`) to column picker and table.
   Files: `ui/src/hooks/useUserPrefs.ts`, `ui/src/pages/LibraryPage.tsx`
 
-- [ ] **T7 — Delete derived tracks with confirmation**
+- [x] **T7 — Delete derived tracks with confirmation**
   "Delete file…" option in per-track ⋯ menu, gated on `library_profile_id != null`.
   Confirmation modal shows relative path + filename. Override checkbox skips 15-min delay
   (immediate delete). Standard path uses existing `scheduleDelete` with 15-min `run_after`.
   Files: `ui/src/pages/LibraryPage.tsx`, `ui/src/api/tracks.ts`
 
 ## Progress Log
+
+### T7 — Delete derived tracks with confirmation
+- Backend `DeleteRequest` extended with `immediate: bool` (default false). When true, uses `enqueue_job` (no delay) instead of `enqueue_job_after`.
+- `scheduleDelete(ids, immediate?)` API client updated.
+- `DerivedTrackRow` gets `onDelete?` prop; actions cell renders a ✕ button.
+- `DerivedDeleteModal`: shows filename + full relative path, "Delete immediately" checkbox (toggles button label and hides delay note), Cancel + Delete Now / Schedule Deletion.
+- Committed.
 
 ### T6 — Relative path / filename columns
 - Added `filename` (basename) and `relative_path` (full path) to `COLUMNS` in LibraryPage and `DEFAULT_COL_WIDTHS` in `useUserPrefs`.

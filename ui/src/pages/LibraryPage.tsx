@@ -216,6 +216,8 @@ export function LibraryPage() {
     label: string          // e.g. "3 tracks" or "Album — Dark Side of the Moon (10 tracks)"
   } | null>(null)
   const [deleteSubmitting, setDeleteSubmitting] = useState(false)
+  const [derivedDeleteConfirm, setDerivedDeleteConfirm] = useState<Track | null>(null)
+  const [derivedDeleteSubmitting, setDerivedDeleteSubmitting] = useState(false)
   const [artUpdateModal, setArtUpdateModal] = useState<{ trackIds: number[]; label: string } | null>(null)
 
   // ── Dismiss handlers ──────────────────────────────────────────────────────────
@@ -568,6 +570,17 @@ export function LibraryPage() {
       qc.invalidateQueries({ queryKey: ['library-tracks', selectedLibraryId] })
     } catch { /* ignore */ }
     setDeleteSubmitting(false)
+  }
+
+  async function handleConfirmDerivedDelete(immediate: boolean) {
+    if (!derivedDeleteConfirm) return
+    setDerivedDeleteSubmitting(true)
+    try {
+      await scheduleDelete([derivedDeleteConfirm.id], immediate)
+      setDerivedDeleteConfirm(null)
+      qc.invalidateQueries({ queryKey: ['library-tracks', selectedLibraryId] })
+    } catch { /* ignore */ }
+    setDerivedDeleteSubmitting(false)
   }
 
   async function handleScan() {
@@ -993,6 +1006,7 @@ export function LibraryPage() {
                             derived={dt}
                             visibleColumns={visibleColumns}
                             colWidths={liveWidths}
+                            onDelete={() => setDerivedDeleteConfirm(dt)}
                           />
                         ))}
                       </React.Fragment>
@@ -1045,6 +1059,14 @@ export function LibraryPage() {
           submitting={deleteSubmitting}
           onCancel={() => setDeleteConfirm(null)}
           onConfirm={handleConfirmDelete}
+        />
+      )}
+      {derivedDeleteConfirm && (
+        <DerivedDeleteModal
+          track={derivedDeleteConfirm}
+          submitting={derivedDeleteSubmitting}
+          onCancel={() => setDerivedDeleteConfirm(null)}
+          onConfirm={handleConfirmDerivedDelete}
         />
       )}
       {artUpdateModal && (
@@ -1175,10 +1197,12 @@ function DerivedTrackRow({
   derived,
   visibleColumns,
   colWidths,
+  onDelete,
 }: {
   derived: Track
   visibleColumns: Set<string>
   colWidths: Record<string, number>
+  onDelete?: () => void
 }) {
   // The first path segment is the derived-dir-name set by the library profile
   // e.g. "aac-192k/Artist/Album/track.m4a" → "aac-192k"
@@ -1220,7 +1244,19 @@ function DerivedTrackRow({
           {derived.relative_path}
         </span>
       )}
-      {visibleColumns.has('actions') && <span style={w('actions')} className="py-0.5" />}
+      {visibleColumns.has('actions') && (
+        <span style={w('actions')} className="py-0.5 flex items-center justify-end pr-1">
+          {onDelete && (
+            <button
+              onClick={e => { e.stopPropagation(); onDelete() }}
+              className="text-xs border border-border text-text-muted rounded px-1.5 py-0.5 hover:border-destructive hover:text-destructive transition-colors"
+              title="Delete derived file"
+            >
+              ✕
+            </button>
+          )}
+        </span>
+      )}
     </div>
   )
 }
@@ -1878,6 +1914,68 @@ function DeleteConfirmModal({
             className="text-xs bg-destructive text-white rounded px-3 py-1 font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {submitting ? 'Scheduling…' : 'Schedule Deletion'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── DerivedDeleteModal ─────────────────────────────────────────────────────────
+function DerivedDeleteModal({
+  track,
+  submitting,
+  onCancel,
+  onConfirm,
+}: {
+  track: Track
+  submitting: boolean
+  onCancel: () => void
+  onConfirm: (immediate: boolean) => void
+}) {
+  const [immediate, setImmediate] = React.useState(false)
+  const filename = track.relative_path.split('/').pop() ?? track.relative_path
+  return (
+    <div
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60"
+      onClick={e => { if (e.target === e.currentTarget) onCancel() }}
+    >
+      <div className="bg-bg-panel border border-border rounded shadow-2xl w-[460px] flex flex-col">
+        <div className="px-5 pt-4 pb-3 border-b border-border">
+          <h2 className="text-sm font-semibold text-text-primary">Delete derived file</h2>
+        </div>
+        <div className="px-5 py-4 flex flex-col gap-3">
+          <p className="text-xs text-text-primary">The following file will be deleted from disk:</p>
+          <div className="bg-bg-base border border-border rounded px-3 py-2 flex flex-col gap-1">
+            <span className="text-xs font-mono text-text-primary">{filename}</span>
+            <span className="text-[10px] font-mono text-text-muted">{track.relative_path}</span>
+          </div>
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <Checkbox checked={immediate} onChange={() => setImmediate(v => !v)} />
+            <span className="text-xs text-text-primary">Delete immediately</span>
+            <span className="text-[10px] text-text-muted">(skip 15-minute delay)</span>
+          </label>
+          {!immediate && (
+            <p className="text-xs text-text-muted">
+              Deletion runs after a <span className="text-text-primary font-medium">15-minute delay</span>.
+              You can cancel it from the <span className="text-text-primary font-medium">Jobs</span> page before it runs.
+            </p>
+          )}
+        </div>
+        <div className="px-5 pb-4 pt-1 flex justify-end gap-2">
+          <button
+            onClick={onCancel}
+            disabled={submitting}
+            className="text-xs border border-border text-text-muted rounded px-3 py-1 hover:text-text-primary hover:border-accent disabled:opacity-40"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onConfirm(immediate)}
+            disabled={submitting}
+            className="text-xs bg-destructive text-white rounded px-3 py-1 font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {submitting ? 'Deleting…' : immediate ? 'Delete Now' : 'Schedule Deletion'}
           </button>
         </div>
       </div>

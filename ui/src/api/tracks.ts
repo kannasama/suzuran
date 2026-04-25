@@ -16,6 +16,6 @@ export interface ScheduleDeleteResult {
   run_after: string
 }
 
-export function scheduleDelete(ids: number[]): Promise<ScheduleDeleteResult> {
-  return client.post<ScheduleDeleteResult>('/tracks/delete', { ids }).then(r => r.data);
+export function scheduleDelete(ids: number[], immediate = false): Promise<ScheduleDeleteResult> {
+  return client.post<ScheduleDeleteResult>('/tracks/delete', { ids, immediate }).then(r => r.data);
 }

@@ -35,6 +35,8 @@ pub fn router() -> Router<AppState> {
 #[derive(serde::Deserialize)]
 struct DeleteRequest {
     ids: Vec<i64>,
+    #[serde(default)]
+    immediate: bool,
 }
 
 async fn schedule_delete(
@@ -44,6 +46,15 @@ async fn schedule_delete(
 ) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
     if body.ids.is_empty() {
         return Err(AppError::BadRequest("ids must not be empty".into()));
+    }
+    if body.immediate {
+        let job = state.db.enqueue_job(
+            "delete_tracks",
+            serde_json::json!({ "track_ids": body.ids }),
+            5,
+        ).await?;
+        let run_after = chrono::Utc::now();
+        return Ok((StatusCode::ACCEPTED, Json(serde_json::json!({ "job_id": job.id, "run_after": run_after }))));
     }
     let run_after = chrono::Utc::now()
         + chrono::Duration::minutes(DELETE_DELAY_MINS);
