@@ -5,7 +5,7 @@ use axum::{
     Json,
     http::StatusCode,
 };
-use std::{collections::HashMap, path::Path as FsPath, sync::Arc};
+use std::{collections::HashMap, path::Path as FsPath};
 
 use crate::{
     api::middleware::auth::AuthUser,

@@ -16,6 +16,7 @@ async fn make_db() -> std::sync::Arc<dyn Store> {
     std::sync::Arc::new(store)
 }
 
+#[allow(dead_code)]
 /// Create an ingest/ and source/ directory structure under `root`.
 async fn create_library_dirs(root: &std::path::Path) {
     tokio::fs::create_dir_all(root.join("ingest")).await.unwrap();

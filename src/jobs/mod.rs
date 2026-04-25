@@ -1,5 +1,6 @@
 pub mod art_process;
 pub mod cue_split;
+pub mod delete_tracks;
 pub mod fingerprint;
 pub mod freedb_lookup;
 pub mod maintenance;

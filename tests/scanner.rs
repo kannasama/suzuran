@@ -1,7 +1,7 @@
 use std::{path::PathBuf, sync::Arc};
 use tokio::fs;
 use suzuran_server::{
-    dal::{sqlite::SqliteStore, Store, UpsertTrack},
+    dal::{sqlite::SqliteStore, Store},
     scanner::scan_library,
 };
 

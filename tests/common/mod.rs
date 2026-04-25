@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use std::sync::Arc;
 use tempfile::TempDir;
 use url::Url;
@@ -5,7 +6,7 @@ use webauthn_rs::WebauthnBuilder;
 use suzuran_server::{
     build_router,
     config::Config,
-    dal::{sqlite::SqliteStore, Store, UpsertTrack, UpsertLibraryProfile},
+    dal::{sqlite::SqliteStore, Store, UpsertTrack},
     services::{freedb::FreedBService, musicbrainz::MusicBrainzService},
     state::AppState,
 };

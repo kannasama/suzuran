@@ -31,6 +31,20 @@ async fn test_mb_lookup_creates_suggestion() {
         .mount(&mb_server)
         .await;
 
+    Mock::given(method("GET"))
+        .and(path_regex("/release/rel-1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "rel-1",
+            "title": "Test Album",
+            "date": "2000",
+            "status": "Official",
+            "media": [{"position": 1, "track-count": 1, "tracks": [
+                {"position": 1, "number": "1", "recording": {"id": "rec-1"}}
+            ]}]
+        })))
+        .mount(&mb_server)
+        .await;
+
     let (store, track_id) = common::setup_with_fingerprinted_track().await;
     store.set_setting("acoustid_api_key", "test-key").await.unwrap();
     let mb_svc = Arc::new(MusicBrainzService::with_base_urls(

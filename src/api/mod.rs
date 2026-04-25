@@ -13,6 +13,7 @@ pub mod organization_rules;
 pub mod search;
 pub mod settings;
 pub mod tag_suggestions;
+pub mod user_prefs;
 pub mod themes;
 pub mod totp;
 pub mod transcode;
@@ -43,6 +44,7 @@ pub fn api_router(_state: AppState) -> Router<AppState> {
         .nest("/library-profiles", library_profiles::router())
         .nest("/ingest", ingest::router())
         .nest("/issues", issues::router())
+        .nest("/user/prefs", user_prefs::router())
         .nest("/search", search::router())
         .nest("/admin", migrate::router())
         .merge(transcode::router())

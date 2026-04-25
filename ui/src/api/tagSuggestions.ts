@@ -26,11 +26,16 @@ export const tagSuggestionsApi = {
       .then(r => r.data.count);
   },
 
-  accept(id: number, fields?: string[]) {
-    return client.post(
-      `/tag-suggestions/${id}/accept`,
-      fields ? { fields } : undefined,
-    );
+  accept(id: number, fields?: string[], applyArt = true) {
+    const hasFields = fields != null
+    const skipArt = !applyArt
+    if (!hasFields && !skipArt) {
+      return client.post(`/tag-suggestions/${id}/accept`)
+    }
+    const body: Record<string, unknown> = {}
+    if (hasFields) body.fields = fields
+    if (skipArt) body.apply_art = false
+    return client.post(`/tag-suggestions/${id}/accept`, body)
   },
 
   reject(id: number) {

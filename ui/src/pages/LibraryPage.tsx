@@ -6,12 +6,16 @@ import { AlternativesPanel } from '../components/AlternativesPanel'
 import { IngestSearchDialog } from '../components/IngestSearchDialog'
 import { useAuth } from '../contexts/AuthContext'
 import { getLibrary, listLibraries, listLibraryTracks, triggerMaintenance } from '../api/libraries'
-import { enqueueLookup } from '../api/tracks'
+import { enqueueLookup, scheduleDelete } from '../api/tracks'
 import { tagSuggestionsApi } from '../api/tagSuggestions'
+import { artApi } from '../api/art'
 import { getJob } from '../api/jobs'
 import client from '../api/client'
 import type { Track } from '../types/track'
 import type { TagSuggestion } from '../types/tagSuggestion'
+import { useUserPrefs, DEFAULT_COL_WIDTHS } from '../hooks/useUserPrefs'
+import type { GroupByKey, SortByKey } from '../hooks/useUserPrefs'
+import { Checkbox } from '../components/Checkbox'
 
 // ── Tag field definitions ──────────────────────────────────────────────────────
 interface TagField { key: string; label: string; cols?: number }
@@ -74,33 +78,24 @@ function getTrackTagValue(track: Track, key: string): string {
 }
 
 // ── Column definitions ─────────────────────────────────────────────────────────
-interface ColumnDef { key: string; label: string; headerLabel?: string; className: string }
+interface ColumnDef { key: string; label: string; headerLabel?: string }
 
 const COLUMNS: ColumnDef[] = [
-  { key: 'num',      label: 'Track #',  headerLabel: '#',    className: 'w-6' },
-  { key: 'title',    label: 'Title',                         className: 'flex-[3]' },
-  { key: 'artist',   label: 'Artist',                        className: 'flex-[2]' },
-  { key: 'album',    label: 'Album',                         className: 'flex-[2]' },
-  { key: 'year',     label: 'Year',                          className: 'w-10' },
-  { key: 'genre',    label: 'Genre',                         className: 'flex-1' },
-  { key: 'format',   label: 'Format',                        className: 'w-12' },
-  { key: 'bitrate',  label: 'Quality',                       className: 'w-24' },
-  { key: 'duration', label: 'Duration', headerLabel: 'Time', className: 'w-10' },
-  { key: 'actions',  label: 'Actions',                       className: 'w-16' },
+  { key: 'num',      label: 'Track #',  headerLabel: '#'   },
+  { key: 'title',    label: 'Title'                        },
+  { key: 'artist',   label: 'Artist'                       },
+  { key: 'album',    label: 'Album'                        },
+  { key: 'year',     label: 'Year'                         },
+  { key: 'genre',    label: 'Genre'                        },
+  { key: 'format',   label: 'Format'                       },
+  { key: 'bitrate',  label: 'Quality'                      },
+  { key: 'duration', label: 'Duration', headerLabel: 'Time'},
+  { key: 'actions',  label: 'Actions'                      },
 ]
 
-const LS_KEY = 'suzuran:column-visibility'
+// Checkbox column width (fixed, never resizable)
+const CB_COL_WIDTH = 24
 
-function loadColumnVisibility(): Set<string> {
-  try {
-    const raw = localStorage.getItem(LS_KEY)
-    if (raw) {
-      const arr = JSON.parse(raw)
-      if (Array.isArray(arr)) return new Set(arr as string[])
-    }
-  } catch { /* ignore */ }
-  return new Set(COLUMNS.map(c => c.key))
-}
 
 function formatDuration(secs?: number): string {
   if (secs == null) return '—'
@@ -125,9 +120,6 @@ function getFileExtension(path: string): string {
 }
 
 // ── Sort / group types ─────────────────────────────────────────────────────────
-type GroupByKey = 'none' | 'album' | 'artist' | 'albumartist' | 'year' | 'genre'
-type SortByKey = 'tracknumber' | 'discnumber' | 'title' | 'artist' | 'album' | 'year' | 'duration' | 'bitrate'
-type SortLevel = { key: SortByKey; dir: 'asc' | 'desc' }
 type MenuItem = { label: string; action: () => void } | null
 
 const GROUP_OPTIONS: { key: GroupByKey; label: string }[] = [
@@ -160,14 +152,21 @@ export function LibraryPage() {
   const [selectedVirtualLibraryId, setSelectedVirtualLibraryId] = useState<number | null>(null)
   const [scanQueued, setScanQueued] = useState(false)
   const [maintenanceQueued, setMaintenanceQueued] = useState(false)
-  const [visibleColumns, setVisibleColumns] = useState<Set<string>>(loadColumnVisibility)
+  const {
+    groupBy, setGroupBy,
+    sortLevels, setSortLevels,
+    colWidths, setColWidths,
+    visibleCols: visibleColumns, toggleColumn,
+  } = useUserPrefs()
+  // liveWidths tracks widths during drag without persisting on every pixel move
+  const [liveWidths, setLiveWidths] = useState<Record<string, number>>(colWidths)
+  useEffect(() => { setLiveWidths(colWidths) }, [colWidths])
+  const resizingRef = useRef<{ key: string; startX: number; startWidth: number } | null>(null)
   const [showColumnPicker, setShowColumnPicker] = useState(false)
   const pickerRef = useRef<HTMLDivElement>(null)
   const [searchTrack, setSearchTrack] = useState<Track | null>(null)
   const [selectedTrackIds, setSelectedTrackIds] = useState<Set<number>>(new Set())
   const lastSelectedIdRef = useRef<number | null>(null)
-  const [groupBy, setGroupBy] = useState<GroupByKey>('none')
-  const [sortLevels, setSortLevels] = useState<SortLevel[]>([{ key: 'tracknumber', dir: 'asc' }])
   const [showGroupMenu, setShowGroupMenu] = useState(false)
   const [showSortMenu, setShowSortMenu] = useState(false)
   const groupMenuRef = useRef<HTMLDivElement>(null)
@@ -176,6 +175,15 @@ export function LibraryPage() {
   const [altPanelTrackId, setAltPanelTrackId] = useState<number | null>(null)
   const [browseMode, setBrowseMode] = useState<BrowseMode | null>(null)
   const [browseFilter, setBrowseFilter] = useState<string | null>(null)
+  const [showActionsMenu, setShowActionsMenu] = useState(false)
+  const actionsMenuRef = useRef<HTMLDivElement>(null)
+  // deleteConfirm: null = closed; object = open with context
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    ids: number[]
+    label: string          // e.g. "3 tracks" or "Album — Dark Side of the Moon (10 tracks)"
+  } | null>(null)
+  const [deleteSubmitting, setDeleteSubmitting] = useState(false)
+  const [artUpdateModal, setArtUpdateModal] = useState<{ trackIds: number[]; label: string } | null>(null)
 
   // ── Dismiss handlers ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -190,7 +198,7 @@ export function LibraryPage() {
   }, [showColumnPicker])
 
   useEffect(() => {
-    if (!showGroupMenu && !showSortMenu) return
+    if (!showGroupMenu && !showSortMenu && !showActionsMenu) return
     function handleMouseDown(e: MouseEvent) {
       if (showGroupMenu && groupMenuRef.current && !groupMenuRef.current.contains(e.target as Node)) {
         setShowGroupMenu(false)
@@ -198,10 +206,13 @@ export function LibraryPage() {
       if (showSortMenu && sortMenuRef.current && !sortMenuRef.current.contains(e.target as Node)) {
         setShowSortMenu(false)
       }
+      if (showActionsMenu && actionsMenuRef.current && !actionsMenuRef.current.contains(e.target as Node)) {
+        setShowActionsMenu(false)
+      }
     }
     document.addEventListener('mousedown', handleMouseDown)
     return () => document.removeEventListener('mousedown', handleMouseDown)
-  }, [showGroupMenu, showSortMenu])
+  }, [showGroupMenu, showSortMenu, showActionsMenu])
 
   useEffect(() => {
     if (!contextMenu) return
@@ -215,14 +226,35 @@ export function LibraryPage() {
     }
   }, [contextMenu])
 
-  function toggleColumn(key: string) {
-    setVisibleColumns(prev => {
-      const next = new Set(prev)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
-      localStorage.setItem(LS_KEY, JSON.stringify([...next]))
-      return next
+  // ── Column resize handlers ────────────────────────────────────────────────────
+  const handleResizeMouseMove = useRef((e: MouseEvent) => {
+    const r = resizingRef.current
+    if (!r) return
+    const newWidth = Math.max(40, r.startWidth + (e.clientX - r.startX))
+    setLiveWidths(prev => ({ ...prev, [r.key]: newWidth }))
+  }).current
+
+  const handleResizeMouseUp = useRef(() => {
+    document.removeEventListener('mousemove', handleResizeMouseMove)
+    document.removeEventListener('mouseup', handleResizeMouseUp)
+    document.body.style.userSelect = ''
+    setLiveWidths(prev => {
+      setColWidths(prev)
+      return prev
     })
+    resizingRef.current = null
+  }).current
+
+  function handleResizeMouseDown(key: string, e: React.MouseEvent) {
+    e.preventDefault()
+    resizingRef.current = {
+      key,
+      startX: e.clientX,
+      startWidth: liveWidths[key] ?? DEFAULT_COL_WIDTHS[key] ?? 80,
+    }
+    document.body.style.userSelect = 'none'
+    document.addEventListener('mousemove', handleResizeMouseMove)
+    document.addEventListener('mouseup', handleResizeMouseUp)
   }
 
   // ── Queries ───────────────────────────────────────────────────────────────────
@@ -433,6 +465,8 @@ export function LibraryPage() {
         { label: 'Deselect All', action: () => { setSelectedTrackIds(new Set()); setContextMenu(null) } },
         null,
         { label: 'Copy Path', action: () => { navigator.clipboard.writeText(track.relative_path); setContextMenu(null) } },
+        null,
+        { label: 'Delete track…', action: () => { setDeleteConfirm({ ids: [track.id], label: '1 track' }); setContextMenu(null) } },
       ],
     })
   }
@@ -459,6 +493,9 @@ export function LibraryPage() {
         },
       })
     }
+    items.push(null)
+    items.push({ label: 'Update art…', action: () => { setArtUpdateModal({ trackIds: [track.id], label: track.title ?? track.relative_path.split('/').pop() ?? '1 track' }); setContextMenu(null) } })
+    items.push({ label: 'Delete track…', action: () => { setDeleteConfirm({ ids: [track.id], label: '1 track' }); setContextMenu(null) } })
     setContextMenu({ x, y, items })
   }
 
@@ -480,6 +517,25 @@ export function LibraryPage() {
   const lookupMutation = useMutation({
     mutationFn: (trackId: number) => enqueueLookup(trackId),
   })
+
+  async function handleBulkLookup(ids: number[]) {
+    setShowActionsMenu(false)
+    for (const id of ids) {
+      await enqueueLookup(id).catch(() => {})
+    }
+  }
+
+  async function handleConfirmDelete() {
+    if (!deleteConfirm) return
+    setDeleteSubmitting(true)
+    try {
+      await scheduleDelete(deleteConfirm.ids)
+      setDeleteConfirm(null)
+      setSelectedTrackIds(new Set())
+      qc.invalidateQueries({ queryKey: ['library-tracks', selectedLibraryId] })
+    } catch { /* ignore */ }
+    setDeleteSubmitting(false)
+  }
 
   async function handleScan() {
     if (selectedLibraryId == null) return
@@ -591,6 +647,38 @@ export function LibraryPage() {
                   </button>
                 </>
               )}
+              {/* Actions dropdown — visible when tracks selected */}
+              {selectedTrackIds.size > 0 && (
+                <div ref={actionsMenuRef} className="relative">
+                  <button
+                    onClick={() => setShowActionsMenu(v => !v)}
+                    className={`text-xs bg-bg-panel border rounded px-2 py-0.5 ${showActionsMenu ? 'border-accent text-accent' : 'border-border text-text-muted hover:text-text-primary'}`}
+                  >
+                    Actions ({selectedTrackIds.size}) ▾
+                  </button>
+                  {showActionsMenu && (
+                    <div className="absolute right-0 top-full mt-1 z-50 bg-bg-panel border border-border rounded shadow-lg py-1 min-w-[180px]">
+                      <button
+                        onClick={() => handleBulkLookup([...selectedTrackIds])}
+                        className="block w-full text-left px-3 py-1 text-xs text-text-primary hover:bg-bg-row-hover"
+                      >
+                        AcoustID Lookup ({selectedTrackIds.size})
+                      </button>
+                      <div className="border-t border-border my-1" />
+                      <button
+                        onClick={() => {
+                          const ids = [...selectedTrackIds]
+                          setDeleteConfirm({ ids, label: `${ids.length} track${ids.length !== 1 ? 's' : ''}` })
+                          setShowActionsMenu(false)
+                        }}
+                        className="block w-full text-left px-3 py-1 text-xs text-destructive hover:bg-bg-row-hover"
+                      >
+                        Delete {selectedTrackIds.size} track{selectedTrackIds.size !== 1 ? 's' : ''}…
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
               {/* Group by */}
               <div ref={groupMenuRef} className="relative">
                 <button
@@ -696,25 +784,36 @@ export function LibraryPage() {
 
           {/* Column headers — hidden in State B (browse list) */}
           {!(browseMode && !browseFilter) && (
-          <div className="flex items-center gap-0 px-2 py-1 bg-bg-panel border-b border-border text-text-muted text-[11px] uppercase tracking-wider flex-shrink-0">
-            <span className="w-5 shrink-0 flex items-center">
-              <input
-                type="checkbox"
+          <div className="flex items-stretch gap-0 bg-bg-panel border-b border-border text-text-muted text-[11px] uppercase tracking-wider flex-shrink-0 select-none">
+            {/* Checkbox column — fixed, not resizable */}
+            <div style={{ width: CB_COL_WIDTH, flexShrink: 0 }} className="flex items-center justify-center py-1">
+              <Checkbox
                 checked={displayTracks.length > 0 && selectedTrackIds.size === displayTracks.length}
-                ref={el => { if (el) el.indeterminate = selectedTrackIds.size > 0 && selectedTrackIds.size < displayTracks.length }}
+                indeterminate={selectedTrackIds.size > 0 && selectedTrackIds.size < displayTracks.length}
                 onChange={toggleSelectAll}
-                className="accent-[color:var(--accent)] cursor-pointer"
                 title="Select all"
               />
-            </span>
+            </div>
             {COLUMNS.map(col => visibleColumns.has(col.key) && (
-              <span key={col.key} className={col.className + ' shrink-0'}>
-                {col.headerLabel ?? col.label}
-              </span>
+              <div
+                key={col.key}
+                className="relative flex items-center justify-center py-1 border-l border-border hover:bg-bg-row-hover group"
+                style={{ width: liveWidths[col.key] ?? DEFAULT_COL_WIDTHS[col.key], flexShrink: 0 }}
+              >
+                <span className="truncate px-2">{col.headerLabel ?? col.label}</span>
+                {col.key !== 'actions' && (
+                  <div
+                    className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize flex items-center justify-center text-text-muted/40 group-hover:text-accent z-10"
+                    onMouseDown={e => handleResizeMouseDown(col.key, e)}
+                  >
+                    ⋮
+                  </div>
+                )}
+              </div>
             ))}
-            <div ref={pickerRef} className="relative w-6 shrink-0 ml-auto">
+            <div ref={pickerRef} className="relative flex items-center justify-center border-l border-border ml-auto" style={{ width: 24, flexShrink: 0 }}>
               <span
-                className="text-accent cursor-pointer hover:opacity-70 transition-opacity block text-center"
+                className="text-accent cursor-pointer hover:opacity-70 transition-opacity"
                 onClick={() => setShowColumnPicker(v => !v)}
                 title="Customize columns"
               >
@@ -724,11 +823,9 @@ export function LibraryPage() {
                 <div className="absolute right-0 top-full mt-1 z-50 bg-bg-panel border border-border rounded shadow-lg py-1 min-w-[140px]">
                   {COLUMNS.map(col => (
                     <label key={col.key} className="flex items-center gap-2 px-3 py-1 hover:bg-bg-row-hover cursor-pointer">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={visibleColumns.has(col.key)}
                         onChange={() => toggleColumn(col.key)}
-                        className="accent-[color:var(--accent)]"
                       />
                       <span className="text-text-primary text-xs normal-case tracking-normal">{col.label}</span>
                     </label>
@@ -780,17 +877,74 @@ export function LibraryPage() {
                 /* ── State A / C: Track list ────────────────────────────────── */
                 displayGroups.map(({ key, tracks: groupTracks }) => (
                   <div key={key || '__all__'}>
-                    {groupBy !== 'none' && (
-                      <div className="px-3 py-1 bg-bg-panel border-b border-border text-[11px] font-mono flex items-center gap-2 sticky top-0 z-10">
-                        <span className="text-text-primary font-medium">{key}</span>
-                        <span className="text-text-muted/60">{groupTracks.length}</span>
-                      </div>
-                    )}
+                    {groupBy !== 'none' && (() => {
+                      const groupIds = groupTracks.map((t: Track) => t.id)
+                      const allSelected = groupIds.length > 0 && groupIds.every(id => selectedTrackIds.has(id))
+                      const someSelected = groupIds.some(id => selectedTrackIds.has(id))
+                      const showCheckbox = groupBy === 'album' || groupBy === 'artist' || groupBy === 'albumartist'
+                      const deleteLabel = { album: 'Delete album…', artist: 'Delete artist…', albumartist: 'Delete album artist…' }[groupBy as string] ?? 'Delete group…'
+                      const artTrack = groupTracks.find((t: Track) => t.has_embedded_art)
+                      const artSuggestion = groupTracks.map((t: Track) => suggestionsByTrack[t.id]).find(s => s?.cover_art_url)
+                      const artSrc = artTrack
+                        ? `/api/v1/tracks/${artTrack.id}/art`
+                        : (artSuggestion?.cover_art_url ?? null)
+                      return (
+                        <div className="bg-bg-panel border-b border-border text-xs font-mono flex items-center sticky top-0 z-10">
+                          <span style={{ width: CB_COL_WIDTH, flexShrink: 0 }} className="flex items-center justify-center py-0.5">
+                            {showCheckbox && (
+                              <Checkbox
+                                checked={allSelected}
+                                indeterminate={someSelected && !allSelected}
+                                onChange={() => {
+                                  setSelectedTrackIds(prev => {
+                                    const next = new Set(prev)
+                                    if (allSelected) groupIds.forEach(id => next.delete(id))
+                                    else groupIds.forEach(id => next.add(id))
+                                    return next
+                                  })
+                                }}
+                                title="Select all in group"
+                              />
+                            )}
+                          </span>
+                          {artSrc ? (
+                            <img src={artSrc} alt="" className="w-8 h-8 object-cover flex-shrink-0 mr-1.5" />
+                          ) : (
+                            <span className="w-8 h-8 flex-shrink-0 mr-1.5" />
+                          )}
+                          <span className="text-text-primary font-medium py-0.5">{key}</span>
+                          <span className="text-text-muted/60 ml-2 py-0.5">{groupTracks.length}</span>
+                          <button
+                            className="ml-auto mr-1 border border-border text-text-muted rounded px-1.5 py-0 hover:border-accent hover:text-text-secondary transition-colors leading-none"
+                            onClick={e => {
+                              e.stopPropagation()
+                              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                              setContextMenu({
+                                x: rect.left,
+                                y: rect.bottom + 4,
+                                items: [
+                                  { label: 'Update art…', action: () => {
+                                    setArtUpdateModal({ trackIds: groupIds, label: key })
+                                    setContextMenu(null)
+                                  }},
+                                  { label: deleteLabel, action: () => {
+                                    setDeleteConfirm({ ids: groupIds, label: `${key} (${groupIds.length} track${groupIds.length !== 1 ? 's' : ''})` })
+                                    setContextMenu(null)
+                                  }},
+                                ],
+                              })
+                            }}
+                            title="Group actions"
+                          >⋯</button>
+                        </div>
+                      )
+                    })()}
                     {groupTracks.map((track: Track) => (
                       <React.Fragment key={track.id}>
                         <TrackRow
                           track={track}
                           visibleColumns={visibleColumns}
+                          colWidths={liveWidths}
                           suggestion={suggestionsByTrack[track.id]}
                           isSelected={selectedTrackIds.has(track.id)}
                           isShowingAlt={altPanelTrackId === track.id}
@@ -805,6 +959,7 @@ export function LibraryPage() {
                             key={dt.id}
                             derived={dt}
                             visibleColumns={visibleColumns}
+                            colWidths={liveWidths}
                           />
                         ))}
                       </React.Fragment>
@@ -843,6 +998,22 @@ export function LibraryPage() {
       {contextMenu && (
         <ContextMenu x={contextMenu.x} y={contextMenu.y} items={contextMenu.items} />
       )}
+
+      {deleteConfirm && (
+        <DeleteConfirmModal
+          label={deleteConfirm.label}
+          submitting={deleteSubmitting}
+          onCancel={() => setDeleteConfirm(null)}
+          onConfirm={handleConfirmDelete}
+        />
+      )}
+      {artUpdateModal && (
+        <ArtUpdateModal
+          trackIds={artUpdateModal.trackIds}
+          label={artUpdateModal.label}
+          onClose={() => setArtUpdateModal(null)}
+        />
+      )}
     </div>
   )
 }
@@ -851,6 +1022,7 @@ export function LibraryPage() {
 function TrackRow({
   track,
   visibleColumns,
+  colWidths,
   suggestion,
   isSelected,
   isShowingAlt,
@@ -862,6 +1034,7 @@ function TrackRow({
 }: {
   track: Track
   visibleColumns: Set<string>
+  colWidths: Record<string, number>
   suggestion?: TagSuggestion
   isSelected: boolean
   isShowingAlt: boolean
@@ -872,53 +1045,49 @@ function TrackRow({
   onCloseAlt: () => void
 }) {
   const pct = suggestion ? Math.round(suggestion.confidence * 100) : null
+  const w = (key: string) => ({ width: colWidths[key] ?? DEFAULT_COL_WIDTHS[key], flexShrink: 0, overflow: 'hidden' })
 
   return (
     <>
       <div
-        className={`flex items-center gap-0 px-2 py-0.5 border-b border-border-subtle text-xs hover:bg-bg-row-hover cursor-pointer select-none ${isSelected ? 'bg-accent/10' : ''}`}
+        className={`flex items-center gap-0 border-b border-border-subtle text-xs hover:bg-bg-row-hover cursor-pointer select-none ${isSelected ? 'bg-accent/10' : ''}`}
         onClick={onRowClick}
         onContextMenu={onContextMenu}
       >
-        <span className="w-5 shrink-0 flex items-center" onClick={e => e.stopPropagation()}>
-          <input
-            type="checkbox"
-            checked={isSelected}
-            onChange={onCheckboxChange}
-            className="accent-[color:var(--accent)] cursor-pointer"
-          />
+        <span style={{ width: CB_COL_WIDTH, flexShrink: 0 }} className="flex items-center justify-center py-0.5" onClick={e => e.stopPropagation()}>
+          <Checkbox checked={isSelected} onChange={onCheckboxChange} />
         </span>
         {visibleColumns.has('num') && (
-          <span className="w-6 shrink-0 text-text-muted font-mono">{track.tracknumber ?? '—'}</span>
+          <span style={w('num')} className="py-0.5 text-text-muted font-mono">{track.tracknumber ?? '—'}</span>
         )}
         {visibleColumns.has('title') && (
-          <span className="flex-[3] shrink-0 text-text-primary truncate pr-2">{track.title ?? '—'}</span>
+          <span style={w('title')} className="py-0.5 text-text-primary truncate px-1">{track.title ?? '—'}</span>
         )}
         {visibleColumns.has('artist') && (
-          <span className="flex-[2] shrink-0 text-text-secondary truncate pr-2">{track.artist ?? '—'}</span>
+          <span style={w('artist')} className="py-0.5 text-text-secondary truncate px-1">{track.artist ?? '—'}</span>
         )}
         {visibleColumns.has('album') && (
-          <span className="flex-[2] shrink-0 text-text-secondary truncate pr-2">{track.album ?? '—'}</span>
+          <span style={w('album')} className="py-0.5 text-text-secondary truncate px-1">{track.album ?? '—'}</span>
         )}
         {visibleColumns.has('year') && (
-          <span className="w-10 shrink-0 text-text-muted">{track.date?.slice(0, 4) ?? '—'}</span>
+          <span style={w('year')} className="py-0.5 text-text-muted">{track.date?.slice(0, 4) ?? '—'}</span>
         )}
         {visibleColumns.has('genre') && (
-          <span className="flex-1 shrink-0 text-text-muted truncate pr-2">{track.genre ?? '—'}</span>
+          <span style={w('genre')} className="py-0.5 text-text-muted truncate px-1">{track.genre ?? '—'}</span>
         )}
         {visibleColumns.has('format') && (
-          <span className="w-12 shrink-0 text-text-muted font-mono uppercase text-[10px]">
+          <span style={w('format')} className="py-0.5 text-text-muted font-mono uppercase text-[10px]">
             {getFileExtension(track.relative_path)}
           </span>
         )}
         {visibleColumns.has('bitrate') && (
-          <span className="w-24 shrink-0 text-text-muted font-mono text-[11px]">{formatQuality(track.bitrate, track.bit_depth, track.sample_rate)}</span>
+          <span style={w('bitrate')} className="py-0.5 text-text-muted font-mono text-[11px]">{formatQuality(track.bitrate, track.bit_depth, track.sample_rate)}</span>
         )}
         {visibleColumns.has('duration') && (
-          <span className="w-10 shrink-0 text-text-muted font-mono">{formatDuration(track.duration_secs)}</span>
+          <span style={w('duration')} className="py-0.5 text-text-muted font-mono">{formatDuration(track.duration_secs)}</span>
         )}
         {visibleColumns.has('actions') && (
-          <span className="w-16 shrink-0 flex items-center gap-1 justify-end">
+          <span style={w('actions')} className="py-0.5 flex items-center gap-1 justify-end pr-1">
             {suggestion && (
               <span
                 className={`text-[10px] font-mono ${pct! >= 80 ? 'text-green-400' : 'text-yellow-400'}`}
@@ -955,52 +1124,43 @@ function TrackRow({
 function DerivedTrackRow({
   derived,
   visibleColumns,
+  colWidths,
 }: {
   derived: Track
   visibleColumns: Set<string>
+  colWidths: Record<string, number>
 }) {
   // The first path segment is the derived-dir-name set by the library profile
   // e.g. "aac-192k/Artist/Album/track.m4a" → "aac-192k"
   const profileLabel = derived.relative_path.split('/')[0] ?? '—'
+  const w = (key: string) => ({ width: colWidths[key] ?? DEFAULT_COL_WIDTHS[key], flexShrink: 0, overflow: 'hidden' })
 
   return (
-    <div className="flex items-center gap-0 px-2 py-0.5 border-b border-border-subtle text-xs text-text-muted/60 select-none bg-bg-base/40">
+    <div className="flex items-center gap-0 border-b border-border-subtle text-xs text-text-muted/60 select-none bg-bg-base/40">
       {/* indent + connector in place of checkbox */}
-      <span className="w-5 shrink-0 flex items-center justify-center text-text-muted/40 text-[10px]">↳</span>
-      {visibleColumns.has('num') && (
-        <span className="w-6 shrink-0" />
-      )}
+      <span style={{ width: CB_COL_WIDTH, flexShrink: 0 }} className="flex items-center justify-center py-0.5 text-text-muted/40 text-[10px]">↳</span>
+      {visibleColumns.has('num') && <span style={w('num')} className="py-0.5" />}
       {visibleColumns.has('title') && (
-        <span className="flex-[3] shrink-0 truncate pr-2 font-mono text-[10px] text-text-muted/70">
+        <span style={w('title')} className="py-0.5 truncate px-1 font-mono text-[10px] text-text-muted/70">
           {profileLabel}
         </span>
       )}
-      {visibleColumns.has('artist') && (
-        <span className="flex-[2] shrink-0" />
-      )}
-      {visibleColumns.has('album') && (
-        <span className="flex-[2] shrink-0" />
-      )}
-      {visibleColumns.has('year') && (
-        <span className="w-10 shrink-0" />
-      )}
-      {visibleColumns.has('genre') && (
-        <span className="flex-1 shrink-0" />
-      )}
+      {visibleColumns.has('artist')   && <span style={w('artist')}   className="py-0.5" />}
+      {visibleColumns.has('album')    && <span style={w('album')}    className="py-0.5" />}
+      {visibleColumns.has('year')     && <span style={w('year')}     className="py-0.5" />}
+      {visibleColumns.has('genre')    && <span style={w('genre')}    className="py-0.5" />}
       {visibleColumns.has('format') && (
-        <span className="w-12 shrink-0 font-mono uppercase text-[10px]">
+        <span style={w('format')} className="py-0.5 font-mono uppercase text-[10px]">
           {getFileExtension(derived.relative_path)}
         </span>
       )}
       {visibleColumns.has('bitrate') && (
-        <span className="w-24 shrink-0 font-mono text-[11px]">{formatQuality(derived.bitrate, derived.bit_depth, derived.sample_rate)}</span>
+        <span style={w('bitrate')} className="py-0.5 font-mono text-[11px]">{formatQuality(derived.bitrate, derived.bit_depth, derived.sample_rate)}</span>
       )}
       {visibleColumns.has('duration') && (
-        <span className="w-10 shrink-0 font-mono">{formatDuration(derived.duration_secs)}</span>
+        <span style={w('duration')} className="py-0.5 font-mono">{formatDuration(derived.duration_secs)}</span>
       )}
-      {visibleColumns.has('actions') && (
-        <span className="w-16 shrink-0" />
-      )}
+      {visibleColumns.has('actions') && <span style={w('actions')} className="py-0.5" />}
     </div>
   )
 }
@@ -1227,6 +1387,7 @@ function SuggestionReviewPane({
   )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [applyArt, setApplyArt] = useState(() => !!suggestion.cover_art_url)
 
   function toggleField(key: string) {
     setCheckedFields(prev => {
@@ -1238,13 +1399,17 @@ function SuggestionReviewPane({
   }
 
   const allChecked = diffItems.length > 0 && checkedFields.size === diffItems.length
-  const noneChecked = checkedFields.size === 0
+  const noneChecked = checkedFields.size === 0 && !applyArt
 
   async function handleAccept() {
     setSaving(true); setError(null)
     try {
       const fields = [...checkedFields]
-      await tagSuggestionsApi.accept(suggestion.id, fields.length < diffItems.length ? fields : undefined)
+      await tagSuggestionsApi.accept(
+        suggestion.id,
+        fields.length < diffItems.length ? fields : undefined,
+        applyArt,
+      )
       qc.invalidateQueries({ queryKey: ['tag-suggestions'] })
       onDone()
     } catch (e) {
@@ -1314,6 +1479,26 @@ function SuggestionReviewPane({
           <span>Suggested</span>
           <span />
         </div>
+        {/* Art row — separate from field checkedFields */}
+        <div
+          className="grid grid-cols-[1fr_1fr_1fr_1.5rem] gap-x-2 px-3 py-1 border-b border-border-subtle items-center cursor-pointer select-none hover:bg-bg-row-hover"
+          onClick={() => setApplyArt(prev => !prev)}
+        >
+          <span className="text-[11px] text-text-muted">Cover Art</span>
+          <span className="text-xs text-text-secondary">
+            {track.has_embedded_art ? 'embedded' : <em className="not-italic text-text-muted/40">—</em>}
+          </span>
+          <span className="text-xs">
+            {suggestion.cover_art_url ? (
+              <img src={suggestion.cover_art_url} alt="suggested art" className="w-8 h-8 object-cover rounded" />
+            ) : (
+              <em className="not-italic text-text-muted/40">—</em>
+            )}
+          </span>
+          <span className="flex items-center justify-center">
+            <Checkbox checked={applyArt} onChange={() => setApplyArt(prev => !prev)} />
+          </span>
+        </div>
         {diffItems.map(({ key, currentVal, suggestedVal, changed }) => (
           <div
             key={key}
@@ -1330,16 +1515,154 @@ function SuggestionReviewPane({
               {suggestedVal || <em className="not-italic text-text-muted/40">—</em>}
             </span>
             <span className="flex items-center justify-center">
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={checkedFields.has(key)}
                 onChange={() => toggleField(key)}
-                onClick={e => e.stopPropagation()}
-                className="accent-[color:var(--accent)] cursor-pointer"
               />
             </span>
           </div>
         ))}
+      </div>
+    </div>
+  )
+}
+
+// ── ArtUpdateModal ─────────────────────────────────────────────────────────────
+function ArtUpdateModal({
+  trackIds,
+  label,
+  onClose,
+}: {
+  trackIds: number[]
+  label: string
+  onClose: () => void
+}) {
+  const [url, setUrl] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [done, setDone] = useState(false)
+
+  async function handleEmbed() {
+    if (!url.trim()) return
+    setSaving(true); setError(null)
+    try {
+      for (const id of trackIds) {
+        await artApi.embedFromUrl(id, url.trim())
+      }
+      setDone(true)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to embed art')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60"
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div className="bg-bg-panel border border-border rounded shadow-2xl w-[420px] flex flex-col">
+        <div className="px-5 pt-4 pb-3 border-b border-border">
+          <h2 className="text-sm font-semibold text-text-primary">Update art</h2>
+        </div>
+        <div className="px-5 py-4 flex flex-col gap-3">
+          {done ? (
+            <p className="text-xs text-green-400">
+              Art embed job{trackIds.length > 1 ? 's' : ''} queued for <span className="font-medium">{label}</span>.
+            </p>
+          ) : (
+            <>
+              <p className="text-xs text-text-muted">
+                {label}{trackIds.length > 1 ? ` (${trackIds.length} tracks)` : ''}
+              </p>
+              <input
+                type="text"
+                placeholder="Cover art URL (https://…)"
+                value={url}
+                onChange={e => setUrl(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleEmbed() }}
+                autoFocus
+                className="text-xs bg-bg-base border border-border rounded px-3 py-1.5 text-text-primary placeholder:text-text-muted/50 focus:outline-none focus:border-accent"
+              />
+              {error && <p className="text-xs text-destructive">{error}</p>}
+            </>
+          )}
+        </div>
+        <div className="px-5 pb-4 pt-1 flex justify-end gap-2">
+          <button
+            onClick={onClose}
+            className="text-xs border border-border text-text-muted rounded px-3 py-1 hover:text-text-primary hover:border-accent"
+          >
+            {done ? 'Close' : 'Cancel'}
+          </button>
+          {!done && (
+            <button
+              onClick={handleEmbed}
+              disabled={saving || !url.trim()}
+              className="text-xs bg-accent text-bg-base rounded px-3 py-1 font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {saving ? 'Embedding…' : 'Embed'}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── DeleteConfirmModal ─────────────────────────────────────────────────────────
+function DeleteConfirmModal({
+  label,
+  submitting,
+  onCancel,
+  onConfirm,
+}: {
+  label: string
+  submitting: boolean
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60"
+      onClick={e => { if (e.target === e.currentTarget) onCancel() }}
+    >
+      <div className="bg-bg-panel border border-border rounded shadow-2xl w-[420px] flex flex-col">
+        {/* Header */}
+        <div className="px-5 pt-4 pb-3 border-b border-border">
+          <h2 className="text-sm font-semibold text-text-primary">Schedule deletion</h2>
+        </div>
+        {/* Body */}
+        <div className="px-5 py-4 flex flex-col gap-3">
+          <p className="text-xs text-text-primary">
+            The following will be scheduled for deletion from disk:
+          </p>
+          <div className="bg-bg-base border border-border rounded px-3 py-2 text-xs font-mono text-text-secondary">
+            {label}
+          </div>
+          <p className="text-xs text-text-muted">
+            Deletion runs after a <span className="text-text-primary font-medium">15-minute delay</span>.
+            You can cancel it from the <span className="text-text-primary font-medium">Jobs</span> page before it runs.
+          </p>
+        </div>
+        {/* Footer */}
+        <div className="px-5 pb-4 pt-1 flex justify-end gap-2">
+          <button
+            onClick={onCancel}
+            disabled={submitting}
+            className="text-xs border border-border text-text-muted rounded px-3 py-1 hover:text-text-primary hover:border-accent disabled:opacity-40"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={submitting}
+            className="text-xs bg-destructive text-white rounded px-3 py-1 font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {submitting ? 'Scheduling…' : 'Schedule Deletion'}
+          </button>
+        </div>
       </div>
     </div>
   )

@@ -140,6 +140,7 @@ pub struct Job {
     pub created_at: DateTime<Utc>,
     pub started_at: Option<DateTime<Utc>>,
     pub completed_at: Option<DateTime<Utc>>,
+    pub run_after: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
@@ -306,4 +307,10 @@ pub struct UpsertIssue {
     pub issue_type: String,
     pub detail: Option<String>,
     pub severity: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct UserPref {
+    pub key: String,
+    pub value: String,
 }

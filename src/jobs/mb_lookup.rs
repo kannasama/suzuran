@@ -127,7 +127,17 @@ impl super::JobHandler for MbLookupJobHandler {
                     continue;
                 };
 
-                let best_tags = MusicBrainzService::to_tag_map(&rec, best);
+                // Fetch the full release so to_tag_map has the complete track
+                // listing (requires `recordings` inc, only valid on /release/:id).
+                let full_release = match self.mb_service.get_release(&best.id).await {
+                    Ok(r) => r,
+                    Err(e) => {
+                        tracing::warn!("MB release fetch failed for {}: {e}", best.id);
+                        continue;
+                    }
+                };
+
+                let best_tags = MusicBrainzService::to_tag_map(&rec, &full_release);
                 let cover_art_url = MusicBrainzService::caa_url(&best.id);
 
                 // Build alternatives JSON array

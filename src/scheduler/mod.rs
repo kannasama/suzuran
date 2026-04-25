@@ -7,6 +7,7 @@ use crate::{
     jobs::{
         art_process::ArtProcessJobHandler,
         cue_split::CueSplitJobHandler,
+        delete_tracks::DeleteTracksJobHandler,
         fingerprint::FingerprintJobHandler,
         freedb_lookup::FreedBLookupJobHandler,
         maintenance::MaintenanceJobHandler,
@@ -47,6 +48,7 @@ impl Scheduler {
         handlers.insert("process_staged", Arc::new(ProcessStagedJobHandler::new(db.clone())));
         handlers.insert("virtual_sync", Arc::new(VirtualSyncJobHandler::new(db.clone())));
         handlers.insert("maintenance", Arc::new(MaintenanceJobHandler));
+        handlers.insert("delete_tracks", Arc::new(DeleteTracksJobHandler));
 
         let mut semaphores: HashMap<&'static str, Arc<Semaphore>> = HashMap::new();
         semaphores.insert("scan",          Arc::new(Semaphore::new(DEFAULT_SCAN_CONCURRENCY)));
@@ -61,6 +63,7 @@ impl Scheduler {
         semaphores.insert("process_staged", Arc::new(Semaphore::new(2)));
         semaphores.insert("virtual_sync",   Arc::new(Semaphore::new(1)));
         semaphores.insert("maintenance",     Arc::new(Semaphore::new(1)));
+        semaphores.insert("delete_tracks",   Arc::new(Semaphore::new(1)));
 
         Self { db, handlers, semaphores }
     }

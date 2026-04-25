@@ -51,10 +51,14 @@ async fn get_one(
         .ok_or_else(|| AppError::NotFound(format!("tag_suggestion {id}")))
 }
 
+fn default_true() -> bool { true }
+
 #[derive(serde::Deserialize)]
 struct AcceptBody {
     #[serde(default)]
     fields: Option<Vec<String>>,
+    #[serde(default = "default_true")]
+    apply_art: bool,
 }
 
 async fn accept(
@@ -65,8 +69,10 @@ async fn accept(
 ) -> Result<StatusCode, AppError> {
     let suggestion = state.db.get_tag_suggestion(id).await?
         .ok_or_else(|| AppError::NotFound(format!("tag_suggestion {id}")))?;
-    let fields = body.and_then(|b| b.0.fields);
-    crate::services::tagging::apply_suggestion(&state.db, &suggestion, fields.as_deref()).await?;
+    let (fields, apply_art) = body
+        .map(|b| (b.0.fields, b.0.apply_art))
+        .unwrap_or((None, true));
+    crate::services::tagging::apply_suggestion(&state.db, &suggestion, fields.as_deref(), apply_art).await?;
     state.db.set_tag_suggestion_status(id, "accepted").await?;
     Ok(StatusCode::OK)
 }
@@ -93,7 +99,7 @@ async fn batch_accept(
     let suggestions = state.db.list_pending_tag_suggestions(None).await?;
     let mut accepted = 0usize;
     for s in suggestions.iter().filter(|s| s.confidence >= body.min_confidence) {
-        crate::services::tagging::apply_suggestion(&state.db, s, None).await?;
+        crate::services::tagging::apply_suggestion(&state.db, s, None, true).await?;
         state.db.set_tag_suggestion_status(s.id, "accepted").await?;
         accepted += 1;
     }

@@ -10,3 +10,12 @@ export const tracksApi = {
 export function enqueueLookup(id: number): Promise<void> {
   return client.post(`/tracks/${id}/lookup`).then(() => {});
 }
+
+export interface ScheduleDeleteResult {
+  job_id: number
+  run_after: string
+}
+
+export function scheduleDelete(ids: number[]): Promise<ScheduleDeleteResult> {
+  return client.post<ScheduleDeleteResult>('/tracks/delete', { ids }).then(r => r.data);
+}

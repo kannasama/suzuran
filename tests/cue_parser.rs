@@ -1,4 +1,4 @@
-use suzuran_server::cue::{parse_cue, CueSheet};
+use suzuran_server::cue::parse_cue;
 
 const SAMPLE_CUE: &str = r#"
 REM GENRE Rock
