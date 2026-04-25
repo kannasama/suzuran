@@ -1219,6 +1219,41 @@ function BulkEditPanel({
   const [error, setError] = useState<string | null>(null)
   const [savedCount, setSavedCount] = useState<number | null>(null)
 
+  // Art state
+  const [artUrl, setArtUrl] = useState('')
+  const [artUploading, setArtUploading] = useState(false)
+  const [artError, setArtError] = useState<string | null>(null)
+  const [artDragOver, setArtDragOver] = useState(false)
+  const artFileInputRef = useRef<HTMLInputElement>(null)
+
+  const uploadArtFile = useCallback(async (file: File) => {
+    setArtUploading(true)
+    setArtError(null)
+    try {
+      const ext = file.name.split('.').pop()?.toLowerCase() ?? 'bin'
+      const safe = new File([file], `upload.${ext}`, { type: file.type })
+      const form = new FormData()
+      form.append('file', safe)
+      const resp = await fetch('/api/v1/uploads/images', {
+        method: 'POST',
+        body: form,
+        credentials: 'include',
+      })
+      if (!resp.ok) {
+        const body = await resp.text()
+        let msg = body
+        try { msg = JSON.parse(body).error ?? body } catch { /* raw */ }
+        throw new Error(msg)
+      }
+      const { url } = await resp.json()
+      setArtUrl(url)
+    } catch (err) {
+      setArtError(err instanceof Error ? err.message : 'Upload failed')
+    } finally {
+      setArtUploading(false)
+    }
+  }, [])
+
   const tracksWithSuggestions = selectedTracks.filter(t => suggestionsByTrack[t.id])
 
   // Computed once on mount — key prop remounts on selection change
@@ -1262,7 +1297,13 @@ function BulkEditPanel({
     const errors: string[] = []
     for (const track of selectedTracks) {
       try {
-        await tagSuggestionsApi.create({ track_id: track.id, source: 'mb_search', suggested_tags: tags, confidence: 1.0 })
+        await tagSuggestionsApi.create({
+          track_id: track.id,
+          source: 'mb_search',
+          suggested_tags: tags,
+          confidence: 1.0,
+          ...(artUrl ? { cover_art_url: artUrl } : {}),
+        })
         count++
       } catch (e) {
         errors.push(e instanceof Error ? e.message : 'unknown error')
@@ -1333,20 +1374,67 @@ function BulkEditPanel({
 
       {/* Tab content */}
       {activeTab === 'edit' ? (
-        <div className="flex-1 overflow-y-auto px-3 py-2">
-          <div className="grid grid-cols-6 gap-x-3 gap-y-1.5">
-            {BULK_EDIT_FIELDS.map(({ key, label, cols }) => (
-              <label key={key} className={`flex flex-col gap-0.5 ${COL_SPAN[cols ?? 2] ?? 'col-span-2'}`}>
-                <span className="text-text-muted text-[10px] uppercase tracking-wider">{label}</span>
-                <input
-                  type="text"
-                  value={currentValues[key]}
-                  placeholder={differsFields.has(key) ? '(multiple values)' : ''}
-                  onChange={e => { setSavedCount(null); setCurrentValues(prev => ({ ...prev, [key]: e.target.value })) }}
-                  className={`bg-bg-base border text-text-primary text-xs px-2 py-1 rounded focus:outline-none focus:border-accent font-mono placeholder:text-text-muted/40 ${isDirty(key) ? 'border-accent/60' : 'border-border'}`}
-                />
-              </label>
-            ))}
+        <div className="flex flex-1 overflow-hidden">
+          {/* Art zone */}
+          <div className="flex-shrink-0 flex flex-col items-center justify-center w-[120px] p-2 gap-1.5">
+            <div
+              className={`relative w-[96px] h-[96px] rounded border-2 border-dashed flex items-center justify-center cursor-pointer transition-colors overflow-hidden
+                ${artDragOver ? 'border-accent bg-accent/10' : 'border-border hover:border-accent/60'}`}
+              onDragOver={e => { e.preventDefault(); setArtDragOver(true) }}
+              onDragLeave={() => setArtDragOver(false)}
+              onDrop={e => { e.preventDefault(); setArtDragOver(false); const f = e.dataTransfer.files[0]; if (f) uploadArtFile(f) }}
+              onClick={() => artFileInputRef.current?.click()}
+              title={selectedTracks.length > 1 ? `Drop art to apply to all ${selectedTracks.length} tracks` : 'Drop art or click to browse'}
+            >
+              {artUrl ? (
+                <img src={artUrl} alt="cover art" className="w-full h-full object-cover" onError={e => (e.currentTarget.style.display = 'none')} />
+              ) : selectedTracks.length === 1 && selectedTracks[0].has_embedded_art ? (
+                <img src={`/api/v1/tracks/${selectedTracks[0].id}/art`} alt="cover art" className="w-full h-full object-cover" onError={e => (e.currentTarget.style.display = 'none')} />
+              ) : (
+                <span className="text-[10px] text-text-muted/50 text-center leading-tight select-none">
+                  {artUploading ? 'Uploading…' : 'Drop art\nor click'}
+                </span>
+              )}
+              {artUploading && (
+                <div className="absolute inset-0 bg-bg-base/70 flex items-center justify-center">
+                  <span className="text-[10px] text-text-muted">…</span>
+                </div>
+              )}
+            </div>
+            <input
+              ref={artFileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              className="sr-only"
+              onChange={e => { const f = e.target.files?.[0]; if (f) uploadArtFile(f); e.target.value = '' }}
+            />
+            {artUrl && (
+              <button type="button" onClick={() => setArtUrl('')} className="text-[10px] text-text-muted hover:text-destructive">
+                Clear
+              </button>
+            )}
+            {artError && <p className="text-[10px] text-destructive text-center">{artError}</p>}
+          </div>
+
+          {/* Divider */}
+          <div className="w-px bg-border flex-shrink-0" />
+
+          {/* Fields */}
+          <div className="flex-1 overflow-y-auto px-3 py-2 min-w-0">
+            <div className="grid grid-cols-6 gap-x-3 gap-y-1.5">
+              {BULK_EDIT_FIELDS.map(({ key, label, cols }) => (
+                <label key={key} className={`flex flex-col gap-0.5 ${COL_SPAN[cols ?? 2] ?? 'col-span-2'}`}>
+                  <span className="text-text-muted text-[10px] uppercase tracking-wider">{label}</span>
+                  <input
+                    type="text"
+                    value={currentValues[key]}
+                    placeholder={differsFields.has(key) ? '(multiple values)' : ''}
+                    onChange={e => { setSavedCount(null); setCurrentValues(prev => ({ ...prev, [key]: e.target.value })) }}
+                    className={`bg-bg-base border text-text-primary text-xs px-2 py-1 rounded focus:outline-none focus:border-accent font-mono placeholder:text-text-muted/40 ${isDirty(key) ? 'border-accent/60' : 'border-border'}`}
+                  />
+                </label>
+              ))}
+            </div>
           </div>
         </div>
       ) : (
