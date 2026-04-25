@@ -1376,9 +1376,9 @@ function BulkEditPanel({
       {activeTab === 'edit' ? (
         <div className="flex flex-1 overflow-hidden">
           {/* Art zone */}
-          <div className="flex-shrink-0 flex flex-col items-center justify-center w-[120px] p-2 gap-1.5">
+          <div className="flex-shrink-0 flex flex-col items-center justify-center w-[280px] p-3 gap-1.5">
             <div
-              className={`relative w-[96px] h-[96px] rounded border-2 border-dashed flex items-center justify-center cursor-pointer transition-colors overflow-hidden
+              className={`relative w-[256px] h-[256px] rounded border-2 border-dashed flex items-center justify-center cursor-pointer transition-colors overflow-hidden
                 ${artDragOver ? 'border-accent bg-accent/10' : 'border-border hover:border-accent/60'}`}
               onDragOver={e => { e.preventDefault(); setArtDragOver(true) }}
               onDragLeave={() => setArtDragOver(false)}
