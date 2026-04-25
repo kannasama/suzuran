@@ -178,6 +178,20 @@ Multiple rounds of diagnosis on the organize job revealed compounding bugs. Outs
 
 **Note on rescue:** Files currently at library root without extension (corrupted by prior runs) will be rescued by Fix A+B: organize job finds file at `library_root/TUMENECO/...` (extensionless), detects format via magic bytes, moves to `library_root/source/TUMENECO/.../<filename>.<ext>`.
 
+### 2026-04-25 — Round 6 organize follow-up (commit: fdb00af)
+
+Three issues reported after round 5:
+
+1. **Derived files moved under `source/`** — round 5 enqueued organize for derived tracks, but the same code path applied the org rule and prepended `source/`. Fix: detect derived tracks via `library_profile_id`; look up source track's current path; strip `source/` prefix and extension; prepend `derived_dir_name`; append derived track's original extension. Rule engine is bypassed entirely for derived tracks.
+
+2. **Album folder name mangled to `R7F6L1~3`** — library is on BTRFS over NFS; the `:` in `Re:TMNC` was being mangled at the NFS layer. Fix: `sanitize_path_component()` replaces `:` with `꞉` (U+A789 modifier letter colon, standard MusicBrainz Picard approach) and maps other NTFS/NFS-unsafe chars (`\ * ? " < > |`) to `_`; trims trailing dots/spaces. Applied per segment of `rule_output` via `sanitize_rule_path()` before path construction.
+
+3. **Old source directories not cleaned up** — organize moved files but left the vacated directory tree behind. Fix: `remove_empty_dirs()` walks up from `old_abs.parent()` after both the audio rename and the companion file moves, removing empty directories; stops before `source/` (or `derived_dir_name/`) itself.
+
+`move_companions()` extracted to a top-level function shared by both source and derived code paths.
+
+Files: `src/jobs/organize.rs`
+
 ### 2026-04-25 — Round 5 critical organize fixes (commit: 3f29399)
 
 Three root-cause fixes applied after files were found at library root, extensionless, following an organize run:
