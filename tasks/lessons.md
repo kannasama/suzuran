@@ -447,3 +447,15 @@ without value. The user called this out explicitly.
 
 **How to apply:** The "commit plan before implementing" rule does NOT apply when the user has
 explicitly said to skip to implementation after a completed brainstorm. Implement directly.
+
+## 2026-04-24 — All plans and specs go in docs/plans/, not docs/superpowers/specs/
+
+**Rule:** The brainstorming skill's default spec path (`docs/superpowers/specs/`) is overridden
+by this project's convention. All plans and design specs belong in `docs/plans/` using the
+established `YYYY-MM-DD-kebab-slug.md` naming pattern.
+
+**Why:** User corrected placement mid-session. The project has a single canonical location for
+all planning documents regardless of which skill generated them.
+
+**How to apply:** When writing any spec or plan doc, always use `docs/plans/` as the target
+directory. Check sibling files for the naming convention before creating the file.
