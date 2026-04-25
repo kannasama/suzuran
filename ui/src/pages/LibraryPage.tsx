@@ -874,21 +874,54 @@ export function LibraryPage() {
                 /* ── State A / C: Track list ────────────────────────────────── */
                 displayGroups.map(({ key, tracks: groupTracks }) => (
                   <div key={key || '__all__'}>
-                    {groupBy !== 'none' && (
-                      <div className="px-3 py-0.5 bg-bg-panel border-b border-border text-xs font-mono flex items-center gap-2 sticky top-0 z-10">
-                        <span className="text-text-primary font-medium">{key}</span>
-                        <span className="text-text-muted/60">{groupTracks.length}</span>
-                        <button
-                          className="ml-auto text-xs border border-border text-text-muted rounded px-1.5 py-0 hover:border-accent hover:text-text-secondary transition-colors leading-none"
-                          onClick={e => {
-                            e.stopPropagation()
-                            const ids = groupTracks.map((t: Track) => t.id)
-                            setDeleteConfirm({ ids, label: `${key} (${ids.length} track${ids.length !== 1 ? 's' : ''})` })
-                          }}
-                          title="Delete album"
-                        >⋯</button>
-                      </div>
-                    )}
+                    {groupBy !== 'none' && (() => {
+                      const groupIds = groupTracks.map((t: Track) => t.id)
+                      const allSelected = groupIds.length > 0 && groupIds.every(id => selectedTrackIds.has(id))
+                      const someSelected = groupIds.some(id => selectedTrackIds.has(id))
+                      const showCheckbox = groupBy === 'album' || groupBy === 'artist' || groupBy === 'albumartist'
+                      const deleteLabel = { album: 'Delete album…', artist: 'Delete artist…', albumartist: 'Delete album artist…' }[groupBy as string] ?? 'Delete group…'
+                      return (
+                        <div className="bg-bg-panel border-b border-border text-xs font-mono flex items-center sticky top-0 z-10">
+                          <span style={{ width: CB_COL_WIDTH, flexShrink: 0 }} className="flex items-center justify-center py-0.5">
+                            {showCheckbox && (
+                              <Checkbox
+                                checked={allSelected}
+                                indeterminate={someSelected && !allSelected}
+                                onChange={() => {
+                                  setSelectedTrackIds(prev => {
+                                    const next = new Set(prev)
+                                    if (allSelected) groupIds.forEach(id => next.delete(id))
+                                    else groupIds.forEach(id => next.add(id))
+                                    return next
+                                  })
+                                }}
+                                title="Select all in group"
+                              />
+                            )}
+                          </span>
+                          <span className="text-text-primary font-medium py-0.5">{key}</span>
+                          <span className="text-text-muted/60 ml-2 py-0.5">{groupTracks.length}</span>
+                          <button
+                            className="ml-auto mr-1 border border-border text-text-muted rounded px-1.5 py-0 hover:border-accent hover:text-text-secondary transition-colors leading-none"
+                            onClick={e => {
+                              e.stopPropagation()
+                              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                              setContextMenu({
+                                x: rect.left,
+                                y: rect.bottom + 4,
+                                items: [
+                                  { label: deleteLabel, action: () => {
+                                    setDeleteConfirm({ ids: groupIds, label: `${key} (${groupIds.length} track${groupIds.length !== 1 ? 's' : ''})` })
+                                    setContextMenu(null)
+                                  }},
+                                ],
+                              })
+                            }}
+                            title="Group actions"
+                          >⋯</button>
+                        </div>
+                      )
+                    })()}
                     {groupTracks.map((track: Track) => (
                       <React.Fragment key={track.id}>
                         <TrackRow

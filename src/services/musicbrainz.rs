@@ -221,7 +221,7 @@ impl MusicBrainzService {
         let release = self.client
             .get(&url)
             .query(&[
-                ("inc", "recordings+artist-credits+media+label-info+release-groups"),
+                ("inc", "recordings+artist-credits+labels+release-groups"),
                 ("fmt", "json"),
             ])
             .send().await?
