@@ -194,7 +194,29 @@ async fn handle_process_staged(
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!("rename ingest→source: {e}")))?;
 
-    // 8.1 Remove empty ingest parent directories left behind by the move.
+    // 8.1 Delete companion (non-audio) files left in the ingest source directory so the
+    //     empty-directory sweep below can actually remove it.
+    const COMPANION_EXTS: &[&str] = &[
+        "jpg", "jpeg", "png", "gif", "webp", "bmp", "tiff",
+        "cue", "log", "nfo", "txt", "m3u", "m3u8",
+    ];
+    if let Some(ingest_dir) = Path::new(&src_abs).parent() {
+        if let Ok(mut entries) = tokio::fs::read_dir(ingest_dir).await {
+            while let Ok(Some(entry)) = entries.next_entry().await {
+                let p = entry.path();
+                if !p.is_file() { continue; }
+                let ext = p.extension()
+                    .and_then(|e| e.to_str())
+                    .map(|e| e.to_lowercase())
+                    .unwrap_or_default();
+                if COMPANION_EXTS.contains(&ext.as_str()) {
+                    let _ = tokio::fs::remove_file(&p).await;
+                }
+            }
+        }
+    }
+
+    // 8.2 Remove empty ingest parent directories left behind by the move.
     {
         let ingest_root = format!("{}/ingest", root_path);
         let mut dir = Path::new(&src_abs)
