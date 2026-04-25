@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react'
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { TopNav } from '../components/TopNav'
 import { LibraryTree, type BrowseMode } from '../components/LibraryTree'
@@ -157,11 +157,39 @@ export function LibraryPage() {
     sortLevels, setSortLevels,
     colWidths, setColWidths,
     visibleCols: visibleColumns, toggleColumn,
+    editPanelHeight, setEditPanelHeight,
   } = useUserPrefs()
   // liveWidths tracks widths during drag without persisting on every pixel move
   const [liveWidths, setLiveWidths] = useState<Record<string, number>>(colWidths)
   useEffect(() => { setLiveWidths(colWidths) }, [colWidths])
   const resizingRef = useRef<{ key: string; startX: number; startWidth: number } | null>(null)
+
+  // Edit panel height resize
+  const [liveEditPanelHeight, setLiveEditPanelHeight] = useState(editPanelHeight)
+  useEffect(() => { setLiveEditPanelHeight(editPanelHeight) }, [editPanelHeight])
+  const panelResizeRef = useRef<{ startY: number; startH: number } | null>(null)
+
+  const handlePanelResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    panelResizeRef.current = { startY: e.clientY, startH: liveEditPanelHeight }
+    const onMove = (ev: MouseEvent) => {
+      if (!panelResizeRef.current) return
+      const delta = panelResizeRef.current.startY - ev.clientY
+      const next = Math.max(160, Math.min(window.innerHeight * 0.8, panelResizeRef.current.startH + delta))
+      setLiveEditPanelHeight(next)
+    }
+    const onUp = (ev: MouseEvent) => {
+      if (!panelResizeRef.current) return
+      const delta = panelResizeRef.current.startY - ev.clientY
+      const next = Math.max(160, Math.min(window.innerHeight * 0.8, panelResizeRef.current.startH + delta))
+      setEditPanelHeight(next)
+      panelResizeRef.current = null
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }, [liveEditPanelHeight, setEditPanelHeight])
   const [showColumnPicker, setShowColumnPicker] = useState(false)
   const pickerRef = useRef<HTMLDivElement>(null)
   const [searchTrack, setSearchTrack] = useState<Track | null>(null)
@@ -970,16 +998,23 @@ export function LibraryPage() {
             </div>
 
             {selectedTrackIds.size > 0 && (
-              <BulkEditPanel
-                key={[...selectedTrackIds].sort((a, b) => a - b).join(',')}
-                selectedTracks={selectedTracks}
-                suggestionsByTrack={suggestionsByTrack}
-                onClose={() => setSelectedTrackIds(new Set())}
-                onSuggestionActioned={() => {
-                  qc.invalidateQueries({ queryKey: ['tag-suggestions'] })
-                  qc.invalidateQueries({ queryKey: ['library-tracks', selectedLibraryId] })
-                }}
-              />
+              <div className="flex-shrink-0 flex flex-col" style={{ height: liveEditPanelHeight }}>
+                {/* Drag handle */}
+                <div
+                  className="h-1.5 flex-shrink-0 cursor-row-resize bg-transparent hover:bg-accent/20 active:bg-accent/30 transition-colors"
+                  onMouseDown={handlePanelResizeStart}
+                />
+                <BulkEditPanel
+                  key={[...selectedTrackIds].sort((a, b) => a - b).join(',')}
+                  selectedTracks={selectedTracks}
+                  suggestionsByTrack={suggestionsByTrack}
+                  onClose={() => setSelectedTrackIds(new Set())}
+                  onSuggestionActioned={() => {
+                    qc.invalidateQueries({ queryKey: ['tag-suggestions'] })
+                    qc.invalidateQueries({ queryKey: ['library-tracks', selectedLibraryId] })
+                  }}
+                />
+              </div>
             )}
           </div>
         </main>
@@ -1184,6 +1219,41 @@ function BulkEditPanel({
   const [error, setError] = useState<string | null>(null)
   const [savedCount, setSavedCount] = useState<number | null>(null)
 
+  // Art state
+  const [artUrl, setArtUrl] = useState('')
+  const [artUploading, setArtUploading] = useState(false)
+  const [artError, setArtError] = useState<string | null>(null)
+  const [artDragOver, setArtDragOver] = useState(false)
+  const artFileInputRef = useRef<HTMLInputElement>(null)
+
+  const uploadArtFile = useCallback(async (file: File) => {
+    setArtUploading(true)
+    setArtError(null)
+    try {
+      const ext = file.name.split('.').pop()?.toLowerCase() ?? 'bin'
+      const safe = new File([file], `upload.${ext}`, { type: file.type })
+      const form = new FormData()
+      form.append('file', safe)
+      const resp = await fetch('/api/v1/uploads/images', {
+        method: 'POST',
+        body: form,
+        credentials: 'include',
+      })
+      if (!resp.ok) {
+        const body = await resp.text()
+        let msg = body
+        try { msg = JSON.parse(body).error ?? body } catch { /* raw */ }
+        throw new Error(msg)
+      }
+      const { url } = await resp.json()
+      setArtUrl(url)
+    } catch (err) {
+      setArtError(err instanceof Error ? err.message : 'Upload failed')
+    } finally {
+      setArtUploading(false)
+    }
+  }, [])
+
   const tracksWithSuggestions = selectedTracks.filter(t => suggestionsByTrack[t.id])
 
   // Computed once on mount — key prop remounts on selection change
@@ -1227,7 +1297,13 @@ function BulkEditPanel({
     const errors: string[] = []
     for (const track of selectedTracks) {
       try {
-        await tagSuggestionsApi.create({ track_id: track.id, source: 'mb_search', suggested_tags: tags, confidence: 1.0 })
+        await tagSuggestionsApi.create({
+          track_id: track.id,
+          source: 'mb_search',
+          suggested_tags: tags,
+          confidence: 1.0,
+          ...(artUrl ? { cover_art_url: artUrl } : {}),
+        })
         count++
       } catch (e) {
         errors.push(e instanceof Error ? e.message : 'unknown error')
@@ -1248,7 +1324,7 @@ function BulkEditPanel({
   const reviewSuggestion = reviewTrack ? suggestionsByTrack[reviewTrack.id] : null
 
   return (
-    <div className="border-t border-border bg-bg-surface flex-shrink-0 flex flex-col overflow-hidden" style={{ maxHeight: '45vh' }}>
+    <div className="border-t border-border bg-bg-surface flex flex-col overflow-hidden h-full">
       {/* Header */}
       <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border flex-shrink-0">
         {/* Tabs */}
@@ -1298,20 +1374,67 @@ function BulkEditPanel({
 
       {/* Tab content */}
       {activeTab === 'edit' ? (
-        <div className="flex-1 overflow-y-auto px-3 py-2">
-          <div className="grid grid-cols-6 gap-x-3 gap-y-1.5">
-            {BULK_EDIT_FIELDS.map(({ key, label, cols }) => (
-              <label key={key} className={`flex flex-col gap-0.5 ${COL_SPAN[cols ?? 2] ?? 'col-span-2'}`}>
-                <span className="text-text-muted text-[10px] uppercase tracking-wider">{label}</span>
-                <input
-                  type="text"
-                  value={currentValues[key]}
-                  placeholder={differsFields.has(key) ? '(multiple values)' : ''}
-                  onChange={e => { setSavedCount(null); setCurrentValues(prev => ({ ...prev, [key]: e.target.value })) }}
-                  className={`bg-bg-base border text-text-primary text-xs px-2 py-1 rounded focus:outline-none focus:border-accent font-mono placeholder:text-text-muted/40 ${isDirty(key) ? 'border-accent/60' : 'border-border'}`}
-                />
-              </label>
-            ))}
+        <div className="flex flex-1 overflow-hidden">
+          {/* Art zone */}
+          <div className="flex-shrink-0 flex flex-col items-center justify-center w-[280px] p-3 gap-1.5">
+            <div
+              className={`relative w-[256px] h-[256px] rounded border-2 border-dashed flex items-center justify-center cursor-pointer transition-colors overflow-hidden
+                ${artDragOver ? 'border-accent bg-accent/10' : 'border-border hover:border-accent/60'}`}
+              onDragOver={e => { e.preventDefault(); setArtDragOver(true) }}
+              onDragLeave={() => setArtDragOver(false)}
+              onDrop={e => { e.preventDefault(); setArtDragOver(false); const f = e.dataTransfer.files[0]; if (f) uploadArtFile(f) }}
+              onClick={() => artFileInputRef.current?.click()}
+              title={selectedTracks.length > 1 ? `Drop art to apply to all ${selectedTracks.length} tracks` : 'Drop art or click to browse'}
+            >
+              {artUrl ? (
+                <img src={artUrl} alt="cover art" className="w-full h-full object-cover" onError={e => (e.currentTarget.style.display = 'none')} />
+              ) : selectedTracks.length === 1 && selectedTracks[0].has_embedded_art ? (
+                <img src={`/api/v1/tracks/${selectedTracks[0].id}/art`} alt="cover art" className="w-full h-full object-cover" onError={e => (e.currentTarget.style.display = 'none')} />
+              ) : (
+                <span className="text-[10px] text-text-muted/50 text-center leading-tight select-none">
+                  {artUploading ? 'Uploading…' : 'Drop art\nor click'}
+                </span>
+              )}
+              {artUploading && (
+                <div className="absolute inset-0 bg-bg-base/70 flex items-center justify-center">
+                  <span className="text-[10px] text-text-muted">…</span>
+                </div>
+              )}
+            </div>
+            <input
+              ref={artFileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              className="sr-only"
+              onChange={e => { const f = e.target.files?.[0]; if (f) uploadArtFile(f); e.target.value = '' }}
+            />
+            {artUrl && (
+              <button type="button" onClick={() => setArtUrl('')} className="text-[10px] text-text-muted hover:text-destructive">
+                Clear
+              </button>
+            )}
+            {artError && <p className="text-[10px] text-destructive text-center">{artError}</p>}
+          </div>
+
+          {/* Divider */}
+          <div className="w-px bg-border flex-shrink-0" />
+
+          {/* Fields */}
+          <div className="flex-1 overflow-y-auto px-3 py-2 min-w-0">
+            <div className="grid grid-cols-6 gap-x-3 gap-y-1.5">
+              {BULK_EDIT_FIELDS.map(({ key, label, cols }) => (
+                <label key={key} className={`flex flex-col gap-0.5 ${COL_SPAN[cols ?? 2] ?? 'col-span-2'}`}>
+                  <span className="text-text-muted text-[10px] uppercase tracking-wider">{label}</span>
+                  <input
+                    type="text"
+                    value={currentValues[key]}
+                    placeholder={differsFields.has(key) ? '(multiple values)' : ''}
+                    onChange={e => { setSavedCount(null); setCurrentValues(prev => ({ ...prev, [key]: e.target.value })) }}
+                    className={`bg-bg-base border text-text-primary text-xs px-2 py-1 rounded focus:outline-none focus:border-accent font-mono placeholder:text-text-muted/40 ${isDirty(key) ? 'border-accent/60' : 'border-border'}`}
+                  />
+                </label>
+              ))}
+            </div>
           </div>
         </div>
       ) : (
@@ -1538,9 +1661,47 @@ function ArtUpdateModal({
   onClose: () => void
 }) {
   const [url, setUrl] = useState('')
+  const [uploading, setUploading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [done, setDone] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const uploadFile = useCallback(async (file: File) => {
+    setUploading(true)
+    setError(null)
+    try {
+      const ext = file.name.split('.').pop()?.toLowerCase() ?? 'bin'
+      const safe = new File([file], `upload.${ext}`, { type: file.type })
+      const form = new FormData()
+      form.append('file', safe)
+      const resp = await fetch('/api/v1/uploads/images', {
+        method: 'POST',
+        body: form,
+        credentials: 'include',
+      })
+      if (!resp.ok) {
+        const body = await resp.text()
+        let msg = body
+        try { msg = JSON.parse(body).error ?? body } catch { /* raw */ }
+        throw new Error(msg)
+      }
+      const { url: uploaded } = await resp.json()
+      setUrl(uploaded)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Upload failed')
+    } finally {
+      setUploading(false)
+    }
+  }, [])
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault()
+    setDragOver(false)
+    const file = e.dataTransfer.files[0]
+    if (file) uploadFile(file)
+  }
 
   async function handleEmbed() {
     if (!url.trim()) return
@@ -1576,13 +1737,44 @@ function ArtUpdateModal({
               <p className="text-xs text-text-muted">
                 {label}{trackIds.length > 1 ? ` (${trackIds.length} tracks)` : ''}
               </p>
+
+              {/* Drop zone */}
+              <div
+                className={`flex flex-col items-center justify-center gap-2 border-2 border-dashed rounded p-4 cursor-pointer transition-colors
+                  ${dragOver ? 'border-accent bg-accent/10' : 'border-border hover:border-accent/60'}`}
+                onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={handleDrop}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                {url ? (
+                  <img
+                    src={url}
+                    alt="art preview"
+                    className="w-20 h-20 object-cover rounded border border-border"
+                    onError={e => (e.currentTarget.style.display = 'none')}
+                  />
+                ) : (
+                  <span className="text-xs text-text-muted/60 select-none">
+                    {uploading ? 'Uploading…' : 'Drop image here or click to browse'}
+                  </span>
+                )}
+              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                className="sr-only"
+                onChange={e => { const f = e.target.files?.[0]; if (f) uploadFile(f); e.target.value = '' }}
+              />
+
+              {/* URL input */}
               <input
                 type="text"
-                placeholder="Cover art URL (https://…)"
+                placeholder="Or paste a cover art URL (https://…)"
                 value={url}
                 onChange={e => setUrl(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') handleEmbed() }}
-                autoFocus
                 className="text-xs bg-bg-base border border-border rounded px-3 py-1.5 text-text-primary placeholder:text-text-muted/50 focus:outline-none focus:border-accent"
               />
               {error && <p className="text-xs text-destructive">{error}</p>}
@@ -1599,7 +1791,7 @@ function ArtUpdateModal({
           {!done && (
             <button
               onClick={handleEmbed}
-              disabled={saving || !url.trim()}
+              disabled={saving || uploading || !url.trim()}
               className="text-xs bg-accent text-bg-base rounded px-3 py-1 font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {saving ? 'Embedding…' : 'Embed'}
