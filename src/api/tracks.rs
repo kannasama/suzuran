@@ -18,6 +18,9 @@ use crate::{
     state::AppState,
 };
 
+/// Minutes to delay a scheduled deletion before the job runs.
+const DELETE_DELAY_MINS: i64 = 15;
+
 pub fn router() -> Router<AppState> {
     // Axum automatically handles HEAD requests from GET routes, stripping the body
     // but preserving all headers (including Content-Length and X-* metadata).
@@ -25,6 +28,31 @@ pub fn router() -> Router<AppState> {
         .route("/:id", get(get_track_meta))
         .route("/:id/stream", get(stream))
         .route("/:id/lookup", post(enqueue_lookup))
+        .route("/delete", post(schedule_delete))
+}
+
+#[derive(serde::Deserialize)]
+struct DeleteRequest {
+    ids: Vec<i64>,
+}
+
+async fn schedule_delete(
+    State(state): State<AppState>,
+    _auth: AuthUser,
+    Json(body): Json<DeleteRequest>,
+) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
+    if body.ids.is_empty() {
+        return Err(AppError::BadRequest("ids must not be empty".into()));
+    }
+    let run_after = chrono::Utc::now()
+        + chrono::Duration::minutes(DELETE_DELAY_MINS);
+    let job = state.db.enqueue_job_after(
+        "delete_tracks",
+        serde_json::json!({ "track_ids": body.ids }),
+        5,
+        run_after,
+    ).await?;
+    Ok((StatusCode::ACCEPTED, Json(serde_json::json!({ "job_id": job.id, "run_after": run_after }))))
 }
 
 async fn enqueue_lookup(

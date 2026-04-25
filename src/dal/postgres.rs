@@ -640,6 +640,15 @@ impl Store for PgStore {
         .bind(library_id).fetch_all(&self.pool).await.map_err(AppError::Database)
     }
 
+    async fn delete_track(&self, id: i64) -> Result<(), AppError> {
+        sqlx::query("DELETE FROM tracks WHERE id = $1")
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map(|_| ())
+            .map_err(AppError::Database)
+    }
+
     async fn set_track_status(&self, id: i64, status: &str) -> Result<(), AppError> {
         sqlx::query("UPDATE tracks SET status = $1 WHERE id = $2")
             .bind(status)
@@ -852,6 +861,20 @@ impl Store for PgStore {
         .fetch_one(&self.pool).await.map_err(AppError::Database)
     }
 
+    async fn enqueue_job_after(
+        &self,
+        job_type: &str,
+        payload: serde_json::Value,
+        priority: i64,
+        run_after: chrono::DateTime<chrono::Utc>,
+    ) -> Result<Job, AppError> {
+        sqlx::query_as::<_, Job>(
+            "INSERT INTO jobs (job_type, payload, priority, run_after) VALUES ($1, $2, $3, $4) RETURNING *",
+        )
+        .bind(job_type).bind(payload).bind(priority).bind(run_after)
+        .fetch_one(&self.pool).await.map_err(AppError::Database)
+    }
+
     async fn claim_next_job(&self, job_types: &[&str]) -> Result<Option<Job>, AppError> {
         sqlx::query_as::<_, Job>(
             "UPDATE jobs SET status = 'running', started_at = NOW(), attempts = attempts + 1
@@ -859,6 +882,7 @@ impl Store for PgStore {
                  SELECT id FROM jobs
                  WHERE status = 'pending'
                    AND job_type = ANY($1)
+                   AND (run_after IS NULL OR run_after <= NOW())
                  ORDER BY priority DESC, created_at ASC
                  LIMIT 1
                  FOR UPDATE SKIP LOCKED

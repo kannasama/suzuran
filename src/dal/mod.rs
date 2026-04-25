@@ -229,6 +229,14 @@ pub trait Store: Send + Sync {
         payload: serde_json::Value,
         priority: i64,
     ) -> Result<Job, AppError>;
+    /// Enqueue a job that should not be picked up until `run_after`.
+    async fn enqueue_job_after(
+        &self,
+        job_type: &str,
+        payload: serde_json::Value,
+        priority: i64,
+        run_after: chrono::DateTime<chrono::Utc>,
+    ) -> Result<Job, AppError>;
     async fn claim_next_job(&self, job_types: &[&str]) -> Result<Option<Job>, AppError>;
     async fn complete_job(&self, id: i64, result: serde_json::Value) -> Result<(), AppError>;
     async fn fail_job(&self, id: i64, error: &str) -> Result<(), AppError>;
@@ -269,6 +277,7 @@ pub trait Store: Send + Sync {
 
     // ── tracks ────────────────────────────────────────────────────
     async fn list_tracks_by_library(&self, library_id: i64) -> Result<Vec<Track>, AppError>;
+    async fn delete_track(&self, id: i64) -> Result<(), AppError>;
     async fn set_track_status(&self, id: i64, status: &str) -> Result<(), AppError>;
     async fn list_tracks_by_status(&self, library_id: i64, status: &str) -> Result<Vec<Track>, AppError>;
     async fn list_tracks_by_profile(&self, library_id: i64, library_profile_id: Option<i64>) -> Result<Vec<Track>, AppError>;
