@@ -301,14 +301,30 @@ async fn handle_process_staged(
         }
     }
 
-    // 13. Enqueue transcode job for each profile
+    // 13. Enqueue transcode job for each profile.
+    // Skip any profile that was already satisfied by displacing the superseded source file;
+    // that displaced file IS the derived copy — transcoding it again would create a duplicate.
     for profile_id in &staged_payload.profile_ids {
+        if staged_payload.supersede_profile_id == Some(*profile_id) {
+            continue;
+        }
         let transcode_payload = serde_json::to_value(TranscodePayload {
             track_id,
             library_profile_id: *profile_id,
         })
         .map_err(|e| AppError::Internal(anyhow::anyhow!("serialize transcode payload: {e}")))?;
         store.enqueue_job("transcode", transcode_payload, 4).await?;
+    }
+
+    // 14. Auto-organize: if the library has an organization rule and auto_organize_on_ingest,
+    // enqueue an organize job so the source file lands in the correct path.
+    if library.auto_organize_on_ingest && library.organization_rule_id.is_some() {
+        let org_payload = serde_json::to_value(super::OrganizePayload {
+            track_id,
+            dry_run: false,
+        })
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("serialize organize payload: {e}")))?;
+        store.enqueue_job("organize", org_payload, 4).await?;
     }
 
     Ok(serde_json::json!({

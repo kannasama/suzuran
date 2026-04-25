@@ -20,7 +20,7 @@
   while empty.
   Files: `src/jobs/process_staged.rs`
 
-- [ ] **T4 — Fix duplicate derived tracks on supersede**
+- [x] **T4 — Fix duplicate derived tracks on supersede**
   Screenshot confirms: derived M4A copies appear both at library root level AND inside the
   organized folder hierarchy. Likely cause: transcode job builds output path from source track
   path at enqueue time; if source is later moved by organize, the transcoded file lands at the
@@ -51,6 +51,16 @@
   Files: `ui/src/pages/LibraryPage.tsx`, `ui/src/api/tracks.ts`
 
 ## Progress Log
+
+### T4 — Fix duplicate derived tracks on supersede
+Two root causes identified and fixed in `process_staged.rs`:
+
+1. **Duplicate derived**: When `supersede_profile_id` matches a profile in `profile_ids`, the displaced old source file is already placed in `derived_dir_name/` — that IS the derived copy. The transcode loop now skips any profile_id equal to `supersede_profile_id` to prevent a second copy being created.
+
+2. **Source file not organized**: `process_staged` moved files `ingest/ → source/` but never enqueued an organize job. Added: if `library.auto_organize_on_ingest && library.organization_rule_id.is_some()`, enqueue `organize` for the new source track_id after the move.
+
+User confirmed: FLAC superseding files also landed in source root without organization rules applying — now fixed by the auto-organize enqueue.
+- Committed.
 
 ### T7 — Delete derived tracks with confirmation
 - Backend `DeleteRequest` extended with `immediate: bool` (default false). When true, uses `enqueue_job` (no delay) instead of `enqueue_job_after`.
