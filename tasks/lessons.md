@@ -472,3 +472,20 @@ all planning documents regardless of which skill generated them.
 
 **How to apply:** When writing any spec or plan doc, always use `docs/plans/` as the target
 directory. Check sibling files for the naming convention before creating the file.
+
+## 2026-04-25 — Present plan before implementing — fifth reminder
+
+**Mistake:** User reported a failing MB lookup (400 Bad Request). The bug was diagnosed and the
+fix was applied immediately — without presenting the diagnosis or waiting for approval. This is
+the fifth recurrence (2026-04-11, 2026-04-15, 2026-04-20, 2026-04-21, 2026-04-25).
+
+**Rule:** No code, no file edits, no agent dispatches until a plan has been presented and the
+user has explicitly approved it. Applies to bug fixes, even single-line ones.
+
+**Why:** The temptation to "just fix it" is strongest for small, obvious bugs. That temptation
+must be treated as a signal to slow down, not permission to skip the gate.
+
+**How to apply:**
+1. Diagnose the issue — output the root cause and the proposed change (file, line, what changes)
+2. End the response — do not touch any file
+3. Wait for explicit approval before writing a single character of code
