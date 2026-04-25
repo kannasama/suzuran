@@ -31,7 +31,6 @@ fn test_codec_extension_unknown_passthrough() {
 async fn test_transcode_fails_without_library_profile() {
     // Pass a non-existent library_profile_id — should return Err (not found)
     let store = common::setup_store().await;
-    use suzuran_server::dal::Store;
     let src_lib = store
         .create_library("Source", "/music/source", "flac")
         .await
