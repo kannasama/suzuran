@@ -2,10 +2,13 @@ import { useState, useEffect, useCallback } from 'react'
 import { getUserPrefs, setUserPref } from '../api/userPrefs'
 
 // ── Preference key constants ───────────────────────────────────────────────────
-const PREF_GROUP_BY       = 'library.groupBy'
-const PREF_SORT_LEVELS    = 'library.sortLevels'
-const PREF_COL_WIDTHS     = 'library.columnWidths'
-const PREF_VISIBLE_COLS   = 'library.visibleColumns'
+const PREF_GROUP_BY         = 'library.groupBy'
+const PREF_SORT_LEVELS      = 'library.sortLevels'
+const PREF_COL_WIDTHS       = 'library.columnWidths'
+const PREF_VISIBLE_COLS     = 'library.visibleColumns'
+const PREF_EDIT_PANEL_H     = 'library.editPanelHeight'
+
+export const DEFAULT_EDIT_PANEL_HEIGHT = 320
 
 // Legacy key migrated on first load
 const LEGACY_COL_VIS_KEY  = 'suzuran:column-visibility'
@@ -64,19 +67,21 @@ function loadInitialPrefs() {
   if (migrated != null) lsSet(PREF_VISIBLE_COLS, migrated)
 
   return {
-    groupBy:       lsGet<GroupByKey>(PREF_GROUP_BY, 'none'),
-    sortLevels:    lsGet<SortLevel[]>(PREF_SORT_LEVELS, [{ key: 'tracknumber', dir: 'asc' }]),
-    colWidths:     lsGet<Record<string, number>>(PREF_COL_WIDTHS, DEFAULT_COL_WIDTHS),
-    visibleCols:   new Set<string>(lsGet<string[]>(PREF_VISIBLE_COLS, ALL_COLUMN_KEYS)),
+    groupBy:        lsGet<GroupByKey>(PREF_GROUP_BY, 'none'),
+    sortLevels:     lsGet<SortLevel[]>(PREF_SORT_LEVELS, [{ key: 'tracknumber', dir: 'asc' }]),
+    colWidths:      lsGet<Record<string, number>>(PREF_COL_WIDTHS, DEFAULT_COL_WIDTHS),
+    visibleCols:    new Set<string>(lsGet<string[]>(PREF_VISIBLE_COLS, ALL_COLUMN_KEYS)),
+    editPanelHeight: lsGet<number>(PREF_EDIT_PANEL_H, DEFAULT_EDIT_PANEL_HEIGHT),
   }
 }
 
 // ── Hook ──────────────────────────────────────────────────────────────────────
 export function useUserPrefs() {
-  const [groupBy,     setGroupByState]     = useState<GroupByKey>(() => loadInitialPrefs().groupBy)
-  const [sortLevels,  setSortLevelsState]  = useState<SortLevel[]>(() => loadInitialPrefs().sortLevels)
-  const [colWidths,   setColWidthsState]   = useState<Record<string, number>>(() => loadInitialPrefs().colWidths)
-  const [visibleCols, setVisibleColsState] = useState<Set<string>>(() => loadInitialPrefs().visibleCols)
+  const [groupBy,        setGroupByState]        = useState<GroupByKey>(() => loadInitialPrefs().groupBy)
+  const [sortLevels,     setSortLevelsState]     = useState<SortLevel[]>(() => loadInitialPrefs().sortLevels)
+  const [colWidths,      setColWidthsState]      = useState<Record<string, number>>(() => loadInitialPrefs().colWidths)
+  const [visibleCols,    setVisibleColsState]    = useState<Set<string>>(() => loadInitialPrefs().visibleCols)
+  const [editPanelHeight, setEditPanelHeightState] = useState<number>(() => loadInitialPrefs().editPanelHeight)
 
   // On mount: fetch backend prefs and let them win over localStorage
   useEffect(() => {
@@ -100,6 +105,10 @@ export function useUserPrefs() {
             case PREF_VISIBLE_COLS:
               setVisibleColsState(new Set(parsed as string[]))
               lsSet(PREF_VISIBLE_COLS, parsed)
+              break
+            case PREF_EDIT_PANEL_H:
+              setEditPanelHeightState(parsed as number)
+              lsSet(PREF_EDIT_PANEL_H, parsed)
               break
           }
         } catch { /* ignore malformed pref */ }
@@ -140,10 +149,17 @@ export function useUserPrefs() {
     })
   }, [])
 
+  const setEditPanelHeight = useCallback((value: number) => {
+    setEditPanelHeightState(value)
+    lsSet(PREF_EDIT_PANEL_H, value)
+    setUserPref(PREF_EDIT_PANEL_H, JSON.stringify(value)).catch(() => {})
+  }, [])
+
   return {
     groupBy, setGroupBy,
     sortLevels, setSortLevels,
     colWidths, setColWidths,
     visibleCols, toggleColumn,
+    editPanelHeight, setEditPanelHeight,
   }
 }
