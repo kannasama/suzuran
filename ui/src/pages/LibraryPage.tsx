@@ -109,7 +109,10 @@ function formatQuality(bitrate?: number, bitDepth?: number, sampleRate?: number)
     const khz = sampleRate != null ? (sampleRate / 1000).toFixed(sampleRate % 1000 === 0 ? 0 : 1) : null
     return khz != null ? `${bitDepth}-bit / ${khz}kHz` : `${bitDepth}-bit`
   }
-  if (bitrate != null) return `${bitrate}k`
+  if (bitrate != null) {
+    const khz = sampleRate != null ? (sampleRate / 1000).toFixed(sampleRate % 1000 === 0 ? 0 : 1) : null
+    return khz != null ? `${khz}kHz / ${bitrate}k` : `${bitrate}k`
+  }
   return '—'
 }
 

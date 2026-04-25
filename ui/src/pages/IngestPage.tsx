@@ -508,11 +508,18 @@ function AlbumGroup({
 
 function SupersedeDetailRow({ supersede }: { supersede: SupersedeMatchInfo }) {
   const fmtQuality = (fmt: string, sr: number | null, bd: number | null, br: number | null) => {
-    const parts: string[] = [fmt.toUpperCase()]
-    if (sr) parts.push(`${(sr / 1000).toFixed(sr % 1000 === 0 ? 0 : 1)}kHz`)
-    if (bd) parts.push(`${bd}-bit`)
-    if (br) parts.push(`${br}kbps`)
-    return parts.join(' · ')
+    const fmtStr = fmt.toUpperCase()
+    const khz = sr != null ? `${(sr / 1000).toFixed(sr % 1000 === 0 ? 0 : 1)}kHz` : null
+    if (bd != null) {
+      const parts = [fmtStr]
+      if (khz) parts.push(khz)
+      parts.push(`${bd}-bit`)
+      return parts.join(' · ')
+    }
+    if (khz && br) return `${fmtStr} · ${khz} / ${br}k`
+    if (br) return `${fmtStr} · ${br}k`
+    if (khz) return `${fmtStr} · ${khz}`
+    return fmtStr
   }
 
   return (
@@ -940,8 +947,19 @@ function SubmitDialog({
                       </div>
                       <div className="flex items-center gap-2 text-[11px] font-mono text-text-muted">
                         <span>{sup.active_track_format.toUpperCase()}</span>
-                        {sup.active_track_sample_rate && <span>{(sup.active_track_sample_rate / 1000).toFixed(1)}kHz</span>}
-                        {sup.active_track_bitrate && <span>{sup.active_track_bitrate}kbps</span>}
+                        {sup.active_track_bit_depth != null ? (
+                          <>
+                            {sup.active_track_sample_rate && <span>{(sup.active_track_sample_rate / 1000).toFixed(sup.active_track_sample_rate % 1000 === 0 ? 0 : 1)}kHz</span>}
+                            <span>{sup.active_track_bit_depth}-bit</span>
+                          </>
+                        ) : sup.active_track_sample_rate && sup.active_track_bitrate ? (
+                          <span>{(sup.active_track_sample_rate / 1000).toFixed(sup.active_track_sample_rate % 1000 === 0 ? 0 : 1)}kHz / {sup.active_track_bitrate}k</span>
+                        ) : (
+                          <>
+                            {sup.active_track_sample_rate && <span>{(sup.active_track_sample_rate / 1000).toFixed(sup.active_track_sample_rate % 1000 === 0 ? 0 : 1)}kHz</span>}
+                            {sup.active_track_bitrate && <span>{sup.active_track_bitrate}k</span>}
+                          </>
+                        )}
                         <span className="text-text-muted/40 mx-0.5">→</span>
                         {sup.profile_match ? (
                           <span className="text-sky-400">

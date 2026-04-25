@@ -27,7 +27,7 @@
   pre-organize path. Investigate and fix.
   Files: `src/jobs/process_staged.rs`, `src/jobs/transcode.rs`
 
-- [ ] **T5 — Quality display: sample rate for lossy codecs**
+- [x] **T5 — Quality display: sample rate for lossy codecs**
   MP3/M4A/AAC/OGG quality strings must include sample rate: "48kHz / 192k", "44.1kHz / 320k".
   Lossless formats keep existing display (bit depth + sample rate already shown separately).
   Affects supersede comparison row in IngestPage and quality column in LibraryPage.
@@ -51,6 +51,12 @@
   Files: `ui/src/pages/LibraryPage.tsx`, `ui/src/api/tracks.ts`
 
 ## Progress Log
+
+### T5 — Quality display for lossy codecs
+- `LibraryPage.formatQuality`: lossy branch now returns `${khz}kHz / ${bitrate}k` when sample rate is available.
+- `IngestPage.fmtQuality`: lossless path unchanged (`CODEC · kHz · N-bit`); lossy path → `CODEC · kHz / Nk`.
+- Supersede badge inline spans: lossless shows kHz + bit-depth, lossy shows combined `kHz / Nk` span.
+- Committed.
 
 ### 2026-04-25 — Session start
 - Plan reviewed and approved by user.
