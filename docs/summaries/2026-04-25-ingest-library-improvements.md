@@ -143,6 +143,24 @@ User confirmed: FLAC superseding files also landed in source root without organi
 - Supersede badge inline spans: lossless shows kHz + bit-depth, lossy shows combined `kHz / Nk` span.
 - Committed.
 
+### 2026-04-25 — Round 4 follow-up fixes (version: 1.0.0-4)
+
+Five issues reported after round 3:
+
+1. **Version still showing beta** — `Cargo.toml` `1.0.0-beta.1` → `1.0.0-4`
+
+2. **Re-organize job ran but didn't move files** — organize job was returning `AppError::BadRequest("no matching rule")` (logged at WARN, invisible at INFO level) when the library had no rule configured or rule conditions didn't match. Job appeared to succeed in INFO logs. Fix: return a `{skipped, reason}` result (not an error) when no rule is configured or no rule matches. Add INFO logging for all outcomes (skip + move).
+
+3. **Re-organize required track selection** — per-track and group Re-organize calls used `selectedLibraryId` (the library picker dropdown), which could be null. Fix: derive `library_id` from `track.library_id` / `groupTracks[0].library_id` directly.
+
+4. **Re-organize didn't move companion files (folder.jpg)** — `organize.rs` only moved the audio file. Fix: after renaming the audio file, scan the old directory for known companion extensions (jpg, png, cue, log, nfo, txt, m3u, m3u8) and move each to the new directory.
+
+5. **Scanner ignored re-dropped ingest files** — file previously imported (status "removed") and dropped back into ingest/ was skipped by hash check. Fix: on hash-unchanged ingest files, call `set_track_status("staged")` before skipping — ensures re-staged files are active without full tag re-read.
+
+6. **Import cleanup left non-music files in ingest/** — `process_staged.rs` moved audio but left folder.jpg etc., preventing empty-dir cleanup. Fix: delete known companion extensions from the ingest source directory before the empty-dir sweep (step 8.1, now 8.2).
+
+Files: `Cargo.toml`, `src/jobs/organize.rs`, `src/jobs/process_staged.rs`, `src/scanner/mod.rs`, `ui/src/pages/LibraryPage.tsx`
+
 ### 2026-04-25 — Round 3 follow-up fixes (commit: 9169db2)
 
 Four issues reported after the CUE/Re-organize work:
