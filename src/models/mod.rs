@@ -307,3 +307,9 @@ pub struct UpsertIssue {
     pub detail: Option<String>,
     pub severity: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct UserPref {
+    pub key: String,
+    pub value: String,
+}

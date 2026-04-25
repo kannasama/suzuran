@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 
 use serde_json::Value as JsonValue;
 
-use crate::{error::AppError, models::{ArtProfile, EncodingProfile, Issue, Job, Library, OrganizationRule, Session, Setting, TagSuggestion, Theme, TotpEntry, Track, TrackLink, User, VirtualLibrary, VirtualLibrarySource, VirtualLibraryTrack, WebauthnChallenge, WebauthnCredential}};
+use crate::{error::AppError, models::{ArtProfile, EncodingProfile, Issue, Job, Library, OrganizationRule, Session, Setting, TagSuggestion, Theme, TotpEntry, Track, TrackLink, User, UserPref, VirtualLibrary, VirtualLibrarySource, VirtualLibraryTrack, WebauthnChallenge, WebauthnCredential}};
 
 pub use crate::models::UpsertTagSuggestion;
 pub use crate::models::UpsertEncodingProfile;
@@ -383,6 +383,10 @@ pub trait Store: Send + Sync {
     async fn upsert_virtual_library_track(&self, vlib_id: i64, track_id: i64, link_path: &str) -> Result<(), AppError>;
     async fn list_virtual_library_tracks(&self, vlib_id: i64) -> Result<Vec<VirtualLibraryTrack>, AppError>;
     async fn clear_virtual_library_tracks(&self, vlib_id: i64) -> Result<(), AppError>;
+
+    // ── user preferences ─────────────────────────────────────────
+    async fn get_user_prefs(&self, user_id: i64) -> Result<Vec<UserPref>, AppError>;
+    async fn set_user_pref(&self, user_id: i64, key: &str, value: &str) -> Result<UserPref, AppError>;
 
     // ── issues ────────────────────────────────────────────────────
     /// Upsert an issue for the given track+type. Creates if absent, updates detail

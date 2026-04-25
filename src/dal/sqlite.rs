@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 
-use crate::{dal::{Store, UpsertArtProfile, UpsertEncodingProfile, UpsertTrack, UpsertVirtualLibrary, VirtualLibrarySourceInput}, error::AppError, models::{ArtProfile, EncodingProfile, Issue, Job, Library, LibraryProfile, OrganizationRule, Session, Setting, TagSuggestion, Theme, TotpEntry, Track, TrackLink, UpsertIssue, UpsertLibraryProfile, UpsertTagSuggestion, User, VirtualLibrary, VirtualLibrarySource, VirtualLibraryTrack, WebauthnChallenge, WebauthnCredential}};
+use crate::{dal::{Store, UpsertArtProfile, UpsertEncodingProfile, UpsertTrack, UpsertVirtualLibrary, VirtualLibrarySourceInput}, error::AppError, models::{ArtProfile, EncodingProfile, Issue, Job, Library, LibraryProfile, OrganizationRule, Session, Setting, TagSuggestion, Theme, TotpEntry, Track, TrackLink, UpsertIssue, UpsertLibraryProfile, UpsertTagSuggestion, User, UserPref, VirtualLibrary, VirtualLibrarySource, VirtualLibraryTrack, WebauthnChallenge, WebauthnCredential}};
 use sqlx::SqlitePool;
 
 pub struct SqliteStore {
@@ -317,6 +317,30 @@ impl Store for SqliteStore {
              ON CONFLICT(key) DO UPDATE SET value = ?2, updated_at = datetime('now')
              RETURNING *",
         )
+        .bind(key)
+        .bind(value)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(AppError::Database)
+    }
+
+    async fn get_user_prefs(&self, user_id: i64) -> Result<Vec<UserPref>, AppError> {
+        sqlx::query_as::<_, UserPref>(
+            "SELECT key, value FROM user_preferences WHERE user_id = ?1 ORDER BY key",
+        )
+        .bind(user_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(AppError::Database)
+    }
+
+    async fn set_user_pref(&self, user_id: i64, key: &str, value: &str) -> Result<UserPref, AppError> {
+        sqlx::query_as::<_, UserPref>(
+            "INSERT INTO user_preferences (user_id, key, value) VALUES (?1, ?2, ?3)
+             ON CONFLICT(user_id, key) DO UPDATE SET value = ?3
+             RETURNING key, value",
+        )
+        .bind(user_id)
         .bind(key)
         .bind(value)
         .fetch_one(&self.pool)
