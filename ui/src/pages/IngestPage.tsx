@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { TopNav } from '../components/TopNav'
+import { Checkbox } from '../components/Checkbox'
 import { TagDiffTable } from '../components/TagDiffTable'
 import { IngestSearchDialog } from '../components/IngestSearchDialog'
 import { ImageUpload } from '../components/ImageUpload'
@@ -92,7 +93,8 @@ export default function IngestPage() {
   })
 
   const acceptMutation = useMutation({
-    mutationFn: (id: number) => tagSuggestionsApi.accept(id),
+    mutationFn: ({ id, fields, applyArt }: { id: number; fields?: string[]; applyArt?: boolean }) =>
+      tagSuggestionsApi.accept(id, fields, applyArt),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['tag-suggestions'] })
       qc.invalidateQueries({ queryKey: ['inbox-count'] })
@@ -199,12 +201,12 @@ export default function IngestPage() {
                 tracks={groups[albumKey]}
                 suggestionsByTrack={suggestionsByTrack}
                 supersedeByTrack={supersedeByTrack}
-                onAccept={id => acceptMutation.mutate(id)}
+                onAccept={(id, fields, applyArt) => acceptMutation.mutate({ id, fields, applyArt })}
                 onReject={id => rejectMutation.mutate(id)}
                 onSearch={t => setSearchTrack(t)}
                 onLookup={id => lookupMutation.mutate(id)}
                 onSubmitAlbum={key => setSubmitAlbum(key)}
-                acceptPending={acceptMutation.isPending ? acceptMutation.variables ?? null : null}
+                acceptPending={acceptMutation.isPending ? (acceptMutation.variables?.id ?? null) : null}
                 rejectPending={rejectMutation.isPending ? rejectMutation.variables ?? null : null}
                 lookupPending={lookupMutation.isPending ? lookupMutation.variables ?? null : null}
                 editingTrackId={editingTrackId}
@@ -249,6 +251,133 @@ export default function IngestPage() {
 }
 
 // ---------------------------------------------------------------------------
+// IngestDiffPanel — interactive field-selection diff (mirrors SuggestionReviewPane)
+// ---------------------------------------------------------------------------
+
+const INGEST_TOP_LEVEL = new Set([
+  'title', 'artist', 'albumartist', 'album', 'tracknumber', 'discnumber',
+  'totaldiscs', 'totaltracks', 'date', 'genre', 'label', 'catalognumber',
+])
+
+function getTagValue(track: Track, key: string): string {
+  if (INGEST_TOP_LEVEL.has(key)) {
+    return (track as unknown as Record<string, string | undefined>)[key] ?? ''
+  }
+  const v = (track.tags as Record<string, unknown>)[key]
+  if (typeof v === 'string') return v
+  if (v != null) return String(v)
+  return ''
+}
+
+function IngestDiffPanel({
+  track,
+  suggestion,
+  applying,
+  rejecting,
+  onApply,
+  onReject,
+}: {
+  track: Track
+  suggestion: TagSuggestion
+  applying: boolean
+  rejecting: boolean
+  onApply: (fields?: string[], applyArt?: boolean) => void
+  onReject: () => void
+}) {
+  const diffItems = useMemo(() => {
+    const suggested = (suggestion.suggested_tags ?? {}) as Record<string, unknown>
+    return Object.entries(suggested).map(([key, raw]) => {
+      const suggestedVal = typeof raw === 'string' ? raw : String(raw ?? '')
+      const currentVal = getTagValue(track, key)
+      return { key, currentVal, suggestedVal, changed: currentVal !== suggestedVal }
+    })
+  }, [suggestion, track])
+
+  const [checkedFields, setCheckedFields] = useState<Set<string>>(
+    () => new Set(diffItems.filter(d => d.changed).map(d => d.key))
+  )
+  const [applyArt, setApplyArt] = useState(() => !!suggestion.cover_art_url)
+
+  const allChecked = diffItems.length > 0 && checkedFields.size === diffItems.length
+  const noneChecked = checkedFields.size === 0 && !applyArt
+
+  function toggleField(key: string) {
+    setCheckedFields(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key); else next.add(key)
+      return next
+    })
+  }
+
+  function handleApply() {
+    const fields = [...checkedFields]
+    onApply(fields.length < diffItems.length ? fields : undefined, applyArt)
+  }
+
+  return (
+    <div className="border border-border rounded bg-bg-base text-xs">
+      {/* Panel header */}
+      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-bg-panel">
+        <button
+          onClick={() => setCheckedFields(allChecked ? new Set() : new Set(diffItems.map(d => d.key)))}
+          className="text-[11px] text-text-muted hover:text-text-primary border border-border rounded px-2 py-0.5"
+        >
+          {allChecked ? 'None' : 'All'}
+        </button>
+        <span className="flex-1" />
+        <button
+          onClick={onReject}
+          disabled={rejecting || applying}
+          className="text-[11px] text-text-muted hover:text-destructive border border-border rounded px-2 py-0.5 disabled:opacity-40"
+        >
+          Reject
+        </button>
+        <button
+          onClick={handleApply}
+          disabled={applying || noneChecked}
+          className="text-[11px] bg-accent text-bg-base rounded px-3 py-0.5 font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          {applying ? 'Applying…' : `Apply${checkedFields.size < diffItems.length ? ` (${checkedFields.size})` : ''}`}
+        </button>
+      </div>
+      {/* Art row */}
+      {suggestion.cover_art_url && (
+        <div
+          className="grid grid-cols-[6rem_1fr_1fr_1.5rem] gap-x-2 px-3 py-1 border-b border-border-subtle items-center cursor-pointer select-none hover:bg-bg-row-hover"
+          onClick={() => setApplyArt(v => !v)}
+        >
+          <span className="text-[11px] text-text-muted">Cover Art</span>
+          <span className="text-text-secondary font-mono">{track.has_embedded_art ? 'embedded' : '—'}</span>
+          <img src={suggestion.cover_art_url} alt="" className="w-7 h-7 object-cover rounded" />
+          <span className="flex items-center justify-center">
+            <Checkbox checked={applyArt} onChange={() => setApplyArt(v => !v)} />
+          </span>
+        </div>
+      )}
+      {/* Field rows */}
+      {diffItems.map(({ key, currentVal, suggestedVal, changed }) => (
+        <div
+          key={key}
+          className={`grid grid-cols-[6rem_1fr_1fr_1.5rem] gap-x-2 px-3 py-0.5 border-b border-border-subtle items-center cursor-pointer select-none ${changed ? 'hover:bg-bg-row-hover' : 'opacity-40'}`}
+          onClick={() => changed && toggleField(key)}
+        >
+          <span className="text-[11px] text-text-muted truncate font-mono" title={key}>{key}</span>
+          <span className={`text-[11px] truncate font-mono ${changed ? 'text-text-muted line-through' : 'text-text-secondary'}`}>
+            {currentVal || <em className="not-italic text-text-muted/40">—</em>}
+          </span>
+          <span className={`text-[11px] truncate font-mono ${changed ? 'text-text-primary' : 'text-text-secondary'}`}>
+            {suggestedVal || <em className="not-italic text-text-muted/40">—</em>}
+          </span>
+          <span className="flex items-center justify-center">
+            {changed && <Checkbox checked={checkedFields.has(key)} onChange={() => toggleField(key)} />}
+          </span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // AlbumGroup
 // ---------------------------------------------------------------------------
 
@@ -275,7 +404,7 @@ function AlbumGroup({
   tracks: Track[]
   suggestionsByTrack: Record<number, TagSuggestion>
   supersedeByTrack: Record<number, SupersedeMatchInfo>
-  onAccept: (id: number) => void
+  onAccept: (id: number, fields?: string[], applyArt?: boolean) => void
   onReject: (id: number) => void
   onSearch: (t: Track) => void
   onLookup: (id: number) => void
@@ -299,8 +428,8 @@ function AlbumGroup({
   const [editingAlbum, setEditingAlbum] = useState(false)
   const [acceptedTrackIds, setAcceptedTrackIds] = useState<Set<number>>(new Set())
 
-  function handleAcceptTrack(suggestionId: number, trackId: number) {
-    onAccept(suggestionId)
+  function handleAcceptTrack(suggestionId: number, trackId: number, fields?: string[], applyArt?: boolean) {
+    onAccept(suggestionId, fields, applyArt)
     setAcceptedTrackIds(prev => new Set([...prev, trackId]))
   }
   const [showArtUpload, setShowArtUpload] = useState(false)
@@ -461,31 +590,12 @@ function AlbumGroup({
                 )}
                 {/* Actions */}
                 <div className="flex items-center gap-1 shrink-0">
-                  {suggestion && (
-                    <button
-                      onClick={() => handleAcceptTrack(suggestion.id, track.id)}
-                      disabled={acceptPending === suggestion.id}
-                      className="text-xs bg-accent text-bg-base rounded px-2 py-0.5 hover:opacity-90 disabled:opacity-50"
-                      title="Apply this suggestion's tags to the file"
-                    >
-                      {acceptPending === suggestion.id ? 'Applying…' : 'Apply'}
-                    </button>
-                  )}
                   <button
                     onClick={() => isEditing ? onEditClose() : onEdit(track.id)}
                     className={`text-xs border rounded px-2 py-0.5 hover:bg-bg-surface ${isEditing ? 'border-accent text-accent' : 'border-border text-text-muted'}`}
                   >
                     Edit
                   </button>
-                  {suggestion && (
-                    <button
-                      onClick={() => onReject(suggestion.id)}
-                      disabled={rejectPending === suggestion.id}
-                      className="text-xs border border-border text-text-muted rounded px-2 py-0.5 hover:bg-bg-surface disabled:opacity-50"
-                    >
-                      Reject
-                    </button>
-                  )}
                   {suggestion?.alternatives && suggestion.alternatives.length > 0 && (
                     <button
                       onClick={() => setAltTrackId(altTrackId === track.id ? null : track.id)}
@@ -524,11 +634,15 @@ function AlbumGroup({
                 />
               )}
 
-              {/* Tag diff or no-results prompt */}
+              {/* Tag diff with field selection */}
               {!isEditing && suggestion && (
-                <TagDiffTable
-                  trackId={track.id}
-                  suggestedTags={suggestion.suggested_tags}
+                <IngestDiffPanel
+                  track={track}
+                  suggestion={suggestion}
+                  applying={acceptPending === suggestion.id}
+                  rejecting={rejectPending === suggestion.id}
+                  onApply={(fields, applyArt) => handleAcceptTrack(suggestion.id, track.id, fields, applyArt)}
+                  onReject={() => onReject(suggestion.id)}
                 />
               )}
               {!isEditing && !suggestion && (

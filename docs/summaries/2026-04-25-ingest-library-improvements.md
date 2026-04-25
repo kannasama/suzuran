@@ -47,7 +47,7 @@
   Files: `ui/src/pages/IngestPage.tsx`, `ui/src/components/TrackEditPanel.tsx`,
          `ui/src/api/tagSuggestions.ts`
 
-- [ ] **T10 — Per-field suggestion selection in Ingest view**
+- [x] **T10 — Per-field suggestion selection in Ingest view**
   Per-field checkbox selection (choose which fields to apply from a suggestion) is already
   implemented in the Library view's SuggestionReviewPane but is missing from the Ingest view's
   per-track accept flow. The accept API already supports `{fields?: string[]}` — wire up
@@ -73,6 +73,13 @@
   Files: `ui/src/pages/LibraryPage.tsx`, `ui/src/api/tracks.ts`
 
 ## Progress Log
+
+### T10 — Per-field suggestion selection in Ingest view
+- `acceptMutation` updated to take `{ id, fields?, applyArt? }`.
+- Apply/Reject buttons removed from the per-track action row; moved into `IngestDiffPanel`.
+- `IngestDiffPanel` component: shows field diff with checkboxes (pre-checked on changed fields), art row with checkbox, All/None toggle, Apply (N) and Reject buttons in a header row.
+- Mirrors the Library view's `SuggestionReviewPane` pattern adapted for inline ingest rendering.
+- Committed.
 
 ### T9 — Clarify Save vs Apply; prevent Apply from overriding manual edits
 - `TrackEditPanel.handleSave`: after creating the confidence-1.0 manual suggestion, rejects the existing lower-confidence suggestion if present. Prevents the stale auto-suggestion from being applied after a manual edit.
