@@ -4,13 +4,13 @@
 
 ### Ingest Flow
 
-- [ ] **T1 — Album-level alternate release picker**
+- [x] **T1 — Album-level alternate release picker**
   Dropdown at album header populated from `suggestion.alternatives`. Selecting an alternate updates
   tag diffs for all tracks in the album group. On accept, reject all other non-selected alternatives
   for that suggestion.
   Files: `ui/src/pages/IngestPage.tsx`, `ui/src/components/AlternativesPanel.tsx`
 
-- [ ] **T2 — Tabular album-level edits**
+- [x] **T2 — Tabular album-level edits**
   Replace `AlbumEditPanel` form (17 fields + Apply to All) with a diff-table layout matching
   `TagDiffTable` — field | current | new value (inline editable). No separate form.
   Files: `ui/src/pages/IngestPage.tsx`
@@ -73,6 +73,20 @@
   Files: `ui/src/pages/LibraryPage.tsx`, `ui/src/api/tracks.ts`
 
 ## Progress Log
+
+### T1 — Album-level alternate release picker
+- `IngestDiffPanel` gained `overrideTags?` and `overrideArtUrl?` props; `effectiveTags`/`effectiveArtUrl` computed from them (falls back to suggestion).
+- `AlbumGroup` gained `selectedAltIdx` state and `albumAlternatives` computed from whichever suggestion has alternatives.
+- `handleAcceptTrackWithAlt(suggestion, trackId, altIdx, fields?, applyArt?)`: creates new suggestion from `alt.suggested_tags`, accepts it, rejects original.
+- Alternatives `<select>` dropdown added to album header — only shown when `albumAlternatives.length > 0`; options labeled by album + date + albumartist from the alt's tags.
+- Per-track `IngestDiffPanel` receives `overrideTags`/`overrideArtUrl` from selected alt; `onApply` routes through `handleAcceptTrackWithAlt` when alt selected.
+- Committed.
+
+### T2 — Tabular album-level edits
+- `AlbumEditPanel` form grid replaced with diff-table layout: field | current (consensus across tracks, "mixed" when values differ) | new value (borderless inline input, underline appears on hover/focus/when filled).
+- Apply button shows changed-field count `Apply to All (N)`.
+- `getAlbumTagValue()` helper reads top-level track fields then falls back to `track.tags`.
+- Committed.
 
 ### T10 — Per-field suggestion selection in Ingest view
 - `acceptMutation` updated to take `{ id, fields?, applyArt? }`.
