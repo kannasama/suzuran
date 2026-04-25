@@ -33,7 +33,7 @@
   Affects supersede comparison row in IngestPage and quality column in LibraryPage.
   Files: `ui/src/pages/IngestPage.tsx`, `ui/src/pages/LibraryPage.tsx` (quality formatting helper)
 
-- [ ] **T8 — Show track filename in ingest review**
+- [x] **T8 — Show track filename in ingest review**
   Display the source filename of each track being reviewed in the ingest flow (per-track row or
   header), so the user can identify which file is being processed.
   Files: `ui/src/pages/IngestPage.tsx`
@@ -51,6 +51,11 @@
   Files: `ui/src/pages/LibraryPage.tsx`, `ui/src/api/tracks.ts`
 
 ## Progress Log
+
+### T8 — Show track filename in ingest review
+- Track title span converted to a flex column: title on line 1, filename (basename of `relative_path`) on line 2 in muted monospace.
+- Secondary filename line only shown when a title exists; when no title, filename is already the primary text.
+- Committed.
 
 ### T5 — Quality display for lossy codecs
 - `LibraryPage.formatQuality`: lossy branch now returns `${khz}kHz / ${bitrate}k` when sample rate is available.

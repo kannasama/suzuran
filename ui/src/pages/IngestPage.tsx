@@ -381,8 +381,15 @@ function AlbumGroup({
                 <span className="text-text-muted font-mono text-xs w-6 shrink-0">
                   {track.tracknumber ?? '—'}
                 </span>
-                <span className="text-text-primary text-xs flex-1 truncate">
-                  {track.title ?? track.relative_path.split('/').pop()}
+                <span className="flex-1 min-w-0 flex flex-col">
+                  <span className="text-text-primary text-xs truncate">
+                    {track.title ?? track.relative_path.split('/').pop()}
+                  </span>
+                  {track.title && (
+                    <span className="text-text-muted font-mono text-[10px] truncate">
+                      {track.relative_path.split('/').pop()}
+                    </span>
+                  )}
                 </span>
                 {/* Supersede badge */}
                 {supersede && (
