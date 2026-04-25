@@ -39,3 +39,8 @@ export async function updateRule(id: number, data: CreateRuleRequest): Promise<O
 export async function deleteRule(id: number): Promise<void> {
   await client.delete(`/organization-rules/${id}`)
 }
+
+export async function enqueueOrganize(trackIds: number[]): Promise<{ enqueued: number }> {
+  const res = await client.post<{ enqueued: number }>('/organization-rules/apply', { track_ids: trackIds })
+  return res.data
+}

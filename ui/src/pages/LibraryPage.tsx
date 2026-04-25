@@ -7,6 +7,7 @@ import { IngestSearchDialog } from '../components/IngestSearchDialog'
 import { useAuth } from '../contexts/AuthContext'
 import { getLibrary, listLibraries, listLibraryTracks, triggerMaintenance } from '../api/libraries'
 import { enqueueLookup, scheduleDelete } from '../api/tracks'
+import { enqueueOrganize } from '../api/organizationRules'
 import { tagSuggestionsApi } from '../api/tagSuggestions'
 import { artApi } from '../api/art'
 import { getJob } from '../api/jobs'
@@ -530,6 +531,7 @@ export function LibraryPage() {
     }
     items.push(null)
     items.push({ label: 'Update art…', action: () => { setArtUpdateModal({ trackIds: [track.id], label: track.title ?? track.relative_path.split('/').pop() ?? '1 track' }); setContextMenu(null) } })
+    items.push({ label: 'Re-organize…', action: () => { enqueueOrganize([track.id]); setContextMenu(null) } })
     items.push({ label: 'Delete track…', action: () => { setDeleteConfirm({ ids: [track.id], label: '1 track' }); setContextMenu(null) } })
     setContextMenu({ x, y, items })
   }
@@ -971,6 +973,10 @@ export function LibraryPage() {
                                 items: [
                                   { label: 'Update art…', action: () => {
                                     setArtUpdateModal({ trackIds: groupIds, label: key })
+                                    setContextMenu(null)
+                                  }},
+                                  { label: 'Re-organize…', action: () => {
+                                    enqueueOrganize(groupIds)
                                     setContextMenu(null)
                                   }},
                                   { label: deleteLabel, action: () => {

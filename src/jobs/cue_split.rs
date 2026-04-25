@@ -54,21 +54,11 @@ async fn handle_cue_split(
         .ok_or_else(|| AppError::NotFound(format!("library {library_id} not found")))?;
     let tag_encoding = library.tag_encoding.clone();
 
-    // Compute the output directory: replace leading "ingest" component with "source"
+    // Split files stay in the same ingest/ directory as the CUE file so they
+    // appear in the Ingest view and go through the normal process_staged flow
+    // when the user clicks Import Album.
     let library_root = Path::new(&library.root_path);
-    let source_out_dir = {
-        let cue_rel_dir = cue_dir.strip_prefix(library_root).unwrap_or(cue_dir);
-        let cue_rel_str = cue_rel_dir.to_string_lossy();
-        let source_rel = if cue_rel_str == "ingest" {
-            "source".to_string()
-        } else if let Some(rest) = cue_rel_str.strip_prefix("ingest/") {
-            format!("source/{}", rest)
-        } else {
-            // CUE file not in ingest/ — keep original directory as fallback
-            cue_rel_str.to_string()
-        };
-        library_root.join(&source_rel)
-    };
+    let source_out_dir = cue_dir.to_path_buf();
 
     // Ensure the output directory exists
     tokio::fs::create_dir_all(&source_out_dir)
@@ -251,20 +241,11 @@ async fn handle_cue_split(
             channels: audio_props.channels,
             bit_depth: audio_props.bit_depth,
             has_embedded_art: audio_props.has_embedded_art,
-            status: "active".into(),
+            status: "staged".into(),
             library_profile_id: None,
         };
 
-        let new_track = db.upsert_track(upsert).await?;
-
-        // Enqueue fingerprint job for the new track
-        db.enqueue_job(
-            "fingerprint",
-            serde_json::json!({"track_id": new_track.id}),
-            5,
-        )
-        .await?;
-
+        db.upsert_track(upsert).await?;
         tracks_created += 1;
     }
 
