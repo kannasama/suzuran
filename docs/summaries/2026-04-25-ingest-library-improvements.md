@@ -47,12 +47,12 @@
   Files: `ui/src/pages/IngestPage.tsx`, `ui/src/components/TrackEditPanel.tsx`,
          `ui/src/api/tagSuggestions.ts`
 
-- [ ] **T10 — Per-field suggestion selection in Library view**
-  The field-level checkbox selection (choose which fields to apply from a suggestion) exists
-  in the ingest diff view but was not implemented in the Library view's SuggestionReviewPane.
-  The accept API already supports `{fields?: string[]}` — wire up field checkboxes in the
-  Library view so users can accept a subset of suggested tags.
-  Files: `ui/src/pages/LibraryPage.tsx` (SuggestionReviewPane)
+- [ ] **T10 — Per-field suggestion selection in Ingest view**
+  Per-field checkbox selection (choose which fields to apply from a suggestion) is already
+  implemented in the Library view's SuggestionReviewPane but is missing from the Ingest view's
+  per-track accept flow. The accept API already supports `{fields?: string[]}` — wire up
+  field checkboxes in IngestPage so users can accept a subset of suggested tags per track.
+  Files: `ui/src/pages/IngestPage.tsx`
 
 - [ ] **T11 — Group ingest tracks by scanned folder**
   Add folder-based grouping to the ingest view: tracks are grouped by the parent directory of
