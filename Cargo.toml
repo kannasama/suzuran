@@ -1,6 +1,6 @@
 [package]
 name = "suzuran-server"
-version = "1.0.0-beta.1"
+version = "1.0.0-4"
 edition = "2021"
 
 [[bin]]
