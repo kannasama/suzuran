@@ -492,6 +492,26 @@ correct response is: describe the cause and proposed fix, then stop and wait.
 2. End the response — no edits
 3. Wait for explicit approval
 
+## 2026-04-25 — Check git branch before starting any implementation
+
+**Mistake:** The entire 2026-04-25 ingest/library improvement session (T3–T11, ~10 commits)
+was implemented and committed directly to `main`. Branch status was never checked at the start
+of the session.
+
+**Rule:** At the very start of any session that will involve code changes, run `git branch` (or
+`git status`) and confirm the active branch is NOT `main`. If it is, ask the user which branch
+to use or switch to the appropriate phase branch before writing any code.
+
+**Why:** `main` is the stable release branch. All implementation work belongs on a phase branch
+(e.g. `0.8`). Committing directly to `main` bypasses the project's branch discipline and makes
+it harder to tag clean releases.
+
+**How to apply:**
+1. Before any code edit in a new session, run `git branch` — confirm you are NOT on `main`
+2. If on `main`, stop and ask the user which branch to use
+3. Switch branches before the first file edit
+4. The CLAUDE.md branching section and the 2026-04-13 rule define where work belongs
+
 ## 2026-04-25 — Present plan before implementing — fifth reminder
 
 **Mistake:** User reported a failing MB lookup (400 Bad Request). The bug was diagnosed and the
