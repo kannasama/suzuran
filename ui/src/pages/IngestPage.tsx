@@ -2,7 +2,6 @@ import { useState, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { TopNav } from '../components/TopNav'
 import { Checkbox } from '../components/Checkbox'
-import { TagDiffTable } from '../components/TagDiffTable'
 import { IngestSearchDialog } from '../components/IngestSearchDialog'
 import { ImageUpload } from '../components/ImageUpload'
 import { TrackEditPanel } from '../components/TrackEditPanel'
@@ -276,6 +275,8 @@ function IngestDiffPanel({
   rejecting,
   onApply,
   onReject,
+  overrideTags,
+  overrideArtUrl,
 }: {
   track: Track
   suggestion: TagSuggestion
@@ -283,20 +284,25 @@ function IngestDiffPanel({
   rejecting: boolean
   onApply: (fields?: string[], applyArt?: boolean) => void
   onReject: () => void
+  overrideTags?: Record<string, string>
+  overrideArtUrl?: string | null
 }) {
+  const effectiveTags = overrideTags ?? (suggestion.suggested_tags as Record<string, string>)
+  const effectiveArtUrl = overrideArtUrl !== undefined ? overrideArtUrl : (suggestion.cover_art_url ?? null)
+
   const diffItems = useMemo(() => {
-    const suggested = (suggestion.suggested_tags ?? {}) as Record<string, unknown>
+    const suggested = (effectiveTags ?? {}) as Record<string, unknown>
     return Object.entries(suggested).map(([key, raw]) => {
       const suggestedVal = typeof raw === 'string' ? raw : String(raw ?? '')
       const currentVal = getTagValue(track, key)
       return { key, currentVal, suggestedVal, changed: currentVal !== suggestedVal }
     })
-  }, [suggestion, track])
+  }, [effectiveTags, track])
 
   const [checkedFields, setCheckedFields] = useState<Set<string>>(
     () => new Set(diffItems.filter(d => d.changed).map(d => d.key))
   )
-  const [applyArt, setApplyArt] = useState(() => !!suggestion.cover_art_url)
+  const [applyArt, setApplyArt] = useState(() => !!effectiveArtUrl)
 
   const allChecked = diffItems.length > 0 && checkedFields.size === diffItems.length
   const noneChecked = checkedFields.size === 0 && !applyArt
@@ -341,14 +347,14 @@ function IngestDiffPanel({
         </button>
       </div>
       {/* Art row */}
-      {suggestion.cover_art_url && (
+      {effectiveArtUrl && (
         <div
           className="grid grid-cols-[6rem_1fr_1fr_1.5rem] gap-x-2 px-3 py-1 border-b border-border-subtle items-center cursor-pointer select-none hover:bg-bg-row-hover"
           onClick={() => setApplyArt(v => !v)}
         >
           <span className="text-[11px] text-text-muted">Cover Art</span>
           <span className="text-text-secondary font-mono">{track.has_embedded_art ? 'embedded' : '—'}</span>
-          <img src={suggestion.cover_art_url} alt="" className="w-7 h-7 object-cover rounded" />
+          <img src={effectiveArtUrl} alt="" className="w-7 h-7 object-cover rounded" />
           <span className="flex items-center justify-center">
             <Checkbox checked={applyArt} onChange={() => setApplyArt(v => !v)} />
           </span>
@@ -418,6 +424,7 @@ function AlbumGroup({
   presetArtUrl: string
   onArtChange: (url: string) => void
 }) {
+  const qc = useQueryClient()
   const firstTrack = tracks[0]
   const firstSuggestion = suggestionsByTrack[firstTrack.id]
   const coverArtUrl = firstSuggestion?.cover_art_url
@@ -427,10 +434,42 @@ function AlbumGroup({
   const [altTrackId, setAltTrackId] = useState<number | null>(null)
   const [editingAlbum, setEditingAlbum] = useState(false)
   const [acceptedTrackIds, setAcceptedTrackIds] = useState<Set<number>>(new Set())
+  const [selectedAltIdx, setSelectedAltIdx] = useState<number | null>(null)
+
+  // Collect album-level alternatives from any suggestion that has them
+  const albumAlternatives =
+    Object.values(suggestionsByTrack).find(s => (s.alternatives?.length ?? 0) > 0)?.alternatives ?? []
 
   function handleAcceptTrack(suggestionId: number, trackId: number, fields?: string[], applyArt?: boolean) {
     onAccept(suggestionId, fields, applyArt)
     setAcceptedTrackIds(prev => new Set([...prev, trackId]))
+  }
+
+  async function handleAcceptTrackWithAlt(
+    suggestion: TagSuggestion,
+    trackId: number,
+    altIdx: number,
+    fields?: string[],
+    applyArt?: boolean,
+  ) {
+    const alt = suggestion.alternatives?.[altIdx]
+    if (!alt) { handleAcceptTrack(suggestion.id, trackId, fields, applyArt); return }
+    try {
+      const newSug = await tagSuggestionsApi.create({
+        track_id: suggestion.track_id,
+        source: suggestion.source,
+        suggested_tags: alt.suggested_tags,
+        confidence: suggestion.confidence,
+        cover_art_url: alt.cover_art_url,
+        musicbrainz_release_id: alt.mb_release_id,
+        musicbrainz_recording_id: suggestion.mb_recording_id,
+      })
+      await tagSuggestionsApi.accept(newSug.id, fields, applyArt ?? false)
+      await tagSuggestionsApi.reject(suggestion.id).catch(() => {})
+      qc.invalidateQueries({ queryKey: ['tag-suggestions'] })
+      qc.invalidateQueries({ queryKey: ['inbox-count'] })
+      setAcceptedTrackIds(prev => new Set([...prev, trackId]))
+    } catch { /* ignore */ }
   }
   const [showArtUpload, setShowArtUpload] = useState(false)
   const [expandedSupersede, setExpandedSupersede] = useState<number | null>(null)
@@ -466,6 +505,24 @@ function AlbumGroup({
             <span className="text-[10px] font-mono uppercase text-emerald-400 border border-emerald-400/40 rounded px-1 shrink-0">
               Embedded art
             </span>
+          )}
+          {albumAlternatives.length > 0 && (
+            <select
+              value={selectedAltIdx === null ? '' : String(selectedAltIdx)}
+              onChange={e => setSelectedAltIdx(e.target.value === '' ? null : Number(e.target.value))}
+              className="text-[11px] font-mono bg-bg-base border border-border rounded px-2 py-0.5 text-text-primary focus:outline-none focus:border-accent shrink-0 max-w-[220px] truncate"
+              title="Switch to an alternate release"
+            >
+              <option value="">Main release</option>
+              {albumAlternatives.map((alt, i) => {
+                const name = alt.suggested_tags.album ?? alt.mb_release_id
+                const date = alt.suggested_tags.date ? ` (${alt.suggested_tags.date})` : ''
+                const artist = alt.suggested_tags.albumartist ? ` · ${alt.suggested_tags.albumartist}` : ''
+                return (
+                  <option key={i} value={String(i)}>{name}{date}{artist}</option>
+                )
+              })}
+            </select>
           )}
         </div>
         <button
@@ -635,16 +692,25 @@ function AlbumGroup({
               )}
 
               {/* Tag diff with field selection */}
-              {!isEditing && suggestion && (
-                <IngestDiffPanel
-                  track={track}
-                  suggestion={suggestion}
-                  applying={acceptPending === suggestion.id}
-                  rejecting={rejectPending === suggestion.id}
-                  onApply={(fields, applyArt) => handleAcceptTrack(suggestion.id, track.id, fields, applyArt)}
-                  onReject={() => onReject(suggestion.id)}
-                />
-              )}
+              {!isEditing && suggestion && (() => {
+                const altOverride = selectedAltIdx !== null ? albumAlternatives[selectedAltIdx] : undefined
+                return (
+                  <IngestDiffPanel
+                    track={track}
+                    suggestion={suggestion}
+                    applying={acceptPending === suggestion.id}
+                    rejecting={rejectPending === suggestion.id}
+                    onApply={(fields, applyArt) =>
+                      selectedAltIdx !== null
+                        ? handleAcceptTrackWithAlt(suggestion, track.id, selectedAltIdx, fields, applyArt)
+                        : handleAcceptTrack(suggestion.id, track.id, fields, applyArt)
+                    }
+                    onReject={() => onReject(suggestion.id)}
+                    overrideTags={altOverride?.suggested_tags}
+                    overrideArtUrl={altOverride !== undefined ? (altOverride.cover_art_url || null) : undefined}
+                  />
+                )
+              })()}
               {!isEditing && !suggestion && (
                 <p className="text-text-muted text-[11px] italic px-1">
                   No lookup results — click <strong className="font-semibold not-italic text-text-secondary">Lookup</strong> to run fingerprint matching,{' '}
@@ -740,6 +806,17 @@ function AlbumEditPanel({
   onClose: () => void
 }) {
   const qc = useQueryClient()
+  // Derive consensus current value per field across all tracks
+  const currentValues = useMemo<Record<string, string>>(() => {
+    const result: Record<string, string> = {}
+    for (const { key } of ALBUM_EDIT_FIELDS) {
+      const vals = tracks.map(t => getAlbumTagValue(t, key)).filter(v => v !== '')
+      const unique = [...new Set(vals)]
+      result[key] = unique.length === 1 ? unique[0] : unique.length > 1 ? '(mixed)' : ''
+    }
+    return result
+  }, [tracks])
+
   const [fields, setFields] = useState<Record<string, string>>(
     () => Object.fromEntries(ALBUM_EDIT_FIELDS.map(f => [f.key, '']))
   )
@@ -781,56 +858,76 @@ function AlbumEditPanel({
     qc.invalidateQueries({ queryKey: ['inbox-count'] })
   }
 
+  const changedCount = ALBUM_EDIT_FIELDS.filter(f => fields[f.key].trim() !== '').length
+
   return (
-    <div className="border-b border-border bg-bg-base px-3 py-2 flex flex-col gap-2">
-      <div className="flex items-center gap-2">
-        <span className="text-[10px] uppercase tracking-wide text-text-muted font-mono">
+    <div className="border-b border-border bg-bg-base text-xs">
+      {/* Panel header */}
+      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-bg-panel">
+        <span className="text-[11px] text-text-muted font-mono">
           Album Tags — applies to all {tracks.length} tracks
         </span>
-        <div className="ml-auto flex items-center gap-2">
-          {savedCount != null && (
-            <span className="text-xs text-green-400">Applied to {savedCount} tracks</span>
-          )}
-          {error && <span className="text-xs text-destructive">{error}</span>}
-          <button
-            type="button"
-            onClick={handleApply}
-            disabled={saving || noneFilledIn}
-            className="text-xs bg-accent text-bg-base rounded px-3 py-0.5 font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            {saving ? 'Applying…' : 'Apply to All'}
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-xs text-text-muted border border-border rounded px-2 py-0.5 hover:text-text-primary"
-          >
-            Close
-          </button>
-        </div>
+        <span className="flex-1" />
+        {savedCount != null && (
+          <span className="text-[11px] text-green-400">Applied to {savedCount} tracks</span>
+        )}
+        {error && <span className="text-[11px] text-destructive">{error}</span>}
+        <button
+          type="button"
+          onClick={onClose}
+          className="text-[11px] text-text-muted hover:text-text-primary border border-border rounded px-2 py-0.5"
+        >
+          Close
+        </button>
+        <button
+          type="button"
+          onClick={handleApply}
+          disabled={saving || noneFilledIn}
+          className="text-[11px] bg-accent text-bg-base rounded px-3 py-0.5 font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          {saving ? 'Applying…' : `Apply to All${changedCount > 0 ? ` (${changedCount})` : ''}`}
+        </button>
       </div>
-      <div className="grid grid-cols-3 gap-x-3 gap-y-1.5">
-        {ALBUM_EDIT_FIELDS.map(({ key, label, fullWidth }) => (
-          <label
+      {/* Diff rows: field | current | new (editable) */}
+      {ALBUM_EDIT_FIELDS.map(({ key, label }) => {
+        const current = currentValues[key]
+        const newVal = fields[key]
+        const hasNew = newVal.trim() !== ''
+        return (
+          <div
             key={key}
-            className={`flex flex-col gap-0.5 ${fullWidth ? 'col-span-3' : ''}`}
+            className="grid grid-cols-[7rem_1fr_1fr] gap-x-2 px-3 py-0.5 border-b border-border-subtle items-center"
           >
-            <span className="text-text-muted text-[10px] uppercase tracking-wider">{label}</span>
+            <span className="text-[11px] text-text-muted font-mono truncate" title={label}>{label}</span>
+            <span className={`text-[11px] font-mono truncate ${hasNew ? 'text-text-muted line-through' : 'text-text-secondary'}`}>
+              {current || <em className="not-italic text-text-muted/40">—</em>}
+            </span>
             <input
               type="text"
-              value={fields[key]}
+              value={newVal}
               placeholder="(unchanged)"
-              onChange={e => {
-                setSavedCount(null)
-                setFields(prev => ({ ...prev, [key]: e.target.value }))
-              }}
-              className="bg-bg-panel border border-border text-text-primary text-xs px-2 py-1 rounded focus:outline-none focus:border-accent font-mono placeholder:text-text-muted/40"
+              onChange={e => { setSavedCount(null); setFields(prev => ({ ...prev, [key]: e.target.value })) }}
+              className={`bg-transparent border-b py-0.5 font-mono text-[11px] focus:outline-none placeholder:text-text-muted/30 w-full ${
+                hasNew ? 'border-accent text-text-primary' : 'border-transparent text-text-secondary hover:border-border focus:border-accent'
+              }`}
             />
-          </label>
-        ))}
-      </div>
+          </div>
+        )
+      })}
     </div>
   )
+}
+
+function getAlbumTagValue(track: Track, key: string): string {
+  const albumKeys = new Set(ALBUM_EDIT_FIELDS.map(f => f.key))
+  if (albumKeys.has(key)) {
+    const topLevel = (track as unknown as Record<string, string | undefined>)[key]
+    if (topLevel != null) return topLevel
+    const v = (track.tags as Record<string, unknown>)[key]
+    if (typeof v === 'string') return v
+    if (v != null) return String(v)
+  }
+  return ''
 }
 
 // ---------------------------------------------------------------------------
