@@ -5,7 +5,6 @@ import { Checkbox } from '../components/Checkbox'
 import { IngestSearchDialog } from '../components/IngestSearchDialog'
 import { ImageUpload } from '../components/ImageUpload'
 import { TrackEditPanel } from '../components/TrackEditPanel'
-import { AlternativesPanel } from '../components/AlternativesPanel'
 import { tagSuggestionsApi } from '../api/tagSuggestions'
 import {
   getStagedTracks,
@@ -355,7 +354,7 @@ function IngestDiffPanel({
           <span className="text-[11px] text-text-muted">Cover Art</span>
           <span className="text-text-secondary font-mono">{track.has_embedded_art ? 'embedded' : '—'}</span>
           <img src={effectiveArtUrl} alt="" className="w-7 h-7 object-cover rounded" />
-          <span className="flex items-center justify-center">
+          <span className="flex items-center justify-center" onClick={e => e.stopPropagation()}>
             <Checkbox checked={applyArt} onChange={() => setApplyArt(v => !v)} />
           </span>
         </div>
@@ -374,7 +373,7 @@ function IngestDiffPanel({
           <span className={`text-[11px] truncate font-mono ${changed ? 'text-text-primary' : 'text-text-secondary'}`}>
             {suggestedVal || <em className="not-italic text-text-muted/40">—</em>}
           </span>
-          <span className="flex items-center justify-center">
+          <span className="flex items-center justify-center" onClick={e => e.stopPropagation()}>
             {changed && <Checkbox checked={checkedFields.has(key)} onChange={() => toggleField(key)} />}
           </span>
         </div>
@@ -431,14 +430,16 @@ function AlbumGroup({
   const displayArtUrl = presetArtUrl || coverArtUrl
   const hasEmbeddedArt = tracks.some(t => t.has_embedded_art)
   const formatExt = firstTrack.relative_path.split('.').pop()?.toUpperCase() ?? '?'
-  const [altTrackId, setAltTrackId] = useState<number | null>(null)
+  const [altIdxByTrack, setAltIdxByTrack] = useState<Record<number, number | null>>({})
   const [editingAlbum, setEditingAlbum] = useState(false)
   const [acceptedTrackIds, setAcceptedTrackIds] = useState<Set<number>>(new Set())
   const [selectedAltIdx, setSelectedAltIdx] = useState<number | null>(null)
 
   // Collect album-level alternatives from any suggestion that has them
-  const albumAlternatives =
-    Object.values(suggestionsByTrack).find(s => (s.alternatives?.length ?? 0) > 0)?.alternatives ?? []
+  const albumSugWithAlts = Object.values(suggestionsByTrack).find(s => (s.alternatives?.length ?? 0) > 0)
+  const albumAlternatives = albumSugWithAlts?.alternatives ?? []
+  const primaryAlbumLabel =
+    albumSugWithAlts?.suggested_tags?.album ?? firstTrack.album ?? 'Current release'
 
   function handleAcceptTrack(suggestionId: number, trackId: number, fields?: string[], applyArt?: boolean) {
     onAccept(suggestionId, fields, applyArt)
@@ -513,7 +514,7 @@ function AlbumGroup({
               className="text-[11px] font-mono bg-bg-base border border-border rounded px-2 py-0.5 text-text-primary focus:outline-none focus:border-accent shrink-0 max-w-[220px] truncate"
               title="Switch to an alternate release"
             >
-              <option value="">Main release</option>
+              <option value="">{primaryAlbumLabel}</option>
               {albumAlternatives.map((alt, i) => {
                 const name = alt.suggested_tags.album ?? alt.mb_release_id
                 const date = alt.suggested_tags.date ? ` (${alt.suggested_tags.date})` : ''
@@ -654,12 +655,22 @@ function AlbumGroup({
                     Edit
                   </button>
                   {suggestion?.alternatives && suggestion.alternatives.length > 0 && (
-                    <button
-                      onClick={() => setAltTrackId(altTrackId === track.id ? null : track.id)}
-                      className={`text-xs border rounded px-2 py-0.5 hover:bg-bg-surface ${altTrackId === track.id ? 'border-accent text-accent' : 'border-border text-text-muted'}`}
+                    <select
+                      value={altIdxByTrack[track.id] == null ? '' : String(altIdxByTrack[track.id])}
+                      onChange={e => {
+                        const val = e.target.value === '' ? null : Number(e.target.value)
+                        setAltIdxByTrack(prev => ({ ...prev, [track.id]: val }))
+                      }}
+                      className="text-[11px] font-mono bg-bg-base border border-border rounded px-1.5 py-0.5 text-text-primary focus:outline-none focus:border-accent max-w-[160px]"
+                      title="Select alternate release for this track"
                     >
-                      Alt…
-                    </button>
+                      <option value="">{suggestion.suggested_tags?.album ?? track.album ?? 'Current'}</option>
+                      {suggestion.alternatives.map((alt, i) => {
+                        const name = alt.suggested_tags.album ?? alt.mb_release_id
+                        const date = alt.suggested_tags.date ? ` (${alt.suggested_tags.date})` : ''
+                        return <option key={i} value={String(i)}>{name}{date}</option>
+                      })}
+                    </select>
                   )}
                   <button
                     onClick={() => onSearch(track)}
@@ -693,16 +704,24 @@ function AlbumGroup({
 
               {/* Tag diff with field selection */}
               {!isEditing && suggestion && (() => {
-                const altOverride = selectedAltIdx !== null ? albumAlternatives[selectedAltIdx] : undefined
+                // Per-track selection overrides album-level; neither applies to manual edits (confidence 1.0)
+                const trackAltIdx = altIdxByTrack[track.id] ?? null
+                const effectiveAltIdx = suggestion.confidence < 1.0
+                  ? (trackAltIdx !== null ? trackAltIdx : selectedAltIdx)
+                  : null
+                const altOverride = effectiveAltIdx !== null
+                  ? suggestion.alternatives?.[effectiveAltIdx]
+                  : undefined
                 return (
                   <IngestDiffPanel
+                    key={`${suggestion.id}-${effectiveAltIdx ?? 'none'}`}
                     track={track}
                     suggestion={suggestion}
                     applying={acceptPending === suggestion.id}
                     rejecting={rejectPending === suggestion.id}
                     onApply={(fields, applyArt) =>
-                      selectedAltIdx !== null
-                        ? handleAcceptTrackWithAlt(suggestion, track.id, selectedAltIdx, fields, applyArt)
+                      effectiveAltIdx !== null
+                        ? handleAcceptTrackWithAlt(suggestion, track.id, effectiveAltIdx, fields, applyArt)
                         : handleAcceptTrack(suggestion.id, track.id, fields, applyArt)
                     }
                     onReject={() => onReject(suggestion.id)}
@@ -717,14 +736,6 @@ function AlbumGroup({
                   <strong className="font-semibold not-italic text-text-secondary">Search</strong> to find manually, or{' '}
                   <strong className="font-semibold not-italic text-text-secondary">Edit</strong> to enter tags directly.
                 </p>
-              )}
-
-              {/* Alternatives picker */}
-              {!isEditing && altTrackId === track.id && suggestion && (
-                <AlternativesPanel
-                  suggestion={suggestion}
-                  onClose={() => setAltTrackId(null)}
-                />
               )}
             </div>
           )
@@ -824,12 +835,14 @@ function AlbumEditPanel({
   const [savedCount, setSavedCount] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const noneFilledIn = ALBUM_EDIT_FIELDS.every(f => !fields[f.key].trim())
-
   async function handleApply() {
+    // New value takes priority; fall back to current consensus value (skip "(mixed)" and blank)
     const tags: Record<string, string> = {}
     for (const { key } of ALBUM_EDIT_FIELDS) {
-      if (fields[key].trim() !== '') tags[key] = fields[key].trim()
+      const newVal = fields[key].trim()
+      const cur = currentValues[key]
+      const val = newVal !== '' ? newVal : (cur !== '' && cur !== '(mixed)' ? cur : '')
+      if (val !== '') tags[key] = val
     }
     if (Object.keys(tags).length === 0) return
 
@@ -858,7 +871,12 @@ function AlbumEditPanel({
     qc.invalidateQueries({ queryKey: ['inbox-count'] })
   }
 
-  const changedCount = ALBUM_EDIT_FIELDS.filter(f => fields[f.key].trim() !== '').length
+  // Count fields that will push a value (new override OR current consensus)
+  const pushCount = ALBUM_EDIT_FIELDS.filter(({ key }) => {
+    const newVal = fields[key].trim()
+    const cur = currentValues[key]
+    return newVal !== '' || (cur !== '' && cur !== '(mixed)')
+  }).length
 
   return (
     <div className="border-b border-border bg-bg-base text-xs">
@@ -882,10 +900,10 @@ function AlbumEditPanel({
         <button
           type="button"
           onClick={handleApply}
-          disabled={saving || noneFilledIn}
+          disabled={saving || pushCount === 0}
           className="text-[11px] bg-accent text-bg-base rounded px-3 py-0.5 font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
         >
-          {saving ? 'Applying…' : `Apply to All${changedCount > 0 ? ` (${changedCount})` : ''}`}
+          {saving ? 'Applying…' : `Apply to All (${pushCount})`}
         </button>
       </div>
       {/* Diff rows: field | current | new (editable) */}

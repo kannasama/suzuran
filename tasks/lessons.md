@@ -528,3 +528,13 @@ must be treated as a signal to slow down, not permission to skip the gate.
 1. Diagnose the issue — output the root cause and the proposed change (file, line, what changes)
 2. End the response — do not touch any file
 3. Wait for explicit approval before writing a single character of code
+
+## 2026-04-25 — Current release version is v1.0.0-1
+
+**Fact:** As of 2026-04-25, all four development phases are complete and the project was released
+as v1.0.0. The ingest/library improvement work (T1–T11 + follow-up ingest fixes) constitutes
+the first errata revision: **v1.0.0-1**.
+
+**How to apply:** Use v1.0.0-1 as the version reference in any release documentation, release
+history updates, changelogs, or summaries written from this point forward — until the user
+declares a new version.

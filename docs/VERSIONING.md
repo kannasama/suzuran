@@ -121,3 +121,5 @@ git checkout -b 0.1
 | `v0.2.0` | Phase 2 complete: organization rules, path templates, multi-library, rules UI |
 | `v0.3.0` | Phase 3 complete: AcoustID fingerprinting, MusicBrainz tagging, Inbox UI |
 | `v0.4.0` | Phase 4 complete: transcoding, encoding profiles, album art, CUE splitting, virtual libraries, image uploads |
+| `v1.0.0` | First public release — all four phases complete, Docker image published |
+| `v1.0.0-1` | Errata — ingest flow and library view corrections: alternate release picker, album-level tabular edit, per-field suggestion selection, folder grouping, quality display, manual-edit/apply isolation, derived track deletion |
