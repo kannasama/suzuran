@@ -200,13 +200,34 @@ impl MusicBrainzService {
         let rec = self.client
             .get(&url)
             .query(&[
-                ("inc", "releases+release-groups+artist-credits+media"),
+                ("inc", "releases+release-groups+artist-credits"),
                 ("fmt", "json"),
             ])
             .send().await?
             .error_for_status()?
             .json::<MbRecording>().await?;
         Ok(rec)
+    }
+
+    /// Fetch a full release by ID, including track listings (via `recordings` inc),
+    /// artist credits, media, label info, and release group.
+    ///
+    /// This is the second step of the two-step lookup: once we have picked the
+    /// best release from the recording response, we fetch the release directly
+    /// so that `to_tag_map` can resolve disc/track position from the full track list.
+    pub async fn get_release(&self, release_id: &str) -> anyhow::Result<MbRelease> {
+        self.mb_rate_limit().await;
+        let url = format!("{}/release/{}", self.mb_base, release_id);
+        let release = self.client
+            .get(&url)
+            .query(&[
+                ("inc", "recordings+artist-credits+media+label-info+release-groups"),
+                ("fmt", "json"),
+            ])
+            .send().await?
+            .error_for_status()?
+            .json::<MbRelease>().await?;
+        Ok(release)
     }
 
     /// Build a MusicBrainz-keyed tag map from a recording + chosen release.
