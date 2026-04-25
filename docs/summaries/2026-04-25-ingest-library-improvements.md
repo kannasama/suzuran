@@ -143,6 +143,28 @@ User confirmed: FLAC superseding files also landed in source root without organi
 - Supersede badge inline spans: lossless shows kHz + bit-depth, lossy shows combined `kHz / Nk` span.
 - Committed.
 
+### 2026-04-25 — Round 3 follow-up fixes (commit: 9169db2)
+
+Four issues reported after the CUE/Re-organize work:
+
+1. **TrackEditPanel fields don't update when alt selection changes while edit view is open**
+   - Root cause: `TrackEditPanel` `fields` state initialized once from `initialTags`; no key forcing reinitialization.
+   - Fix: added `overrideTags?: Record<string, string>` prop; `key={suggestion.id-effectiveAltIdx}` on TrackEditPanel so it remounts when alt changes.
+
+2. **Two confidence-1.0 suggestions survive at import (album apply + manual edit)**
+   - Root cause: `handleSave` in TrackEditPanel only rejected suggestions with `confidence < 1.0`, leaving the album-applied confidence-1.0 suggestion alive alongside the new manual one. Import picked arbitrarily.
+   - Fix: reject *any* existing suggestion on manual save (regardless of confidence).
+
+3. **CUE/FLAC not re-detected after prior completed split**
+   - Root cause: scanner's active-job check included `"completed"` status, permanently blocking re-enqueueing once a CUE had been split before.
+   - Fix: removed `"completed"` from the check in `scanner/mod.rs` — only `"pending"` and `"running"` block re-enqueueing.
+
+4. **Re-organize 422 from `POST /organization-rules/apply`**
+   - Root cause: `enqueueOrganize` wasn't sending `library_id` in the request body; backend's `PreviewApplyRequest` requires it.
+   - Fix: added `libraryId` parameter to `enqueueOrganize`; both call sites in LibraryPage pass `selectedLibraryId`.
+
+Files: `src/scanner/mod.rs`, `ui/src/api/organizationRules.ts`, `ui/src/components/TrackEditPanel.tsx`, `ui/src/pages/IngestPage.tsx`, `ui/src/pages/LibraryPage.tsx`
+
 ### 2026-04-25 — CUE split ingest flow fix + library Re-organize (branch: fix/cue-split-ingest-flow)
 
 Screenshot `/tmp/suzuran-02.png` showed two albums in source/ not following organization rules:
