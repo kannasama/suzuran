@@ -8,6 +8,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { getLibrary, listLibraries, listLibraryTracks, triggerMaintenance } from '../api/libraries'
 import { enqueueLookup, scheduleDelete } from '../api/tracks'
 import { tagSuggestionsApi } from '../api/tagSuggestions'
+import { artApi } from '../api/art'
 import { getJob } from '../api/jobs'
 import client from '../api/client'
 import type { Track } from '../types/track'
@@ -182,6 +183,7 @@ export function LibraryPage() {
     label: string          // e.g. "3 tracks" or "Album — Dark Side of the Moon (10 tracks)"
   } | null>(null)
   const [deleteSubmitting, setDeleteSubmitting] = useState(false)
+  const [artUpdateModal, setArtUpdateModal] = useState<{ trackIds: number[]; label: string } | null>(null)
 
   // ── Dismiss handlers ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -492,6 +494,7 @@ export function LibraryPage() {
       })
     }
     items.push(null)
+    items.push({ label: 'Update art…', action: () => { setArtUpdateModal({ trackIds: [track.id], label: track.title ?? track.relative_path.split('/').pop() ?? '1 track' }); setContextMenu(null) } })
     items.push({ label: 'Delete track…', action: () => { setDeleteConfirm({ ids: [track.id], label: '1 track' }); setContextMenu(null) } })
     setContextMenu({ x, y, items })
   }
@@ -880,6 +883,11 @@ export function LibraryPage() {
                       const someSelected = groupIds.some(id => selectedTrackIds.has(id))
                       const showCheckbox = groupBy === 'album' || groupBy === 'artist' || groupBy === 'albumartist'
                       const deleteLabel = { album: 'Delete album…', artist: 'Delete artist…', albumartist: 'Delete album artist…' }[groupBy as string] ?? 'Delete group…'
+                      const artTrack = groupTracks.find((t: Track) => t.has_embedded_art)
+                      const artSuggestion = groupTracks.map((t: Track) => suggestionsByTrack[t.id]).find(s => s?.cover_art_url)
+                      const artSrc = artTrack
+                        ? `/api/v1/tracks/${artTrack.id}/art`
+                        : (artSuggestion?.cover_art_url ?? null)
                       return (
                         <div className="bg-bg-panel border-b border-border text-xs font-mono flex items-center sticky top-0 z-10">
                           <span style={{ width: CB_COL_WIDTH, flexShrink: 0 }} className="flex items-center justify-center py-0.5">
@@ -899,6 +907,11 @@ export function LibraryPage() {
                               />
                             )}
                           </span>
+                          {artSrc ? (
+                            <img src={artSrc} alt="" className="w-8 h-8 object-cover flex-shrink-0 mr-1.5" />
+                          ) : (
+                            <span className="w-8 h-8 flex-shrink-0 mr-1.5" />
+                          )}
                           <span className="text-text-primary font-medium py-0.5">{key}</span>
                           <span className="text-text-muted/60 ml-2 py-0.5">{groupTracks.length}</span>
                           <button
@@ -910,6 +923,10 @@ export function LibraryPage() {
                                 x: rect.left,
                                 y: rect.bottom + 4,
                                 items: [
+                                  { label: 'Update art…', action: () => {
+                                    setArtUpdateModal({ trackIds: groupIds, label: key })
+                                    setContextMenu(null)
+                                  }},
                                   { label: deleteLabel, action: () => {
                                     setDeleteConfirm({ ids: groupIds, label: `${key} (${groupIds.length} track${groupIds.length !== 1 ? 's' : ''})` })
                                     setContextMenu(null)
@@ -988,6 +1005,13 @@ export function LibraryPage() {
           submitting={deleteSubmitting}
           onCancel={() => setDeleteConfirm(null)}
           onConfirm={handleConfirmDelete}
+        />
+      )}
+      {artUpdateModal && (
+        <ArtUpdateModal
+          trackIds={artUpdateModal.trackIds}
+          label={artUpdateModal.label}
+          onClose={() => setArtUpdateModal(null)}
         />
       )}
     </div>
@@ -1363,6 +1387,7 @@ function SuggestionReviewPane({
   )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [applyArt, setApplyArt] = useState(() => !!suggestion.cover_art_url)
 
   function toggleField(key: string) {
     setCheckedFields(prev => {
@@ -1374,13 +1399,17 @@ function SuggestionReviewPane({
   }
 
   const allChecked = diffItems.length > 0 && checkedFields.size === diffItems.length
-  const noneChecked = checkedFields.size === 0
+  const noneChecked = checkedFields.size === 0 && !applyArt
 
   async function handleAccept() {
     setSaving(true); setError(null)
     try {
       const fields = [...checkedFields]
-      await tagSuggestionsApi.accept(suggestion.id, fields.length < diffItems.length ? fields : undefined)
+      await tagSuggestionsApi.accept(
+        suggestion.id,
+        fields.length < diffItems.length ? fields : undefined,
+        applyArt,
+      )
       qc.invalidateQueries({ queryKey: ['tag-suggestions'] })
       onDone()
     } catch (e) {
@@ -1450,6 +1479,26 @@ function SuggestionReviewPane({
           <span>Suggested</span>
           <span />
         </div>
+        {/* Art row — separate from field checkedFields */}
+        <div
+          className="grid grid-cols-[1fr_1fr_1fr_1.5rem] gap-x-2 px-3 py-1 border-b border-border-subtle items-center cursor-pointer select-none hover:bg-bg-row-hover"
+          onClick={() => setApplyArt(prev => !prev)}
+        >
+          <span className="text-[11px] text-text-muted">Cover Art</span>
+          <span className="text-xs text-text-secondary">
+            {track.has_embedded_art ? 'embedded' : <em className="not-italic text-text-muted/40">—</em>}
+          </span>
+          <span className="text-xs">
+            {suggestion.cover_art_url ? (
+              <img src={suggestion.cover_art_url} alt="suggested art" className="w-8 h-8 object-cover rounded" />
+            ) : (
+              <em className="not-italic text-text-muted/40">—</em>
+            )}
+          </span>
+          <span className="flex items-center justify-center">
+            <Checkbox checked={applyArt} onChange={() => setApplyArt(prev => !prev)} />
+          </span>
+        </div>
         {diffItems.map(({ key, currentVal, suggestedVal, changed }) => (
           <div
             key={key}
@@ -1473,6 +1522,90 @@ function SuggestionReviewPane({
             </span>
           </div>
         ))}
+      </div>
+    </div>
+  )
+}
+
+// ── ArtUpdateModal ─────────────────────────────────────────────────────────────
+function ArtUpdateModal({
+  trackIds,
+  label,
+  onClose,
+}: {
+  trackIds: number[]
+  label: string
+  onClose: () => void
+}) {
+  const [url, setUrl] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [done, setDone] = useState(false)
+
+  async function handleEmbed() {
+    if (!url.trim()) return
+    setSaving(true); setError(null)
+    try {
+      for (const id of trackIds) {
+        await artApi.embedFromUrl(id, url.trim())
+      }
+      setDone(true)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to embed art')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60"
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div className="bg-bg-panel border border-border rounded shadow-2xl w-[420px] flex flex-col">
+        <div className="px-5 pt-4 pb-3 border-b border-border">
+          <h2 className="text-sm font-semibold text-text-primary">Update art</h2>
+        </div>
+        <div className="px-5 py-4 flex flex-col gap-3">
+          {done ? (
+            <p className="text-xs text-green-400">
+              Art embed job{trackIds.length > 1 ? 's' : ''} queued for <span className="font-medium">{label}</span>.
+            </p>
+          ) : (
+            <>
+              <p className="text-xs text-text-muted">
+                {label}{trackIds.length > 1 ? ` (${trackIds.length} tracks)` : ''}
+              </p>
+              <input
+                type="text"
+                placeholder="Cover art URL (https://…)"
+                value={url}
+                onChange={e => setUrl(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleEmbed() }}
+                autoFocus
+                className="text-xs bg-bg-base border border-border rounded px-3 py-1.5 text-text-primary placeholder:text-text-muted/50 focus:outline-none focus:border-accent"
+              />
+              {error && <p className="text-xs text-destructive">{error}</p>}
+            </>
+          )}
+        </div>
+        <div className="px-5 pb-4 pt-1 flex justify-end gap-2">
+          <button
+            onClick={onClose}
+            className="text-xs border border-border text-text-muted rounded px-3 py-1 hover:text-text-primary hover:border-accent"
+          >
+            {done ? 'Close' : 'Cancel'}
+          </button>
+          {!done && (
+            <button
+              onClick={handleEmbed}
+              disabled={saving || !url.trim()}
+              className="text-xs bg-accent text-bg-base rounded px-3 py-1 font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {saving ? 'Embedding…' : 'Embed'}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   )

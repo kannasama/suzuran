@@ -39,13 +39,13 @@ Continuing Phase 0.7 on branch `0.7`. This session picked up after context compa
 Files: `src/api/tracks.rs`, `src/api/tag_suggestions.rs`, `src/services/tagging.rs`,
 `tests/tagging_service.rs`, `ui/src/api/tagSuggestions.ts`
 
-## In progress
-
 ### Batch 2 — Frontend album art in LibraryPage.tsx
-- Art thumbnail in album/artist/albumartist group rows (32×32; `/api/v1/tracks/:id/art` → fallback `cover_art_url`)
-- "Update art…" in group row ⋯ menu and per-track ⋯ menu → opens ArtUpdateModal
-- SuggestionReviewPane: "Art" row in diff table; checkbox for `applyArt` (default `!!suggestion.cover_art_url`)
-- `handleAccept` passes `applyArt` to `tagSuggestionsApi.accept(id, fields, applyArt)`
+- Art thumbnail (32×32) in group rows: `has_embedded_art` track → `/api/v1/tracks/:id/art`, else `cover_art_url` from suggestion
+- "Update art…" in group ⋯ menu and per-track ⋯ menu → opens `ArtUpdateModal`
+- `ArtUpdateModal`: URL input + Embed button; queues `art_process` embed jobs for all tracks in group
+- `SuggestionReviewPane`: Art row at top of diff table (current embedded state / suggested thumbnail / `applyArt` checkbox)
+- `applyArt` state defaults to `!!suggestion.cover_art_url`; `noneChecked` condition updated to include `!applyArt`
+- `handleAccept` passes `applyArt` as 3rd arg to `tagSuggestionsApi.accept`
 
 ## Feedback Captured
 
