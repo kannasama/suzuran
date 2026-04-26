@@ -1,7 +1,6 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { TopNav } from '../components/TopNav'
-import { Checkbox } from '../components/Checkbox'
 import { IngestSearchDialog } from '../components/IngestSearchDialog'
 import { ImageUpload } from '../components/ImageUpload'
 import { tagSuggestionsApi } from '../api/tagSuggestions'
