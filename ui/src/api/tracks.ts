@@ -19,3 +19,16 @@ export interface ScheduleDeleteResult {
 export function scheduleDelete(ids: number[], immediate = false): Promise<ScheduleDeleteResult> {
   return client.post<ScheduleDeleteResult>('/tracks/delete', { ids, immediate }).then(r => r.data);
 }
+
+export function getPendingTags(id: number): Promise<Record<string, string>> {
+  return client.get<{ tags: Record<string, string> }>(`/tracks/${id}/pending-tags`)
+    .then(r => r.data.tags ?? {});
+}
+
+export function setPendingTags(id: number, tags: Record<string, string>): Promise<void> {
+  return client.put(`/tracks/${id}/pending-tags`, { tags }).then(() => {});
+}
+
+export function clearPendingTags(id: number): Promise<void> {
+  return client.delete(`/tracks/${id}/pending-tags`).then(() => {});
+}
