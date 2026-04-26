@@ -1145,23 +1145,23 @@ function TrackRow({
           <span style={w('genre')} className="py-0.5 text-text-muted truncate px-1">{track.genre ?? '—'}</span>
         )}
         {visibleColumns.has('format') && (
-          <span style={w('format')} className="py-0.5 text-text-muted font-mono uppercase text-[10px]">
+          <span style={w('format')} className="py-0.5 text-text-muted font-mono uppercase">
             {getFileExtension(track.relative_path)}
           </span>
         )}
         {visibleColumns.has('bitrate') && (
-          <span style={w('bitrate')} className="py-0.5 text-text-muted font-mono text-[11px]">{formatQuality(track.bitrate, track.bit_depth, track.sample_rate)}</span>
+          <span style={w('bitrate')} className="py-0.5 text-text-muted font-mono">{formatQuality(track.bitrate, track.bit_depth, track.sample_rate)}</span>
         )}
         {visibleColumns.has('duration') && (
           <span style={w('duration')} className="py-0.5 text-text-muted font-mono">{formatDuration(track.duration_secs)}</span>
         )}
         {visibleColumns.has('filename') && (
-          <span style={w('filename')} className="py-0.5 text-text-muted font-mono text-[11px] truncate px-1">
+          <span style={w('filename')} className="py-0.5 text-text-muted font-mono truncate px-1">
             {track.relative_path.split('/').pop() ?? '—'}
           </span>
         )}
         {visibleColumns.has('relative_path') && (
-          <span style={w('relative_path')} className="py-0.5 text-text-muted font-mono text-[10px] truncate px-1">
+          <span style={w('relative_path')} className="py-0.5 text-text-muted font-mono truncate px-1">
             {track.relative_path}
           </span>
         )}
@@ -1217,12 +1217,12 @@ function DerivedTrackRow({
   const w = (key: string) => ({ width: colWidths[key] ?? DEFAULT_COL_WIDTHS[key], flexShrink: 0, overflow: 'hidden' })
 
   return (
-    <div className="flex items-center gap-0 border-b border-border-subtle text-xs text-text-muted/60 select-none bg-bg-base/40">
+    <div className="flex items-center gap-0 border-b border-border-subtle text-xs select-none bg-bg-base/40">
       {/* indent + connector in place of checkbox */}
-      <span style={{ width: CB_COL_WIDTH, flexShrink: 0 }} className="flex items-center justify-center py-0.5 text-text-muted/40 text-[10px]">↳</span>
+      <span style={{ width: CB_COL_WIDTH, flexShrink: 0 }} className="flex items-center justify-center py-0.5 text-text-muted text-[10px]">↳</span>
       {visibleColumns.has('num') && <span style={w('num')} className="py-0.5" />}
       {visibleColumns.has('title') && (
-        <span style={w('title')} className="py-0.5 truncate px-1 font-mono text-[10px] text-text-muted/70">
+        <span style={w('title')} className="py-0.5 truncate px-1 font-mono text-text-muted">
           {profileLabel}
         </span>
       )}
@@ -1231,23 +1231,23 @@ function DerivedTrackRow({
       {visibleColumns.has('year')     && <span style={w('year')}     className="py-0.5" />}
       {visibleColumns.has('genre')    && <span style={w('genre')}    className="py-0.5" />}
       {visibleColumns.has('format') && (
-        <span style={w('format')} className="py-0.5 font-mono uppercase text-[10px]">
+        <span style={w('format')} className="py-0.5 text-text-muted font-mono uppercase">
           {getFileExtension(derived.relative_path)}
         </span>
       )}
       {visibleColumns.has('bitrate') && (
-        <span style={w('bitrate')} className="py-0.5 font-mono text-[11px]">{formatQuality(derived.bitrate, derived.bit_depth, derived.sample_rate)}</span>
+        <span style={w('bitrate')} className="py-0.5 text-text-muted font-mono">{formatQuality(derived.bitrate, derived.bit_depth, derived.sample_rate)}</span>
       )}
       {visibleColumns.has('duration') && (
-        <span style={w('duration')} className="py-0.5 font-mono">{formatDuration(derived.duration_secs)}</span>
+        <span style={w('duration')} className="py-0.5 text-text-muted font-mono">{formatDuration(derived.duration_secs)}</span>
       )}
       {visibleColumns.has('filename') && (
-        <span style={w('filename')} className="py-0.5 font-mono text-[11px] truncate px-1">
+        <span style={w('filename')} className="py-0.5 text-text-muted font-mono truncate px-1">
           {derived.relative_path.split('/').pop() ?? '—'}
         </span>
       )}
       {visibleColumns.has('relative_path') && (
-        <span style={w('relative_path')} className="py-0.5 font-mono text-[10px] truncate px-1">
+        <span style={w('relative_path')} className="py-0.5 text-text-muted font-mono truncate px-1">
           {derived.relative_path}
         </span>
       )}
