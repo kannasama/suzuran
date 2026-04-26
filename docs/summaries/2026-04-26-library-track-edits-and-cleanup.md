@@ -57,9 +57,11 @@ reused by `transcode.rs` and `delete_tracks.rs` without duplication.
 
 ---
 
-## Commits (pending)
+## Commits
 
-- `feat: add POST /tracks/:id/apply-tags with derived track propagation`
-- `fix: delete_tracks removes companion files and sweeps empty dirs`
-- `fix: transcode job copies companion files to derived output dir`
-- `docs: session summary`
+- `docs: in-progress session summary — library track edits and cleanup`
+- `fix: library track tag apply, companion cleanup, derived propagation`
+
+## Build Status
+
+Docker build passes — all Rust tests pass, TypeScript compiles clean.
