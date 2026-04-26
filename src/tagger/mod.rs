@@ -86,8 +86,11 @@ pub fn read_tags(path: &Path) -> anyhow::Result<(HashMap<String, String>, AudioP
         read_field!(tag, tags, "lyrics",         ItemKey::Lyrics);
         read_field!(tag, tags, "isrc",           ItemKey::Isrc);
         read_field!(tag, tags, "barcode",        ItemKey::Barcode);
-        read_field!(tag, tags, "musicbrainz_trackid",       ItemKey::MusicBrainzTrackId);
-        read_field!(tag, tags, "musicbrainz_artistid",      ItemKey::MusicBrainzArtistId);
+        read_field!(tag, tags, "musicbrainz_trackid",        ItemKey::MusicBrainzRecordingId);
+        read_field!(tag, tags, "musicbrainz_releasetrackid", ItemKey::MusicBrainzTrackId);
+        read_field!(tag, tags, "musicbrainz_releaseid",      ItemKey::MusicBrainzReleaseId);
+        read_field!(tag, tags, "musicbrainz_artistid",       ItemKey::MusicBrainzArtistId);
+        read_field!(tag, tags, "musicbrainz_albumartistid",  ItemKey::MusicBrainzReleaseArtistId);
         read_field!(tag, tags, "musicbrainz_releasegroupid", ItemKey::MusicBrainzReleaseGroupId);
         read_field!(tag, tags, "replaygain_track_gain",     ItemKey::ReplayGainTrackGain);
         read_field!(tag, tags, "replaygain_track_peak",     ItemKey::ReplayGainTrackPeak);
@@ -143,8 +146,11 @@ pub fn write_tags(path: &Path, tags: &HashMap<String, String>) -> anyhow::Result
         write_field!(tag, tags, "lyrics",        ItemKey::Lyrics);
         write_field!(tag, tags, "isrc",          ItemKey::Isrc);
         write_field!(tag, tags, "barcode",       ItemKey::Barcode);
-        write_field!(tag, tags, "musicbrainz_trackid",        ItemKey::MusicBrainzTrackId);
+        write_field!(tag, tags, "musicbrainz_trackid",        ItemKey::MusicBrainzRecordingId);
+        write_field!(tag, tags, "musicbrainz_releasetrackid", ItemKey::MusicBrainzTrackId);
+        write_field!(tag, tags, "musicbrainz_releaseid",      ItemKey::MusicBrainzReleaseId);
         write_field!(tag, tags, "musicbrainz_artistid",       ItemKey::MusicBrainzArtistId);
+        write_field!(tag, tags, "musicbrainz_albumartistid",  ItemKey::MusicBrainzReleaseArtistId);
         write_field!(tag, tags, "musicbrainz_releasegroupid", ItemKey::MusicBrainzReleaseGroupId);
         write_field!(tag, tags, "replaygain_track_gain",      ItemKey::ReplayGainTrackGain);
         write_field!(tag, tags, "replaygain_track_peak",      ItemKey::ReplayGainTrackPeak);

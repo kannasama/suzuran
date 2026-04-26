@@ -1240,6 +1240,9 @@ impl Store for PgStore {
                  genre         = ($1 ->> 'genre'),
                  tracknumber   = ($1 ->> 'tracknumber'),
                  discnumber    = ($1 ->> 'discnumber'),
+                 totaldiscs    = ($1 ->> 'totaldiscs'),
+                 totaltracks   = ($1 ->> 'totaltracks'),
+                 composer      = ($1 ->> 'composer'),
                  label         = ($1 ->> 'label'),
                  catalognumber = ($1 ->> 'catalognumber')
                WHERE id = $2"#,

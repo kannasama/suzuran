@@ -1282,6 +1282,9 @@ impl Store for SqliteStore {
                  genre         = ?,
                  tracknumber   = ?,
                  discnumber    = ?,
+                 totaldiscs    = ?,
+                 totaltracks   = ?,
+                 composer      = ?,
                  label         = ?,
                  catalognumber = ?
                WHERE id = ?"#,
@@ -1295,6 +1298,9 @@ impl Store for SqliteStore {
         .bind(get("genre"))
         .bind(get("tracknumber"))
         .bind(get("discnumber"))
+        .bind(get("totaldiscs"))
+        .bind(get("totaltracks"))
+        .bind(get("composer"))
         .bind(get("label"))
         .bind(get("catalognumber"))
         .bind(track_id)

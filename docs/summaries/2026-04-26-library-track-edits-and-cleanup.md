@@ -61,7 +61,47 @@ reused by `transcode.rs` and `delete_tracks.rs` without duplication.
 
 - `docs: in-progress session summary — library track edits and cleanup`
 - `fix: library track tag apply, companion cleanup, derived propagation`
+- `docs: update filemap and session summary for library tag fixes`
 
 ## Build Status
 
 Docker build passes — all Rust tests pass, TypeScript compiles clean.
+
+---
+
+## Follow-up — MB ID Fields and Indexed Column Gaps
+
+### Bug A — Wrong and missing MusicBrainz field mappings in tagger
+
+**Root cause:** lofty's `ItemKey` naming is counterintuitive:
+- `ItemKey::MusicBrainzRecordingId` → writes `MUSICBRAINZ_TRACKID` (the standard recording ID tag)
+- `ItemKey::MusicBrainzTrackId` → writes `MUSICBRAINZ_RELEASETRACKID` (per-release track ID)
+- `ItemKey::MusicBrainzReleaseId` → writes `MUSICBRAINZ_ALBUMID` (the release ID)
+
+Current `tagger/mod.rs` maps `"musicbrainz_trackid"` → `ItemKey::MusicBrainzTrackId`, which
+writes `MUSICBRAINZ_RELEASETRACKID` — wrong. The MB service stores the recording ID under
+`"musicbrainz_trackid"` and it should write to `MUSICBRAINZ_TRACKID` via `MusicBrainzRecordingId`.
+
+`"musicbrainz_releaseid"` is entirely absent from both `read_tags` and `write_tags`.
+`"musicbrainz_albumartistid"` is also absent.
+
+**Agreed fix:** `src/tagger/mod.rs` — fix `musicbrainz_trackid` → `MusicBrainzRecordingId`;
+add `musicbrainz_releaseid` → `MusicBrainzReleaseId`; add `musicbrainz_albumartistid` →
+`MusicBrainzReleaseArtistId` in both `read_tags` and `write_tags`.
+
+---
+
+### Bug B — `update_track_tags` missing indexed columns
+
+**Root cause:** `update_track_tags` in both DAL implementations omits `totaldiscs`,
+`totaltracks`, and `composer` from the `UPDATE` statement. The `tags` JSONB blob and
+audio file are written correctly; only the indexed columns are stale.
+
+**Agreed fix:** `src/dal/sqlite.rs` + `src/dal/postgres.rs` — add the three missing
+columns to the `UPDATE` statement in `update_track_tags`.
+
+**Files:** `src/tagger/mod.rs`, `src/dal/sqlite.rs`, `src/dal/postgres.rs`
+
+## Pending Commits
+
+- `fix: correct MB field mappings in tagger and add missing indexed columns`
