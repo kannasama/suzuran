@@ -225,7 +225,10 @@ export function IngestSearchDialog({ track, onClose }: Props) {
                     return (
                       <div key={i} className="flex items-center gap-2 px-2 py-1.5 bg-bg-panel border border-border rounded text-xs">
                         <div className="flex flex-col flex-1 min-w-0">
-                          <span className="text-text-primary font-medium truncate">{c.tags.title ?? '—'}</span>
+                          <span className="text-text-primary font-medium truncate">
+                            {c.tags.tracknumber && <span className="text-text-muted mr-1">#{c.tags.tracknumber}</span>}
+                            {c.tags.title ?? '—'}
+                          </span>
                           <span className="text-text-muted truncate">{c.tags.artist ?? '—'} · {c.tags.album ?? '—'}</span>
                           {c.tags.date && <span className="text-text-muted">{c.tags.date}</span>}
                         </div>
