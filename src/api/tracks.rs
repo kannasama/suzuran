@@ -16,6 +16,7 @@ use crate::{
     jobs::FingerprintPayload,
     models::Track,
     state::AppState,
+    tagger,
 };
 
 #[derive(serde::Deserialize)]
@@ -35,6 +36,7 @@ pub fn router() -> Router<AppState> {
         .route("/:id/art", get(get_track_art))
         .route("/:id/lookup", post(enqueue_lookup))
         .route("/:id/pending-tags", get(get_pending_tags).put(set_pending_tags).delete(clear_pending_tags))
+        .route("/:id/apply-tags", post(apply_tags))
         .route("/delete", post(schedule_delete))
 }
 
@@ -278,5 +280,86 @@ pub async fn clear_pending_tags(
     State(state): State<AppState>,
 ) -> Result<StatusCode, AppError> {
     state.db.clear_pending_tags(track_id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// POST /api/v1/tracks/:id/apply-tags
+///
+/// Merges the track's `pending_tags` working copy into its existing tags, writes the
+/// result to the audio file on disk, updates the DB record (tags JSONB + indexed
+/// columns), propagates the same tags to all linked derived tracks, then clears
+/// `pending_tags`.  Returns 409 if no pending_tags are set.
+pub async fn apply_tags(
+    _auth: AuthUser,
+    Path(track_id): Path<i64>,
+    State(state): State<AppState>,
+) -> Result<StatusCode, AppError> {
+    let track = state.db.get_track(track_id).await?
+        .ok_or_else(|| AppError::NotFound(format!("track {track_id} not found")))?;
+
+    let pending = state.db.get_pending_tags(track_id).await?
+        .ok_or_else(|| AppError::BadRequest("no pending_tags set for this track".into()))?;
+
+    let library = state.db.get_library(track.library_id).await?
+        .ok_or_else(|| AppError::NotFound(format!("library {} not found", track.library_id)))?;
+
+    // Merge: existing tags + pending patch (pending wins on conflict)
+    let mut merged: std::collections::HashMap<String, String> =
+        serde_json::from_value(track.tags.clone()).unwrap_or_default();
+    let patch: std::collections::HashMap<String, String> =
+        serde_json::from_value(pending).unwrap_or_default();
+    merged.extend(patch);
+
+    let merged_json = serde_json::to_value(&merged)
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("serialize tags: {e}")))?;
+
+    // Write to source audio file
+    let abs_path = PathBuf::from(library.root_path.trim_end_matches('/'))
+        .join(track.relative_path.trim_start_matches('/'));
+    let abs_path_clone = abs_path.clone();
+    let merged_clone = merged.clone();
+    tokio::task::spawn_blocking(move || tagger::write_tags(&abs_path_clone, &merged_clone))
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("spawn_blocking write_tags: {e}")))?
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("write_tags: {e}")))?;
+
+    // Update source DB record
+    state.db.update_track_tags(track_id, merged_json.clone()).await?;
+
+    // Propagate to derived tracks
+    let derived_links = state.db.list_derived_tracks(track_id).await.unwrap_or_default();
+    for link in derived_links {
+        let derived = match state.db.get_track(link.derived_track_id).await? {
+            Some(t) => t,
+            None => continue,
+        };
+        let derived_lib = match state.db.get_library(derived.library_id).await? {
+            Some(l) => l,
+            None => continue,
+        };
+        let derived_abs = PathBuf::from(derived_lib.root_path.trim_end_matches('/'))
+            .join(derived.relative_path.trim_start_matches('/'));
+        let derived_abs_clone = derived_abs.clone();
+        let merged_for_derived = merged.clone();
+        if let Err(e) = tokio::task::spawn_blocking(move || {
+            tagger::write_tags(&derived_abs_clone, &merged_for_derived)
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("spawn_blocking: {e}"))
+        .and_then(|r| r.map_err(|e| anyhow::anyhow!("write_tags: {e}")))
+        {
+            tracing::warn!(derived_track_id = link.derived_track_id, error = %e,
+                "apply_tags: failed to write tags to derived track — skipping");
+            continue;
+        }
+        if let Err(e) = state.db.update_track_tags(link.derived_track_id, merged_json.clone()).await {
+            tracing::warn!(derived_track_id = link.derived_track_id, error = %e,
+                "apply_tags: failed to update derived track DB record — skipping");
+        }
+    }
+
+    // Clear pending_tags
+    let _ = state.db.clear_pending_tags(track_id).await;
+
     Ok(StatusCode::NO_CONTENT)
 }

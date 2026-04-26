@@ -4,7 +4,7 @@ use tokio::fs;
 use crate::{
     dal::Store,
     error::AppError,
-    jobs::{JobHandler, OrganizePayload},
+    jobs::{copy_companions, remove_empty_dirs, JobHandler, OrganizePayload, COMPANION_EXTS},
     organizer::rules::apply_rules,
 };
 
@@ -50,36 +50,7 @@ fn sanitize_rule_path(path: &str) -> String {
         .join("/")
 }
 
-/// After moving a file out of `old_dir`, walk up the directory tree removing
-/// empty directories — stopping before removing `stop_at` itself.
-async fn remove_empty_dirs(mut dir: std::path::PathBuf, stop_at: &Path) {
-    loop {
-        if dir == stop_at { break; }
-        // Only remove if it's actually empty
-        match fs::read_dir(&dir).await {
-            Ok(mut entries) => {
-                if entries.next_entry().await.ok().flatten().is_some() {
-                    break; // not empty
-                }
-            }
-            Err(_) => break,
-        }
-        if let Err(e) = fs::remove_dir(&dir).await {
-            tracing::warn!(path = %dir.display(), error = %e, "organize: failed to remove empty dir");
-            break;
-        }
-        tracing::debug!(path = %dir.display(), "organize: removed empty dir");
-        match dir.parent() {
-            Some(p) => dir = p.to_path_buf(),
-            None => break,
-        }
-    }
-}
 
-const COMPANION_EXTS: &[&str] = &[
-    "jpg", "jpeg", "png", "gif", "webp", "bmp", "tiff",
-    "cue", "log", "nfo", "txt", "m3u", "m3u8",
-];
 
 #[async_trait::async_trait]
 impl JobHandler for OrganizeJobHandler {
@@ -302,33 +273,6 @@ impl JobHandler for OrganizeJobHandler {
             "old_path": track.relative_path,
             "new_path": new_relative,
         }))
-    }
-}
-
-/// Copy companion files (art, cue sheets, logs, etc.) from src_dir into dest_dir.
-/// Used to propagate folder.jpg etc. from a source track directory into a derived dir.
-async fn copy_companions(src_dir: &Path, dest_dir: &Path) {
-    let mut entries = match fs::read_dir(src_dir).await {
-        Ok(e) => e,
-        Err(_) => return,
-    };
-    while let Ok(Some(entry)) = entries.next_entry().await {
-        let path = entry.path();
-        if !path.is_file() { continue; }
-        let ext = path.extension()
-            .and_then(|e| e.to_str())
-            .map(|e| e.to_lowercase())
-            .unwrap_or_default();
-        if !COMPANION_EXTS.contains(&ext.as_str()) { continue; }
-        let Some(fname) = path.file_name() else { continue };
-        let dest = dest_dir.join(fname);
-        if let Err(e) = fs::copy(&path, &dest).await {
-            tracing::warn!(src = %path.display(), dst = %dest.display(), error = %e,
-                "organize: failed to copy companion file to derived dir");
-        } else {
-            tracing::debug!(file = %fname.to_string_lossy(), derived_dir = %dest_dir.display(),
-                "organize: copied companion file to derived dir");
-        }
     }
 }
 

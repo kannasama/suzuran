@@ -1,6 +1,6 @@
-use std::sync::Arc;
+use std::{path::Path, sync::Arc};
 
-use crate::{dal::Store, error::AppError};
+use crate::{dal::Store, error::AppError, jobs::{remove_empty_dirs, COMPANION_EXTS}};
 
 pub struct DeleteTracksJobHandler;
 
@@ -24,11 +24,7 @@ impl super::JobHandler for DeleteTracksJobHandler {
         for track_id in &track_ids {
             let track = match db.get_track(*track_id).await? {
                 Some(t) => t,
-                None => {
-                    // Already gone — count as deleted.
-                    deleted += 1;
-                    continue;
-                }
+                None => { deleted += 1; continue; }
             };
 
             let library = match db.get_library(track.library_id).await? {
@@ -44,18 +40,27 @@ impl super::JobHandler for DeleteTracksJobHandler {
                 library.root_path.trim_end_matches('/'),
                 track.relative_path.trim_start_matches('/')
             );
+            let abs_path = Path::new(&abs_path);
 
-            // Remove from disk — ignore NotFound (file may already be gone).
-            match tokio::fs::remove_file(&abs_path).await {
+            // Remove the audio file
+            match tokio::fs::remove_file(abs_path).await {
                 Ok(()) => {}
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
                 Err(e) => {
-                    errors.push(format!("track {track_id}: delete {abs_path}: {e}"));
+                    errors.push(format!("track {track_id}: delete {}: {e}", abs_path.display()));
                     continue;
                 }
             }
 
-            // Remove DB record.
+            // Remove companion files from the same directory
+            if let Some(dir) = abs_path.parent() {
+                remove_companion_files(dir).await;
+
+                // Sweep empty parent dirs up to the library root
+                let library_root = Path::new(&library.root_path);
+                remove_empty_dirs(dir.to_path_buf(), library_root).await;
+            }
+
             if let Err(e) = db.delete_track(*track_id).await {
                 errors.push(format!("track {track_id}: db delete: {e}"));
                 continue;
@@ -64,15 +69,28 @@ impl super::JobHandler for DeleteTracksJobHandler {
             deleted += 1;
         }
 
-        tracing::info!(
-            deleted,
-            error_count = errors.len(),
-            "delete_tracks job complete"
-        );
+        tracing::info!(deleted, error_count = errors.len(), "delete_tracks job complete");
 
-        Ok(serde_json::json!({
-            "deleted": deleted,
-            "errors": errors,
-        }))
+        Ok(serde_json::json!({ "deleted": deleted, "errors": errors }))
+    }
+}
+
+/// Remove all companion files (art, logs, cue sheets, etc.) from `dir`.
+async fn remove_companion_files(dir: &Path) {
+    let mut entries = match tokio::fs::read_dir(dir).await {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let path = entry.path();
+        if !path.is_file() { continue; }
+        let ext = path.extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_lowercase())
+            .unwrap_or_default();
+        if !COMPANION_EXTS.contains(&ext.as_str()) { continue; }
+        if let Err(e) = tokio::fs::remove_file(&path).await {
+            tracing::warn!(path = %path.display(), error = %e, "delete_tracks: failed to remove companion file");
+        }
     }
 }

@@ -6,7 +6,7 @@ import { AlternativesPanel } from '../components/AlternativesPanel'
 import { IngestSearchDialog } from '../components/IngestSearchDialog'
 import { useAuth } from '../contexts/AuthContext'
 import { getLibrary, listLibraries, listLibraryTracks, triggerMaintenance } from '../api/libraries'
-import { enqueueLookup, scheduleDelete } from '../api/tracks'
+import { enqueueLookup, scheduleDelete, setPendingTags, applyTags } from '../api/tracks'
 import { enqueueOrganize } from '../api/organizationRules'
 import { tagSuggestionsApi } from '../api/tagSuggestions'
 import { artApi } from '../api/art'
@@ -1365,13 +1365,8 @@ function BulkEditPanel({
     const errors: string[] = []
     for (const track of selectedTracks) {
       try {
-        await tagSuggestionsApi.create({
-          track_id: track.id,
-          source: 'mb_search',
-          suggested_tags: tags,
-          confidence: 1.0,
-          ...(artUrl ? { cover_art_url: artUrl } : {}),
-        })
+        await setPendingTags(track.id, tags)
+        await applyTags(track.id)
         count++
       } catch (e) {
         errors.push(e instanceof Error ? e.message : 'unknown error')
@@ -1379,8 +1374,8 @@ function BulkEditPanel({
     }
     setSaving(false); setSavedCount(count)
     if (errors.length > 0) setError(`${errors.length} failed: ${errors[0]}`)
-    qc.invalidateQueries({ queryKey: ['tag-suggestions'] })
-    qc.invalidateQueries({ queryKey: ['ingest-count'] })
+    qc.invalidateQueries({ queryKey: ['tracks'] })
+    qc.invalidateQueries({ queryKey: ['library-tracks'] })
   }
 
   // Resolve the track/suggestion to review (single-select or drill-in)

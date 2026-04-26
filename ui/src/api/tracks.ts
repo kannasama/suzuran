@@ -32,3 +32,7 @@ export function setPendingTags(id: number, tags: Record<string, string>): Promis
 export function clearPendingTags(id: number): Promise<void> {
   return client.delete(`/tracks/${id}/pending-tags`).then(() => {});
 }
+
+export function applyTags(id: number): Promise<void> {
+  return client.post(`/tracks/${id}/apply-tags`).then(() => {});
+}

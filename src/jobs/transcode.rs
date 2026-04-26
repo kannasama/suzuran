@@ -6,7 +6,7 @@ use tokio::process::Command;
 use crate::{
     dal::{Store, UpsertTrack},
     error::AppError,
-    jobs::cue_split::hash_file,
+    jobs::{copy_companions, cue_split::hash_file},
     models::EncodingProfile,
     services::transcode_compat::{is_compatible, is_noop_transcode},
     tagger,
@@ -341,7 +341,13 @@ async fn handle_transcode(
         .create_track_link(track_id, derived_track.id)
         .await?;
 
-    // 18. Return success result
+    // 18. Copy companion files (art, logs, etc.) from source dir into derived output dir
+    let src_dir = Path::new(&src_lib.root_path).join(&track.relative_path);
+    if let (Some(src_dir), Some(dest_dir)) = (src_dir.parent(), out_path.parent()) {
+        copy_companions(src_dir, dest_dir).await;
+    }
+
+    // 19. Return success result
     Ok(serde_json::json!({
         "status": "completed",
         "track_id": track_id,
