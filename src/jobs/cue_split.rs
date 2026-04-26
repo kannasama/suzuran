@@ -91,6 +91,20 @@ async fn handle_cue_split(
         .unwrap_or("flac")
         .to_lowercase();
 
+    // Map extension to a lossless codec so ffmpeg re-encodes and writes
+    // correct duration metadata (Streaminfo sample count etc.) in the output.
+    // Stream copy (-c:a copy) leaves the original container header intact,
+    // causing media players and lofty to report the source file's full length.
+    let codec = match ext.as_str() {
+        "flac"         => "flac",
+        "wv"           => "wavpack",
+        "ape"          => "ape",
+        "tta"          => "tta",
+        "wav"          => "pcm_s16le",
+        "aiff" | "aif" => "pcm_s16be",
+        _              => "copy",
+    };
+
     let num_tracks = sheet.tracks.len();
     let mut tracks_created: i64 = 0;
 
@@ -124,7 +138,7 @@ async fn handle_cue_split(
         }
         args.extend_from_slice(&[
             "-c:a".into(),
-            "copy".into(),
+            codec.into(),
             "-y".into(),
             out_path.to_string_lossy().to_string(),
         ]);
