@@ -73,18 +73,22 @@ async fn handle_process_staged(
         track.relative_path.trim_start_matches('/')
     );
 
-    // 4. Apply tag suggestion if provided (write tags to the file at its current ingest/ path)
-    if let Some(suggestion_id) = staged_payload.tag_suggestion_id {
-        let suggestion = store
-            .get_tag_suggestion(suggestion_id)
-            .await?
-            .ok_or_else(|| AppError::NotFound(format!("tag suggestion {suggestion_id} not found")))?;
+    // 4. Resolve tag source: pending_tags (working copy) takes priority over suggestion.
+    let resolved_tags: Option<std::collections::HashMap<String, String>> =
+        if let Some(pending) = track.pending_tags.clone() {
+            // User has an established working copy — use it directly.
+            Some(serde_json::from_value(pending).unwrap_or_default())
+        } else if let Some(suggestion_id) = staged_payload.tag_suggestion_id {
+            let suggestion = store
+                .get_tag_suggestion(suggestion_id)
+                .await?
+                .ok_or_else(|| AppError::NotFound(format!("tag suggestion {suggestion_id} not found")))?;
+            Some(serde_json::from_value(suggestion.suggested_tags.clone()).unwrap_or_default())
+        } else {
+            None
+        };
 
-        // Deserialize suggested tags
-        let tags_map: std::collections::HashMap<String, String> =
-            serde_json::from_value(suggestion.suggested_tags.clone())
-                .unwrap_or_default();
-
+    if let Some(tags_map) = resolved_tags {
         // Write tags to audio file
         let src_path_for_tags = Path::new(&src_abs).to_owned();
         let tags_clone = tags_map.clone();
@@ -276,6 +280,8 @@ async fn handle_process_staged(
     // 10. Update track record
     store.update_track_path(track_id, &dest_relative, &new_hash).await?;
     store.set_track_status(track_id, "active").await?;
+    // Clear working copy now that the track is imported.
+    let _ = store.clear_pending_tags(track_id).await;
 
     // 11. Handle supersede: displace the old active track if requested
     if let Some(old_track_id) = staged_payload.supersede_track_id {

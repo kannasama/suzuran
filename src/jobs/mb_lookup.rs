@@ -61,6 +61,12 @@ impl super::JobHandler for MbLookupJobHandler {
             .await?
             .ok_or_else(|| AppError::NotFound(format!("track {track_id} not found")))?;
 
+        // If the user has already established a working copy, leave it alone.
+        if track.pending_tags.is_some() {
+            tracing::debug!(track_id, "pending_tags already set — skipping mb_lookup");
+            return Ok(serde_json::json!({ "skipped": true, "reason": "pending_tags set" }));
+        }
+
         // Prefer the dedicated column; fall back to the tags JSON blob.
         let fingerprint = track
             .acoustid_fingerprint
