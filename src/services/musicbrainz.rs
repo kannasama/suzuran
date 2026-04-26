@@ -339,17 +339,24 @@ impl MusicBrainzService {
 
     /// Text-search MusicBrainz for recordings matching title/artist/album.
     ///
-    /// Returns up to 5 `(tag_map, confidence)` pairs where confidence is
+    /// Returns up to 20 `(tag_map, confidence)` pairs where confidence is
     /// capped at 0.6 (MB text-search is inherently fuzzier than AcoustID).
+    /// tag_map includes `tracknumber` when available from the release medium.
     pub async fn search_recordings(
         &self,
         title: &str,
         artist: &str,
         album: &str,
     ) -> Result<Vec<(HashMap<String, String>, f64)>, AppError> {
-        let query = format!(
-            r#"recording:"{title}" AND artist:"{artist}" AND release:"{album}""#
-        );
+        let query = if !artist.is_empty() && !album.is_empty() {
+            format!(r#"recording:"{title}" AND artist:"{artist}" AND release:"{album}""#)
+        } else if !artist.is_empty() {
+            format!(r#"recording:"{title}" AND artist:"{artist}""#)
+        } else if !album.is_empty() {
+            format!(r#"recording:"{title}" AND release:"{album}""#)
+        } else {
+            format!(r#"recording:"{title}""#)
+        };
 
         self.mb_rate_limit().await;
         let url = format!("{}/recording/", self.mb_base);
@@ -359,7 +366,7 @@ impl MusicBrainzService {
             .query(&[
                 ("query", query.as_str()),
                 ("fmt", "json"),
-                ("limit", "5"),
+                ("limit", "20"),
             ])
             .send()
             .await
@@ -376,10 +383,8 @@ impl MusicBrainzService {
         };
 
         let mut out = Vec::new();
-        for rec_val in recordings.iter().take(5) {
-            let score_raw = rec_val["score"]
-                .as_f64()
-                .unwrap_or(0.0);
+        for rec_val in recordings.iter().take(20) {
+            let score_raw = rec_val["score"].as_f64().unwrap_or(0.0);
             let confidence = (score_raw / 100.0).min(0.6);
 
             // Parse enough structure to call to_tag_map
@@ -391,7 +396,24 @@ impl MusicBrainzService {
             // Use first release if present, or construct a minimal one from the recording
             if let Some(releases) = &rec.releases {
                 if let Some(release) = releases.first() {
-                    let tags = Self::to_tag_map(&rec, release);
+                    let mut tags = Self::to_tag_map(&rec, release);
+                    // Inject tracknumber from the release medium track position when available.
+                    if !tags.contains_key("tracknumber") {
+                        if let Some(track_num) = rec_val
+                            .get("releases").and_then(|r| r.as_array())
+                            .and_then(|arr| arr.first())
+                            .and_then(|r| r.get("media"))
+                            .and_then(|m| m.as_array())
+                            .and_then(|arr| arr.first())
+                            .and_then(|m| m.get("track"))
+                            .and_then(|t| t.as_array())
+                            .and_then(|arr| arr.first())
+                            .and_then(|t| t.get("number"))
+                            .and_then(|n| n.as_str())
+                        {
+                            tags.insert("tracknumber".into(), track_num.to_string());
+                        }
+                    }
                     out.push((tags, confidence));
                     continue;
                 }
