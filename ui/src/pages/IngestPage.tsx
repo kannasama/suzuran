@@ -307,10 +307,10 @@ function AlbumGroup({
   const [showArtUpload, setShowArtUpload] = useState(false)
   const [selectedAltIdx, setSelectedAltIdx] = useState<number | null>(null)
 
-  // Album-level alternatives from first suggestion that has them
-  const albumSugWithAlts = Object.values(suggestionsByTrack).find(s => (s.alternatives?.length ?? 0) > 0)
-  const albumAlternatives = albumSugWithAlts?.alternatives ?? []
-  const primaryAlbumLabel = albumSugWithAlts?.suggested_tags?.album ?? firstTrack.album ?? 'Current release'
+  // Album-level alternatives driven by the first track's best suggestion
+  const albumAlternatives = firstSuggestion?.alternatives ?? []
+  const primaryAlbumLabel = (firstSuggestion?.suggested_tags as Record<string, string> | undefined)?.album
+    ?? firstTrack.album ?? 'Primary suggestion'
 
   return (
     <div className="border border-border rounded bg-bg-panel">
@@ -476,6 +476,12 @@ function TrackRow({
     getPendingTags(track.id).then(tags => {
       if (Object.keys(tags).length > 0) {
         setWorkingTags(tags)
+        // Auto-select the alternative whose release ID matches the working copy
+        const releaseId = tags.musicbrainz_releaseid
+        if (releaseId && suggestion?.alternatives) {
+          const matchIdx = suggestion.alternatives.findIndex(alt => alt.mb_release_id === releaseId)
+          if (matchIdx >= 0) setTrackAltIdx(matchIdx)
+        }
       } else {
         // Seed from current track tags
         const seed: Record<string, string> = {}
@@ -493,7 +499,7 @@ function TrackRow({
       }
       setWorkingTags(seed)
     })
-  }, [isExpanded, track])
+  }, [isExpanded, track, suggestion])
 
   const status = getTrackStatus(workingTags, suggestion)
   const pct = suggestion ? Math.round(suggestion.confidence * 100) : null
@@ -517,6 +523,8 @@ function TrackRow({
     if (!src) return
     const merged = { ...(workingTags ?? {}), ...src }
     setWorkingTags(merged)
+    // Lock the dropdown to whichever alternative was just applied
+    if (effectiveAltIdx !== null) setTrackAltIdx(effectiveAltIdx)
     await setPendingTags(track.id, merged)
   }
 
