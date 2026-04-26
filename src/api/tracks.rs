@@ -5,7 +5,7 @@ use axum::{
     extract::{Path, State},
     http::{header, HeaderMap, StatusCode},
     response::Response,
-    routing::{get, post},
+    routing::{delete, get, post, put},
     Json, Router,
 };
 use tokio::io::AsyncSeekExt;
@@ -18,6 +18,11 @@ use crate::{
     state::AppState,
 };
 
+#[derive(serde::Deserialize)]
+struct PendingTagsBody {
+    tags: serde_json::Value,
+}
+
 /// Minutes to delay a scheduled deletion before the job runs.
 const DELETE_DELAY_MINS: i64 = 15;
 
@@ -29,6 +34,7 @@ pub fn router() -> Router<AppState> {
         .route("/:id/stream", get(stream))
         .route("/:id/art", get(get_track_art))
         .route("/:id/lookup", post(enqueue_lookup))
+        .route("/:id/pending-tags", get(get_pending_tags).put(set_pending_tags).delete(clear_pending_tags))
         .route("/delete", post(schedule_delete))
 }
 
@@ -241,4 +247,36 @@ pub async fn get_track_art(
         .header(header::CACHE_CONTROL, "public, max-age=3600")
         .body(Body::from(data))
         .map_err(|e| AppError::Internal(anyhow::anyhow!("response build error: {e}")))
+}
+
+/// GET /api/v1/tracks/:id/pending-tags
+pub async fn get_pending_tags(
+    _auth: AuthUser,
+    Path(track_id): Path<i64>,
+    State(state): State<AppState>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let tags = state.db.get_pending_tags(track_id).await?
+        .unwrap_or_else(|| serde_json::json!({}));
+    Ok(Json(serde_json::json!({ "tags": tags })))
+}
+
+/// PUT /api/v1/tracks/:id/pending-tags
+pub async fn set_pending_tags(
+    _auth: AuthUser,
+    Path(track_id): Path<i64>,
+    State(state): State<AppState>,
+    Json(body): Json<PendingTagsBody>,
+) -> Result<StatusCode, AppError> {
+    state.db.set_pending_tags(track_id, body.tags).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// DELETE /api/v1/tracks/:id/pending-tags
+pub async fn clear_pending_tags(
+    _auth: AuthUser,
+    Path(track_id): Path<i64>,
+    State(state): State<AppState>,
+) -> Result<StatusCode, AppError> {
+    state.db.clear_pending_tags(track_id).await?;
+    Ok(StatusCode::NO_CONTENT)
 }
