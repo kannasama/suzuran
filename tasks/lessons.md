@@ -581,6 +581,20 @@ files — it is permission to branch and then edit files.
 **How to apply:** After every plan approval, before every first Edit/Write/Bash-that-modifies-code:
 run `git branch`, read the output, branch if needed. No exceptions.
 
+## 2026-04-25 — Present plan before implementing — ninth reminder
+
+**Mistake:** User shared a screenshot showing a UI bug. The bug was diagnosed and fixes were written, committed, and then a "plan" was presented after the fact. This is the ninth recurrence.
+
+**The post-hoc plan is worthless.** "What's the point of approving a plan after the fact?" — user, 2026-04-25. A plan presented after committing the code is not a plan gate; it is a summary.
+
+**Rule:** No code, no file edits, no commits — until a plan has been presented and the user has typed explicit approval. This applies even when the fix seems obvious from a screenshot, even for small changes, even after context compaction resumes a session.
+
+**How to apply:**
+1. Observe issue (screenshot, bug report, etc.) → output root cause diagnosis + file-by-file proposed changes
+2. End the response — no edits, no tool calls that modify files
+3. Wait for explicit approval ("proceed", "yes", "looks good")
+4. Only then write any code
+
 ## 2026-04-25 — Current release version is v1.0.0-1
 
 **Fact:** As of 2026-04-25, all four development phases are complete and the project was released
