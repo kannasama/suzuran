@@ -92,3 +92,23 @@ Docker build passes — all Rust tests pass, TypeScript compiles clean.
 
 **Commits:**
 - `feat: album-level search + release ID search for both track and album`
+
+---
+
+## Follow-up — Enqueue Transcode Jobs for Library Profile
+
+**Feature:** Trigger batch transcode jobs for a newly-added library profile.
+
+**Bug fixed:** All three existing transcode API endpoints (`POST /tracks/:id/transcode`, `POST /libraries/:id/transcode`, `POST /libraries/:id/transcode-sync`) were sending job payloads with `source_track_id` / `target_library_id`, but the `TranscodeJobHandler` reads `track_id` / `library_profile_id`. Every endpoint was broken.
+
+**Changes:**
+
+- `src/api/transcode.rs` — `TranscodeRequest` changed from `target_library_id` to `library_profile_id`; all three handlers now enqueue `{track_id, library_profile_id}`; `transcode_library_sync` now filters derived tracks via `list_tracks_by_profile(profile.library_id, Some(profile_id))` instead of listing all target-library tracks
+- `src/api/library_profiles.rs` — new `POST /:id/enqueue-transcode` handler; lists all source tracks in the profile's library, enqueues one transcode job each, returns `{enqueued: N}`; added `post` to routing imports
+- `ui/src/api/libraryProfiles.ts` — `enqueueProfileTranscodes(id)` → `POST /library-profiles/:id/enqueue-transcode`
+- `ui/src/components/LibraryFormModal.tsx` — "Enqueue" button per profile row; shows enqueued count inline on success
+- `tests/transcode_api.rs` — updated all tests to use `library_profile_id` in request bodies, create `LibraryProfile` fixtures, and assert on `track_id`/`library_profile_id` in job payload
+
+**Commits:**
+- `feat: enqueue transcode jobs per library profile`
+- `fix: update transcode_api tests for new library_profile_id payload`
