@@ -178,6 +178,16 @@ Multiple rounds of diagnosis on the organize job revealed compounding bugs. Outs
 
 **Note on rescue:** Files currently at library root without extension (corrupted by prior runs) will be rescued by Fix A+B: organize job finds file at `library_root/TUMENECO/...` (extensionless), detects format via magic bytes, moves to `library_root/source/TUMENECO/.../<filename>.<ext>`.
 
+### 2026-04-25 — Round 7 organize + UI polish (commits: 0c6ad49, 6c7db7a)
+
+**Companion files in derived directories** — derived track directories were missing folder.jpg etc. after organize. Fix: after moving a derived track to its new location, `copy_companions()` copies all companion files from the source track's directory into the derived directory (`fs::copy`, not rename — source retains its own copies).
+
+**TrackRow font size standardization** — format, bitrate, filename, and relative_path columns had inconsistent `text-[10px]`/`text-[11px]` overrides. All cells now inherit `text-xs` (12px) from the container row, matching the rest of the row's text.
+
+**DerivedTrackRow text color + font size** — container had `text-text-muted/60` which collapsed to near-black on dark backgrounds (library is accessed over NFS, theme renders correctly on BTRFS but muted opacity computed incorrectly). Fix: removed container-level color; each populated cell now has explicit `text-text-muted` matching TrackRow. Per-cell size overrides removed for the same consistency. Profile label (`↳` column) loses the `/70` opacity modifier, gains proper `truncate px-1` spacing.
+
+Files: `ui/src/pages/LibraryPage.tsx`, `src/jobs/organize.rs`
+
 ### 2026-04-25 — Round 6 organize follow-up (commit: fdb00af)
 
 Three issues reported after round 5:
