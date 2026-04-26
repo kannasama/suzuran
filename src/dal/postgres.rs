@@ -1295,6 +1295,44 @@ impl Store for PgStore {
         .map_err(AppError::Database)
     }
 
+    async fn get_pending_tags(&self, track_id: i64) -> Result<Option<serde_json::Value>, AppError> {
+        let row: Option<(Option<serde_json::Value>,)> =
+            sqlx::query_as("SELECT pending_tags FROM tracks WHERE id = $1")
+                .bind(track_id)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(AppError::Database)?;
+        match row {
+            None => Err(AppError::NotFound(format!("track {track_id}"))),
+            Some((tags,)) => Ok(tags),
+        }
+    }
+
+    async fn set_pending_tags(&self, track_id: i64, tags: serde_json::Value) -> Result<(), AppError> {
+        let result = sqlx::query("UPDATE tracks SET pending_tags = $1 WHERE id = $2")
+            .bind(tags)
+            .bind(track_id)
+            .execute(&self.pool)
+            .await
+            .map_err(AppError::Database)?;
+        if result.rows_affected() == 0 {
+            return Err(AppError::NotFound(format!("track {track_id}")));
+        }
+        Ok(())
+    }
+
+    async fn clear_pending_tags(&self, track_id: i64) -> Result<(), AppError> {
+        let result = sqlx::query("UPDATE tracks SET pending_tags = NULL WHERE id = $1")
+            .bind(track_id)
+            .execute(&self.pool)
+            .await
+            .map_err(AppError::Database)?;
+        if result.rows_affected() == 0 {
+            return Err(AppError::NotFound(format!("track {track_id}")));
+        }
+        Ok(())
+    }
+
     // ── virtual libraries ─────────────────────────────────────────
 
     async fn create_virtual_library(&self, dto: UpsertVirtualLibrary) -> Result<VirtualLibrary, AppError> {

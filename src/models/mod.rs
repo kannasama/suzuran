@@ -123,6 +123,7 @@ pub struct Track {
     pub acoustid_fingerprint: Option<String>,
     pub status: String,
     pub library_profile_id: Option<i64>,
+    pub pending_tags: Option<serde_json::Value>,
     pub last_scanned_at: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
 }

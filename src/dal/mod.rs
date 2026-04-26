@@ -367,6 +367,11 @@ pub trait Store: Send + Sync {
     async fn pending_tag_suggestion_count(&self) -> Result<i64, AppError>;
     async fn update_track_tags(&self, track_id: i64, tags: serde_json::Value) -> Result<(), AppError>;
     async fn set_track_has_embedded_art(&self, track_id: i64, has_art: bool) -> Result<(), AppError>;
+
+    // ── pending tags (working copy) ───────────────────────────────
+    async fn get_pending_tags(&self, track_id: i64) -> Result<Option<serde_json::Value>, AppError>;
+    async fn set_pending_tags(&self, track_id: i64, tags: serde_json::Value) -> Result<(), AppError>;
+    async fn clear_pending_tags(&self, track_id: i64) -> Result<(), AppError>;
     async fn update_track_audio_properties(
         &self,
         track_id: i64,
