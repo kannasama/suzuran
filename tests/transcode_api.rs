@@ -5,7 +5,7 @@ use webauthn_rs::WebauthnBuilder;
 use suzuran_server::{
     build_router,
     config::Config,
-    dal::{sqlite::SqliteStore, Store, UpsertEncodingProfile, UpsertTrack},
+    dal::{sqlite::SqliteStore, Store, UpsertEncodingProfile, UpsertLibraryProfile, UpsertTrack},
     services::freedb::FreedBService,
     services::musicbrainz::MusicBrainzService,
     state::AppState,
@@ -79,7 +79,7 @@ async fn transcode_track_requires_auth() {
     let client = reqwest::Client::new();
     let resp = client
         .post(format!("{base}/api/v1/tracks/1/transcode"))
-        .json(&serde_json::json!({ "target_library_id": 1 }))
+        .json(&serde_json::json!({ "library_profile_id": 1 }))
         .send()
         .await
         .unwrap();
@@ -92,7 +92,7 @@ async fn transcode_library_requires_auth() {
     let client = reqwest::Client::new();
     let resp = client
         .post(format!("{base}/api/v1/libraries/1/transcode"))
-        .json(&serde_json::json!({ "target_library_id": 1 }))
+        .json(&serde_json::json!({ "library_profile_id": 1 }))
         .send()
         .await
         .unwrap();
@@ -105,7 +105,7 @@ async fn transcode_library_sync_requires_auth() {
     let client = reqwest::Client::new();
     let resp = client
         .post(format!("{base}/api/v1/libraries/1/transcode-sync"))
-        .json(&serde_json::json!({ "target_library_id": 1 }))
+        .json(&serde_json::json!({ "library_profile_id": 1 }))
         .send()
         .await
         .unwrap();
@@ -118,7 +118,7 @@ async fn transcode_track_not_found() {
     let client = login_admin(&base).await;
     let resp = client
         .post(format!("{base}/api/v1/tracks/9999/transcode"))
-        .json(&serde_json::json!({ "target_library_id": 1 }))
+        .json(&serde_json::json!({ "library_profile_id": 1 }))
         .send()
         .await
         .unwrap();
@@ -130,18 +130,10 @@ async fn transcode_track_enqueues_job() {
     let (base, store) = spawn_test_server().await;
     let client = login_admin(&base).await;
 
-    // Create source and target libraries
-    let src_lib = store
-        .create_library("Source", "/music/src", "flac")
-        .await
-        .unwrap();
-    let tgt_lib = store
-        .create_library("Target", "/music/tgt", "aac")
-        .await
-        .unwrap();
+    let src_lib = store.create_library("Source", "/music/src", "flac").await.unwrap();
+    let tgt_lib = store.create_library("Target", "/music/tgt", "aac").await.unwrap();
 
-    // Create an encoding profile (library_profiles association handled via library_profiles table)
-    let _ep = store
+    let ep = store
         .create_encoding_profile(UpsertEncodingProfile {
             name: "AAC 256k".into(),
             codec: "aac".into(),
@@ -154,7 +146,17 @@ async fn transcode_track_enqueues_job() {
         .await
         .unwrap();
 
-    // Insert a track into source library
+    let lp = store
+        .create_library_profile(&UpsertLibraryProfile {
+            library_id: tgt_lib.id,
+            encoding_profile_id: ep.id,
+            derived_dir_name: "aac".into(),
+            include_on_submit: false,
+            auto_include_above_hz: None,
+        })
+        .await
+        .unwrap();
+
     let track = store
         .upsert_track(UpsertTrack {
             library_id: src_lib.id,
@@ -167,27 +169,19 @@ async fn transcode_track_enqueues_job() {
         .await
         .unwrap();
 
-    // POST /api/v1/tracks/:id/transcode
     let resp = client
         .post(format!("{base}/api/v1/tracks/{}/transcode", track.id))
-        .json(&serde_json::json!({ "target_library_id": tgt_lib.id }))
+        .json(&serde_json::json!({ "library_profile_id": lp.id }))
         .send()
         .await
         .unwrap();
     assert_eq!(resp.status().as_u16(), 202);
 
-    // Verify a job was enqueued
     let jobs = store.list_jobs(Some("pending"), 10).await.unwrap();
     let transcode_jobs: Vec<_> = jobs.iter().filter(|j| j.job_type == "transcode").collect();
     assert_eq!(transcode_jobs.len(), 1);
-    assert_eq!(
-        transcode_jobs[0].payload["source_track_id"].as_i64().unwrap(),
-        track.id
-    );
-    assert_eq!(
-        transcode_jobs[0].payload["target_library_id"].as_i64().unwrap(),
-        tgt_lib.id
-    );
+    assert_eq!(transcode_jobs[0].payload["track_id"].as_i64().unwrap(), track.id);
+    assert_eq!(transcode_jobs[0].payload["library_profile_id"].as_i64().unwrap(), lp.id);
 }
 
 #[tokio::test]
@@ -195,16 +189,33 @@ async fn transcode_library_enqueues_all_tracks() {
     let (base, store) = spawn_test_server().await;
     let client = login_admin(&base).await;
 
-    let src_lib = store
-        .create_library("Source", "/music/src2", "flac")
-        .await
-        .unwrap();
-    let tgt_lib = store
-        .create_library("Target2", "/music/tgt2", "aac")
+    let src_lib = store.create_library("Source", "/music/src2", "flac").await.unwrap();
+    let tgt_lib = store.create_library("Target2", "/music/tgt2", "aac").await.unwrap();
+
+    let ep = store
+        .create_encoding_profile(UpsertEncodingProfile {
+            name: "AAC 256k".into(),
+            codec: "aac".into(),
+            bitrate: Some("256k".into()),
+            sample_rate: None,
+            channels: None,
+            bit_depth: None,
+            advanced_args: None,
+        })
         .await
         .unwrap();
 
-    // Insert two tracks
+    let lp = store
+        .create_library_profile(&UpsertLibraryProfile {
+            library_id: tgt_lib.id,
+            encoding_profile_id: ep.id,
+            derived_dir_name: "aac".into(),
+            include_on_submit: false,
+            auto_include_above_hz: None,
+        })
+        .await
+        .unwrap();
+
     for i in 1..=2_u32 {
         store
             .upsert_track(UpsertTrack {
@@ -220,7 +231,7 @@ async fn transcode_library_enqueues_all_tracks() {
 
     let resp = client
         .post(format!("{base}/api/v1/libraries/{}/transcode", src_lib.id))
-        .json(&serde_json::json!({ "target_library_id": tgt_lib.id }))
+        .json(&serde_json::json!({ "library_profile_id": lp.id }))
         .send()
         .await
         .unwrap();
@@ -235,16 +246,33 @@ async fn transcode_library_sync_skips_already_linked() {
     let (base, store) = spawn_test_server().await;
     let client = login_admin(&base).await;
 
-    let src_lib = store
-        .create_library("SrcSync", "/music/srcsync", "flac")
-        .await
-        .unwrap();
-    let tgt_lib = store
-        .create_library("TgtSync", "/music/tgtsync", "aac")
+    let src_lib = store.create_library("SrcSync", "/music/srcsync", "flac").await.unwrap();
+    let tgt_lib = store.create_library("TgtSync", "/music/tgtsync", "aac").await.unwrap();
+
+    let ep = store
+        .create_encoding_profile(UpsertEncodingProfile {
+            name: "AAC 256k".into(),
+            codec: "aac".into(),
+            bitrate: Some("256k".into()),
+            sample_rate: None,
+            channels: None,
+            bit_depth: None,
+            advanced_args: None,
+        })
         .await
         .unwrap();
 
-    // Insert two source tracks
+    let lp = store
+        .create_library_profile(&UpsertLibraryProfile {
+            library_id: tgt_lib.id,
+            encoding_profile_id: ep.id,
+            derived_dir_name: "aac".into(),
+            include_on_submit: false,
+            auto_include_above_hz: None,
+        })
+        .await
+        .unwrap();
+
     let t1 = store
         .upsert_track(UpsertTrack {
             library_id: src_lib.id,
@@ -272,20 +300,18 @@ async fn transcode_library_sync_skips_already_linked() {
             library_id: tgt_lib.id,
             relative_path: "01 - A.aac".into(),
             file_hash: "hash_a_derived".into(),
+            library_profile_id: Some(lp.id),
             tags: serde_json::json!({}),
             ..UpsertTrack::default()
         })
         .await
         .unwrap();
-    store
-        .create_track_link(t1.id, derived.id)
-        .await
-        .unwrap();
+    store.create_track_link(t1.id, derived.id).await.unwrap();
 
     // transcode-sync should only enqueue for t2 (t1 already linked)
     let resp = client
         .post(format!("{base}/api/v1/libraries/{}/transcode-sync", src_lib.id))
-        .json(&serde_json::json!({ "target_library_id": tgt_lib.id }))
+        .json(&serde_json::json!({ "library_profile_id": lp.id }))
         .send()
         .await
         .unwrap();
@@ -298,8 +324,5 @@ async fn transcode_library_sync_skips_already_linked() {
     let jobs = store.list_jobs(Some("pending"), 10).await.unwrap();
     let transcode_jobs: Vec<_> = jobs.iter().filter(|j| j.job_type == "transcode").collect();
     assert_eq!(transcode_jobs.len(), 1);
-    assert_eq!(
-        transcode_jobs[0].payload["source_track_id"].as_i64().unwrap(),
-        t2.id
-    );
+    assert_eq!(transcode_jobs[0].payload["track_id"].as_i64().unwrap(), t2.id);
 }
