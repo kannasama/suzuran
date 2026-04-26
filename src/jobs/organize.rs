@@ -161,11 +161,20 @@ impl JobHandler for OrganizeJobHandler {
             fs::rename(&old_abs, &new_abs).await.map_err(|e| AppError::Internal(e.into()))?;
             db.update_track_path(track.id, &new_relative, &track.file_hash).await?;
 
-            // Move companion files then sweep empty dirs
+            // Move companion files from old derived dir, sweep empty dirs
             move_companions(&old_abs, &new_abs).await;
             if let Some(old_dir) = old_abs.parent() {
-                let source_root = Path::new(&library.root_path).join(&profile.derived_dir_name);
-                remove_empty_dirs(old_dir.to_path_buf(), &source_root).await;
+                let derived_root = Path::new(&library.root_path).join(&profile.derived_dir_name);
+                remove_empty_dirs(old_dir.to_path_buf(), &derived_root).await;
+            }
+
+            // Copy companion files from the source track's directory into the derived dir
+            let source_dir = Path::new(&library.root_path)
+                .join(&source.relative_path)
+                .parent()
+                .map(|p| p.to_path_buf());
+            if let (Some(src_dir), Some(dest_dir)) = (source_dir, new_abs.parent()) {
+                copy_companions(&src_dir, dest_dir).await;
             }
 
             return Ok(serde_json::json!({
@@ -293,6 +302,33 @@ impl JobHandler for OrganizeJobHandler {
             "old_path": track.relative_path,
             "new_path": new_relative,
         }))
+    }
+}
+
+/// Copy companion files (art, cue sheets, logs, etc.) from src_dir into dest_dir.
+/// Used to propagate folder.jpg etc. from a source track directory into a derived dir.
+async fn copy_companions(src_dir: &Path, dest_dir: &Path) {
+    let mut entries = match fs::read_dir(src_dir).await {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let path = entry.path();
+        if !path.is_file() { continue; }
+        let ext = path.extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_lowercase())
+            .unwrap_or_default();
+        if !COMPANION_EXTS.contains(&ext.as_str()) { continue; }
+        let Some(fname) = path.file_name() else { continue };
+        let dest = dest_dir.join(fname);
+        if let Err(e) = fs::copy(&path, &dest).await {
+            tracing::warn!(src = %path.display(), dst = %dest.display(), error = %e,
+                "organize: failed to copy companion file to derived dir");
+        } else {
+            tracing::debug!(file = %fname.to_string_lossy(), derived_dir = %dest_dir.display(),
+                "organize: copied companion file to derived dir");
+        }
     }
 }
 
