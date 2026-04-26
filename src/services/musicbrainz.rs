@@ -437,6 +437,53 @@ impl MusicBrainzService {
         Ok(out)
     }
 
+    /// Search MusicBrainz for releases matching artist/album.
+    ///
+    /// Returns up to 10 release summaries. Track listings are not included;
+    /// fetch a specific release via `get_release` to get the full track list.
+    pub async fn search_releases(
+        &self,
+        artist: &str,
+        album: &str,
+    ) -> Result<Vec<MbRelease>, AppError> {
+        let query = match (artist.is_empty(), album.is_empty()) {
+            (false, false) => format!(r#"release:"{album}" AND artist:"{artist}""#),
+            (false, true)  => format!(r#"artist:"{artist}""#),
+            (true,  false) => format!(r#"release:"{album}""#),
+            (true,  true)  => return Ok(vec![]),
+        };
+
+        self.mb_rate_limit().await;
+        let url = format!("{}/release/", self.mb_base);
+        let resp: serde_json::Value = self
+            .client
+            .get(&url)
+            .query(&[
+                ("query", query.as_str()),
+                ("fmt", "json"),
+                ("limit", "10"),
+                ("inc", "artist-credits labels release-groups"),
+            ])
+            .send()
+            .await
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("MB release search HTTP: {e}")))?
+            .error_for_status()
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("MB release search status: {e}")))?
+            .json()
+            .await
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("MB release search parse: {e}")))?;
+
+        let releases = resp["releases"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|v| serde_json::from_value::<MbRelease>(v).ok())
+            .collect();
+
+        Ok(releases)
+    }
+
     /// Score a release for MBP-style best-match selection.
     ///
     /// Higher is better. Factors (cumulative):

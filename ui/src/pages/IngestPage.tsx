@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { TopNav } from '../components/TopNav'
 import { IngestSearchDialog } from '../components/IngestSearchDialog'
+import { AlbumSearchDialog } from '../components/AlbumSearchDialog'
 import { ImageUpload } from '../components/ImageUpload'
 import { tagSuggestionsApi } from '../api/tagSuggestions'
 import {
@@ -103,6 +104,7 @@ export default function IngestPage() {
   const [threshold, setThreshold] = useState(80)
   const [groupMode, setGroupMode] = useState<'album' | 'folder'>('album')
   const [searchTrack, setSearchTrack] = useState<Track | null>(null)
+  const [searchAlbumKey, setSearchAlbumKey] = useState<string | null>(null)
   const [submitAlbum, setSubmitAlbum] = useState<string | null>(null)
   const [expandedTrackId, setExpandedTrackId] = useState<number | null>(null)
   const [albumArtUrls, setAlbumArtUrls] = useState<Record<string, string>>({})
@@ -227,6 +229,7 @@ export default function IngestPage() {
                 expandedTrackId={expandedTrackId}
                 onToggleExpand={id => setExpandedTrackId(prev => prev === id ? null : id)}
                 onSearch={t => setSearchTrack(t)}
+                onSearchAlbum={key => setSearchAlbumKey(key)}
                 onLookup={id => lookupMutation.mutate(id)}
                 onSubmitAlbum={key => setSubmitAlbum(key)}
                 lookupPending={lookupMutation.isPending ? lookupMutation.variables ?? null : null}
@@ -262,6 +265,14 @@ export default function IngestPage() {
           }}
         />
       )}
+
+      {searchAlbumKey != null && groups[searchAlbumKey] && (
+        <AlbumSearchDialog
+          tracks={groups[searchAlbumKey]}
+          onClose={() => setSearchAlbumKey(null)}
+          onApplied={() => setSearchAlbumKey(null)}
+        />
+      )}
     </div>
   )
 }
@@ -276,6 +287,7 @@ function AlbumGroup({
   expandedTrackId,
   onToggleExpand,
   onSearch,
+  onSearchAlbum,
   onLookup,
   onSubmitAlbum,
   lookupPending,
@@ -289,6 +301,7 @@ function AlbumGroup({
   expandedTrackId: number | null
   onToggleExpand: (id: number) => void
   onSearch: (t: Track) => void
+  onSearchAlbum: (key: string) => void
   onLookup: (id: number) => void
   onSubmitAlbum: (key: string) => void
   lookupPending: number | null
@@ -363,6 +376,12 @@ function AlbumGroup({
           className={`text-xs border rounded px-3 py-1 font-medium shrink-0 ${showArtUpload ? 'border-accent text-accent' : 'border-border text-text-muted hover:text-text-primary'}`}
         >
           {displayArtUrl ? 'Change Art' : hasEmbeddedArt ? 'Replace Art' : 'Add Art'}
+        </button>
+        <button
+          onClick={() => onSearchAlbum(albumKey)}
+          className="text-xs border border-border text-text-muted hover:text-text-primary rounded px-3 py-1 font-medium shrink-0"
+        >
+          Search Album
         </button>
         <button
           onClick={() => setEditingAlbum(v => !v)}
