@@ -11,6 +11,7 @@ import {
   listLibraryProfiles,
   createLibraryProfile,
   deleteLibraryProfile,
+  enqueueProfileTranscodes,
 } from '../api/libraryProfiles'
 import { listEncodingProfiles } from '../api/encodingProfiles'
 import { listRules } from '../api/organizationRules'
@@ -136,6 +137,21 @@ export function LibraryFormModal({ library, onClose }: Props) {
     mutationFn: (id: number) => deleteLibraryProfile(id),
     onSuccess: () => { setProfileOrder([]); refetchProfiles() },
   })
+
+  const [enqueuingProfileId, setEnqueuingProfileId] = useState<number | null>(null)
+  const [enqueueResults, setEnqueueResults] = useState<Record<number, string>>({})
+
+  async function handleEnqueueTranscodes(profileId: number) {
+    setEnqueuingProfileId(profileId)
+    try {
+      const { enqueued } = await enqueueProfileTranscodes(profileId)
+      setEnqueueResults(prev => ({ ...prev, [profileId]: `${enqueued} enqueued` }))
+    } catch (e) {
+      setEnqueueResults(prev => ({ ...prev, [profileId]: e instanceof Error ? e.message : 'Error' }))
+    } finally {
+      setEnqueuingProfileId(null)
+    }
+  }
 
   function moveProfileUp(index: number) {
     if (index === 0) return
@@ -411,6 +427,18 @@ export function LibraryFormModal({ library, onClose }: Props) {
                         {p.auto_include_above_hz != null && (
                           <span className="shrink-0 text-[10px] text-text-muted">≥{(p.auto_include_above_hz / 1000).toFixed(0)}kHz</span>
                         )}
+                        {enqueueResults[p.id] && (
+                          <span className="shrink-0 text-[10px] text-text-muted">{enqueueResults[p.id]}</span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleEnqueueTranscodes(p.id)}
+                          disabled={enqueuingProfileId === p.id}
+                          className="text-xs text-bg-base bg-accent/80 rounded px-2 py-0.5 font-medium hover:opacity-90 disabled:opacity-50 shrink-0"
+                          title="Enqueue transcode jobs for all tracks"
+                        >
+                          {enqueuingProfileId === p.id ? '…' : 'Enqueue'}
+                        </button>
                         <button
                           type="button"
                           onClick={() => deleteProfileMutation.mutate(p.id)}

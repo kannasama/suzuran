@@ -23,7 +23,7 @@ pub fn router() -> Router<AppState> {
 
 #[derive(Deserialize)]
 struct TranscodeRequest {
-    target_library_id: i64,
+    library_profile_id: i64,
 }
 
 /// `POST /tracks/:id/transcode` — enqueue a single transcode job for the track.
@@ -33,15 +33,14 @@ async fn transcode_track(
     Path(id): Path<i64>,
     Json(body): Json<TranscodeRequest>,
 ) -> Result<StatusCode, AppError> {
-    // Verify the track exists
     state.db.get_track(id).await?
         .ok_or_else(|| AppError::NotFound(format!("track {id} not found")))?;
 
     state.db.enqueue_job(
         "transcode",
         serde_json::json!({
-            "source_track_id": id,
-            "target_library_id": body.target_library_id,
+            "track_id": id,
+            "library_profile_id": body.library_profile_id,
         }),
         4,
     ).await?;
@@ -56,7 +55,6 @@ async fn transcode_library(
     Path(id): Path<i64>,
     Json(body): Json<TranscodeRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
-    // Verify the source library exists
     state.db.get_library(id).await?
         .ok_or_else(|| AppError::NotFound(format!("library {id} not found")))?;
 
@@ -67,8 +65,8 @@ async fn transcode_library(
         state.db.enqueue_job(
             "transcode",
             serde_json::json!({
-                "source_track_id": track.id,
-                "target_library_id": body.target_library_id,
+                "track_id": track.id,
+                "library_profile_id": body.library_profile_id,
             }),
             4,
         ).await?;
@@ -79,23 +77,22 @@ async fn transcode_library(
 }
 
 /// `POST /libraries/:id/transcode-sync` — enqueue transcode only for source tracks that
-/// have no existing track_link into the target library.
+/// have no existing track_link into the target library profile.
 async fn transcode_library_sync(
     State(state): State<AppState>,
     _auth: AuthUser,
     Path(id): Path<i64>,
     Json(body): Json<TranscodeRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
-    // Verify the source library exists
     state.db.get_library(id).await?
         .ok_or_else(|| AppError::NotFound(format!("library {id} not found")))?;
 
+    let profile = state.db.get_library_profile(body.library_profile_id).await?;
+
     let tracks = state.db.list_tracks_by_library(id).await?;
 
-    // Build set of derived tracks in the target library
-    let derived = state.db.list_tracks_by_library(body.target_library_id).await?;
-
-    // Build a set of source_track_ids already linked into the target library
+    // Build set of source_track_ids already linked into the target profile's derived tracks
+    let derived = state.db.list_tracks_by_profile(profile.library_id, Some(body.library_profile_id)).await?;
     let linked_sources: HashSet<i64> = {
         let mut set = HashSet::new();
         for dt in &derived {
@@ -114,8 +111,8 @@ async fn transcode_library_sync(
         state.db.enqueue_job(
             "transcode",
             serde_json::json!({
-                "source_track_id": track.id,
-                "target_library_id": body.target_library_id,
+                "track_id": track.id,
+                "library_profile_id": body.library_profile_id,
             }),
             4,
         ).await?;

@@ -1,7 +1,7 @@
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
-    routing::get,
+    routing::{get, post},
     Json, Router,
 };
 use serde::Deserialize;
@@ -17,6 +17,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(list_profiles).post(create_profile))
         .route("/:id", get(get_profile).put(update_profile).delete(delete_profile))
+        .route("/:id/enqueue-transcode", post(enqueue_transcode))
 }
 
 #[derive(Deserialize)]
@@ -116,4 +117,30 @@ async fn delete_profile(
 
     state.db.delete_library_profile(id).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// `POST /library-profiles/:id/enqueue-transcode` — enqueue one transcode job per source
+/// track in the profile's library.
+async fn enqueue_transcode(
+    State(state): State<AppState>,
+    _admin: AdminUser,
+    Path(id): Path<i64>,
+) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
+    let profile = state.db.get_library_profile(id).await?;
+    let tracks = state.db.list_tracks_by_library(profile.library_id).await?;
+    let mut enqueued: usize = 0;
+
+    for track in &tracks {
+        state.db.enqueue_job(
+            "transcode",
+            serde_json::json!({
+                "track_id": track.id,
+                "library_profile_id": id,
+            }),
+            4,
+        ).await?;
+        enqueued += 1;
+    }
+
+    Ok((StatusCode::ACCEPTED, Json(serde_json::json!({ "enqueued": enqueued }))))
 }

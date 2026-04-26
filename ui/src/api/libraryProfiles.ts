@@ -21,3 +21,8 @@ export async function updateLibraryProfile(id: number, data: UpsertLibraryProfil
 export async function deleteLibraryProfile(id: number): Promise<void> {
   await client.delete(`/library-profiles/${id}`)
 }
+
+export async function enqueueProfileTranscodes(id: number): Promise<{ enqueued: number }> {
+  const res = await client.post<{ enqueued: number }>(`/library-profiles/${id}/enqueue-transcode`)
+  return res.data
+}
